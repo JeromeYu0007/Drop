@@ -407,20 +407,13 @@ flakeSprite.width = flakeSprite.height = 32;
   g.fillRect(0, 0, 32, 32);
 }
 
-function wrapDelta(u, center) {
-  let d = u - center;
-  d -= Math.round(d);
-  return d;
-}
-function ridgePeak(u, center, widthLeft, widthRight, amp) {
-  const d = wrapDelta(u, center);
-  const width = d < 0 ? widthLeft : widthRight;
-  const t = Math.max(0, 1 - Math.abs(d) / width);
-  return Math.pow(t, d < 0 ? 1.85 : 1.45) * amp;
+function ringNoise(u, seed, cycles) {
+  const a = (u * cycles + seed) * Math.PI * 2;
+  return noise2(Math.cos(a) * 1.15 + seed * 0.13, Math.sin(a) * 1.15);
 }
 function bakeRidge(seed, snowAt, near) {
   near = near == null ? 0.55 : near;
-  const TW = 1600, TH = 320;
+  const TW = 1600, TH = 300;
   const c = document.createElement("canvas");
   c.width = TW;
   c.height = TH;
@@ -428,78 +421,56 @@ function bakeRidge(seed, snowAt, near) {
   const img = g.createImageData(TW, TH);
   const d = img.data;
   const hgt = new Float32Array(TW);
-  const snow = new Float32Array(TW);
-  const shift = ((seed % 1) + 1) % 1 * 0.16;
-  // Two big mountains per tile. The right slope is the long lit face.
-  const peaks = near < 0.4
-    ? [{ c: (0.3 + shift) % 1, wL: 0.14, wR: 0.26, h: 1 }]
-    : [
-        { c: (0.2 + shift) % 1, wL: 0.11, wR: 0.22, h: 1 },
-        { c: (0.72 + shift * 0.35) % 1, wL: 0.09, wR: 0.16, h: 0.66 },
-      ];
+  const litA = new Float32Array(TW);
+  const spur = 0.05 + near * 0.07;
   for (let x = 0; x < TW; x++) {
     const u = x / TW;
-    let h = 0;
-    let snowAmt = 0;
-    for (let p = 0; p < peaks.length; p++) {
-      const pk = peaks[p];
-      const dlt = wrapDelta(u, pk.c);
-      const contrib = ridgePeak(u, pk.c, pk.wL, pk.wR, pk.h);
-      if (contrib > h) h = contrib;
-      const width = dlt < 0 ? pk.wL : pk.wR;
-      const t = Math.max(0, 1 - Math.abs(dlt) / width);
-      if (dlt < 0 && t > 0.46 && contrib > 0.28 * pk.h) snowAmt = Math.max(snowAmt, t);
-    }
-    const crest = (noise2(u * 3.2 + seed, 4.2) - 0.5) * 0.035;
-    hgt[x] = clamp(h + crest, 0, 1);
-    snow[x] = snowAmt;
+    let h = ringNoise(u, seed, 2) * 0.58 + ringNoise(u, seed + 2.4, 3) * 0.26;
+    h += ringNoise(u, seed + 6.1, 5) * spur;
+    h += ringNoise(u, seed + 11, 8) * spur * 0.45;
+    hgt[x] = h;
   }
-  const light = new Float32Array(TW);
+  let mn = 9, mx = -9;
   for (let x = 0; x < TW; x++) {
-    const slope = hgt[(x + 14) % TW] - hgt[(x - 14 + TW) % TW];
-    light[x] = clamp(0.42 + slope * 1.35, 0.16, 0.92);
+    if (hgt[x] < mn) mn = hgt[x];
+    if (hgt[x] > mx) mx = hgt[x];
   }
-  const soft = new Float32Array(TW);
+  const spanH = mx - mn || 1;
+  for (let x = 0; x < TW; x++) hgt[x] = (hgt[x] - mn) / spanH;
   for (let x = 0; x < TW; x++) {
-    let s = 0;
-    for (let k = -10; k <= 10; k++) s += light[(x + k + TW) % TW];
-    soft[x] = s / 21;
+    const slope = hgt[(x + 12) % TW] - hgt[(x - 12 + TW) % TW];
+    litA[x] = clamp(0.38 + slope * 2.4, 0.14, 0.92);
   }
   for (let x = 0; x < TW; x++) {
     const h = hgt[x];
-    const ridge = (0.02 + (1 - h) * 0.5) * TH;
-    const lit = soft[x];
+    const ridge = (0.1 + (1 - h) * 0.62) * TH;
+    const lit = litA[x];
     for (let y = 0; y < TH; y++) {
       const i = (y * TW + x) * 4;
       const skyGap = ridge - y;
-      if (skyGap > 1.5) { d[i + 3] = 0; continue; }
+      if (skyGap > 2) { d[i + 3] = 0; continue; }
       const depth = Math.max(0, (y - ridge) / TH);
-      const edge = clamp(1 - depth * 5.5, 0, 1);
-      const shade = clamp(lit + edge * 0.08, 0.12, 0.95);
-      const rockLift = (1 - near) * 90;
-      const gain = 36 + near * 28;
-      let r = 22 + rockLift * 0.5 + (shade - 0.35) * gain;
-      let gc = 28 + rockLift * 0.55 + (shade - 0.35) * gain * 0.92;
-      let b = 46 + rockLift * 0.7 + (shade - 0.35) * gain * 0.6;
-      const snowBand = snow[x] > 0.55 ? clamp(1 - depth * 4.8, 0, 1) : 0;
-      if (snowBand > 0.25 && lit > 0.45) {
-        const sn = snowBand * 0.9;
-        const white = 198 + shade * 48;
+      const shade = lit;
+      const lift = (1 - near) * 86;
+      const gain = 18 + near * 40;
+      let r = 24 + lift * 0.45 + (shade - 0.4) * gain;
+      let gc = 32 + lift * 0.52 + (shade - 0.4) * gain * 0.9;
+      let b = 50 + lift * 0.7 + (shade - 0.4) * gain * 0.55;
+      const onSnow = h > snowAt - near * 0.12 && lit > 0.5 && depth < 0.16 + near * 0.06;
+      if (onSnow) {
+        const sn = clamp((0.16 + near * 0.06 - depth) * 7, 0, 0.92) * clamp((lit - 0.45) * 2.2, 0, 1);
+        const white = 206 + shade * 36;
         r = r * (1 - sn) + white * sn;
         gc = gc * (1 - sn) + (white + 4) * sn;
-        b = b * (1 - sn) + (white + 10) * sn;
+        b = b * (1 - sn) + (white + 12) * sn;
       }
-      const haze = clamp(depth * 1.15, 0, 1) * (0.28 + (1 - near) * 0.35);
-      const skyR = 48 + (1 - near) * 36;
-      const skyG = 62 + (1 - near) * 28;
-      const skyB = 92 + (1 - near) * 24;
-      r = r * (1 - haze) + skyR * haze;
-      gc = gc * (1 - haze) + skyG * haze;
-      b = b * (1 - haze) + skyB * haze;
-      if (edge > 0.9 && lit > 0.5) { r += 10; gc += 12; b += 14; }
+      const haze = clamp(depth * 1.3, 0, 1) * (0.22 + (1 - near) * 0.45);
+      r = r * (1 - haze) + (56 + (1 - near) * 30) * haze;
+      gc = gc * (1 - haze) + (68 + (1 - near) * 24) * haze;
+      b = b * (1 - haze) + (96 + (1 - near) * 20) * haze;
       const down = y / TH;
-      const fade = down < 0.7 ? 1 : clamp(1 - (down - 0.7) / 0.3, 0, 1);
-      const aa = skyGap > 0 ? clamp(1.5 - skyGap, 0, 1) : 1;
+      const fade = down < 0.58 ? 1 : clamp(1 - (down - 0.58) / 0.42, 0, 1);
+      const aa = skyGap > 0 ? clamp(2 - skyGap, 0, 1) : 1;
       d[i] = clamp(r, 0, 255);
       d[i + 1] = clamp(gc, 0, 255);
       d[i + 2] = clamp(b, 0, 255);
@@ -537,20 +508,19 @@ function bakeRock() {
   const llen = Math.hypot(lx, ly, lz);
   for (let y = 0; y < TH; y++) {
     for (let x = 0; x < TW; x++) {
-      const warp = fbm2(x * 0.008, y * 0.006, 2);
-      const region = fbm2((x + warp * 36) * 0.0062, (y + warp * 48) * 0.0046, 2);
-      const id = Math.min(4, Math.max(0, Math.floor(region * 5)));
+      const warp = fbm2(x * 0.011, y * 0.008, 2);
+      const region = fbm2((x + warp * 16) * 0.016, (y + warp * 20) * 0.012, 2);
+      const id = Math.min(4, Math.max(0, Math.floor(clamp(region, 0, 0.999) * 5)));
       const sl = SLOPE[id];
-      const broad = fbm2(x * 0.01, y * 0.008, 2);
-      let nx = sl.x + (broad - 0.5) * 0.08;
+      let nx = sl.x;
       let ny = sl.y;
-      let nz = 0.72;
+      let nz = 0.95;
       const len = Math.hypot(nx, ny, nz) || 1;
       nx /= len; ny /= len; nz /= len;
       const lambert = clamp((nx * lx + ny * ly + nz * lz) / llen, 0, 1);
-      const fx = fbm2(x * 0.015, y * 0.0035 + 8, 2);
-      const fracture = Math.exp(-Math.pow((fx - 0.5) * 11, 2));
-      const lit = clamp(0.08 + lambert * 0.92 * (1 - fracture * 0.78), 0, 1);
+      const fx = fbm2(x * 0.02, y * 0.007 + 8, 2);
+      const fracture = Math.exp(-Math.pow((fx - 0.48) * 8, 2));
+      const lit = clamp(0.18 + lambert * 0.82 * (1 - fracture * 0.62), 0, 1);
       const snow = ny < -0.28 && lambert > 0.42 ? clamp((-ny - 0.28) * 1.6, 0, 0.55) : 0;
       const rockR = 14 + lit * 62;
       const rockG = 18 + lit * 64;
@@ -920,10 +890,11 @@ function drawBirds() {
   }
 }
 const RANGE_LAYERS = [
-  { img: 0, y: 0.46, h: 0.34, parallax: 0.04, alpha: 0.7, drift: 4 },
-  { img: 1, y: 0.54, h: 0.38, parallax: 0.09, alpha: 0.82, drift: 7 },
-  { img: 2, y: 0.62, h: 0.42, parallax: 0.15, alpha: 0.9, drift: 10 },
-  { img: 4, y: 0.68, h: 0.48, parallax: 0.22, alpha: 0.98, drift: 14 },
+  { img: 0, y: 0.6, h: 0.22, parallax: 0.035, alpha: 0.4, drift: 3 },
+  { img: 1, y: 0.66, h: 0.26, parallax: 0.07, alpha: 0.55, drift: 5 },
+  { img: 2, y: 0.72, h: 0.28, parallax: 0.11, alpha: 0.72, drift: 8 },
+  { img: 3, y: 0.78, h: 0.32, parallax: 0.16, alpha: 0.86, drift: 11 },
+  { img: 4, y: 0.84, h: 0.36, parallax: 0.22, alpha: 0.96, drift: 14 },
 ];
 function drawRanges(from, to) {
   const climb = (cam.y - 12) * 0.35;
@@ -932,7 +903,7 @@ function drawRanges(from, to) {
   for (let li = a0; li < a1; li++) {
     const L = RANGE_LAYERS[li];
     const img = RIDGES[L.img];
-    const w = W * (1.15 + li * 0.08);
+    const w = W * (1.15 + li * 0.06);
     const h = H * L.h;
     const y = H * L.y + climb * L.parallax;
     const scroll = ((state.time * L.drift + cam.z * L.parallax * 80) % w + w) % w;
@@ -940,14 +911,6 @@ function drawRanges(from, to) {
     ctx.globalAlpha = L.alpha;
     ctx.drawImage(img, -scroll, y, w, h);
     ctx.drawImage(img, -scroll + w, y, w, h);
-    ctx.globalCompositeOperation = "destination-in";
-    ctx.globalAlpha = 1;
-    const veil = ctx.createLinearGradient(0, y, 0, y + h);
-    veil.addColorStop(0, "rgba(0,0,0,1)");
-    veil.addColorStop(0.78, "rgba(0,0,0,1)");
-    veil.addColorStop(1, "rgba(0,0,0,0)");
-    ctx.fillStyle = veil;
-    ctx.fillRect(-scroll - 4, y, w * 2 + 8, h);
     ctx.restore();
   }
 }
@@ -1124,7 +1087,7 @@ function drawWall() {
   ctx.fillStyle = shade;
   ctx.fillRect(-40, -40, anchorX + 120, H + 80);
   ctx.globalCompositeOperation = "soft-light";
-  ctx.fillStyle = storm > 0.5 ? "rgba(28,40,64,0.2)" : "rgba(255,196,150," + (0.06 + rise * 0.16) + ")";
+  ctx.fillStyle = storm > 0.5 ? "rgba(28,40,64,0.28)" : "rgba(255,196,150," + (0.06 + rise * 0.16) + ")";
   ctx.fillRect(-40, -40, anchorX + 120, H + 80);
   if (state.descending) {
     ctx.globalCompositeOperation = "source-over";
@@ -2068,8 +2031,9 @@ function syncUI() {
   ui.restart.textContent = ttext(U.restartZh, U.restartEn);
   ui.again.textContent = ttext(U.againZh, U.againEn);
   ui.mute.classList.toggle("off", muted);
-  const titleA = smooth(clamp((state.time - 0.35) / 0.7, 0, 1)) * smooth(clamp((state.intro - 0.08) / 0.55, 0, 1));
-  ui.title.style.opacity = String(state.mode === "ending" ? 0 : titleA);
+  const fadeIn = smooth(clamp((state.time - 0.15) / 0.35, 0, 1));
+  const onTitle = state.mode === "play" && state.launches === 0 && state.falls === 0 && state.holdIndex === 0 && !state.descending && !state.crown;
+  ui.title.style.opacity = onTitle ? String(fadeIn) : "0";
   const early = state.catches < 4 && state.mode === "play";
   ui.hint.textContent = state.failedOnce && !state.airCatch ? ttext(U.hintFallZh, U.hintFallEn) : ttext(U.hintZh, U.hintEn);
   ui.hint.style.opacity = early ? String(smooth(clamp((state.time - 1.4) / 0.5, 0, 1)) * (state.mode === "play" ? 1 : 0)) : "0";
