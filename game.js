@@ -501,8 +501,9 @@
     const p = params(mask);
     const st = sampleRelease(mask, holdT);
     const peak = Math.PI / (2 * p.omega);
-    // The upward aim comes first. Only after that does the line drop toward the hold below.
-    return holdT > Math.max(1.05, peak + 0.42) && st.angle < 0.45;
+    // Upward full-charge releases land first, around one second.
+    // Only after that window does the line turn down toward the hold below.
+    return holdT > Math.max(1.28, peak + 0.7) && st.angle < 0.55;
   }
 
   function lowerHold(hold) {
@@ -956,6 +957,101 @@
     return s;
   }
 
+  // Full pack, every next hold, at a full charge. Margin is how far inside the catch the arc passes.
+  function reachCheck(mask) {
+    mask = mask == null ? 15 : mask;
+    const tune = params(mask);
+    const full = 1 / tune.chargeRate;
+    const period = (Math.PI * 2) / tune.omega;
+    const MARGIN = 0.18;
+    const phases = [0.4, 2.1, 4.2, 6.8];
+    const rows = [];
+    let ok = true;
+    for (let i = 0; i < HOLDS.length - 1; i++) {
+      const h = HOLDS[i];
+      const n = HOLDS[i + 1];
+      let need = CATCH;
+      if (n.k === "ice") need *= 0.92;
+      if (n.k !== "hold" && n.k !== "ice" && n.k !== "start") need += 0.28;
+      let best = 1e9;
+      let bestT = full;
+      let phasesOk = 0;
+      for (let ph = 0; ph < phases.length; ph++) {
+        const time = phases[ph];
+        let local = 1e9;
+        let lt = full;
+        for (let k = 0; k < 400; k++) {
+          const t = full * 0.98 + k / 120;
+          if (t > full + period) break;
+          if (t > tune.stamina - 0.25) break;
+          const rel = sampleRelease(mask, t);
+          if (rel.charge < 0.98) continue;
+          if (wantsDown(mask, t)) continue;
+          const hit = arcMin(mask, t, h, n, time, false, false);
+          if (hit.minD < local) {
+            local = hit.minD;
+            lt = t;
+          }
+        }
+        if (local <= need - MARGIN) phasesOk++;
+        if (local < best) {
+          best = local;
+          bestT = lt;
+        }
+      }
+      const s = createState();
+      s.mask = mask;
+      s.intro = 0;
+      s.settle = 1;
+      s.attached = true;
+      s.holdIndex = i;
+      s.origin = i;
+      s.mode = "play";
+      s.y = h.y - 1;
+      s.z = h.z;
+      s.time = 4.2;
+      s.lock = 0;
+      s.needUp = false;
+      s.restSeen = 0xffffffff;
+      const dt = 1 / 120;
+      let guard = 0;
+      while (s.attached && s.holdT < bestT - dt && guard++ < 1000) {
+        step(s, dt, { holding: true, freezeIntro: true });
+      }
+      s.prevHolding = true;
+      s.holding = true;
+      step(s, dt, { holding: false, freezeIntro: true });
+      for (let k = 0; k < 260 && !s.attached && s.mode === "play"; k++) {
+        step(s, dt, { holding: true, freezeIntro: true });
+      }
+      const caught = s.attached && s.holdIndex === i + 1 && s.falls === 0;
+      const rowOk = best <= need - MARGIN && phasesOk === phases.length && caught;
+      if (!rowOk) ok = false;
+      rows.push({
+        i: i,
+        from: h.k,
+        to: n.k,
+        y: h.y,
+        dy: Math.round((n.y - h.y) * 100) / 100,
+        best: Math.round(best * 1000) / 1000,
+        need: Math.round(need * 100) / 100,
+        margin: Math.round((need - best) * 1000) / 1000,
+        t: Math.round(bestT * 100) / 100,
+        phasesOk: phasesOk,
+        caught: caught,
+        ok: rowOk,
+      });
+    }
+    return {
+      ok: ok,
+      mask: mask,
+      holds: rows.length,
+      marginRequired: MARGIN,
+      fullCharge: Math.round(full * 1000) / 1000,
+      rows: rows,
+    };
+  }
+
   function simulate(options) {
     options = options || {};
     const s = createState();
@@ -1152,6 +1248,7 @@
     createState: createState,
     step: step,
     arcMin: arcMin,
+    reachCheck: reachCheck,
     isRest: isRest,
     simulateReturn: simulateReturn,
     simulate: function (options) {
