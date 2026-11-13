@@ -483,9 +483,6 @@
     s.shake = Math.max(s.shake, 0.1 + weight01(s.mask) * 0.22);
     s.sfx.push(weight01(s.mask) > 0.55 ? "land" : "catch");
     if (!s.airCatch && s.launches > 0) s.airCatch = true;
-    if (isRest(h.k) || index === 0) {
-      if (index >= (s.checkpoint || 0)) s.checkpoint = index;
-    }
     if (h.k === "summit") {
       s.crown = true;
       s.descending = false;
@@ -659,26 +656,18 @@
     s.resetFade = 1;
   }
 
-  function beginRecover(s) {
-    const h = HOLDS[s.checkpoint || 0];
-    s.mode = "recover";
-    s.recoverT = 0;
+  function beginImpact(s) {
+    if (s.mode === "impact") return;
+    s.mode = "impact";
+    s.impactT = 0;
     s.attached = false;
-    s.holdIndex = s.checkpoint || 0;
-    s.origin = s.holdIndex;
-    s.y = h.y + 2.15;
-    s.z = h.z + 0.2;
-    s.vy = -5.5;
-    s.vz = 0;
-    s.angle = 0.4;
-    s.holdT = 0;
     s.crown = false;
+    s.descending = false;
     s.dots = [];
     s.armed = false;
     s.failedOnce = true;
     s.falls += 1;
-    s.intro = 0;
-    s.shake = 0.4;
+    s.shake = 0.55;
     s.sfx.push("impact");
   }
 
@@ -719,24 +708,23 @@
       s.intro = Math.max(0, s.intro - dt * rate);
     }
 
-    if (s.mode === "impact" || s.mode === "recover") {
-      s.recoverT += dt;
-      s.impactT = s.recoverT;
-      const h = HOLDS[s.checkpoint || 0];
-      s.vy -= G * 0.55 * dt;
-      s.y += s.vy * dt;
-      s.z += (h.z - s.z) * Math.min(1, dt * 6);
-      if (s.y < h.y + 0.28 || s.recoverT > 0.62) {
-        const seen = s.restSeen;
-        catchHold(s, s.checkpoint || 0);
-        s.restSeen = seen;
-        if (isRest(h.k) && (seen & (1 << s.holdIndex))) s.mode = "play";
-        s.settle = 1;
-        s.lock = 0.3;
-        s.needUp = true;
-        s.holdT = 0;
-        s.vy = 0;
-        s.vz = 0;
+    if (s.mode === "impact") {
+      s.impactT += dt;
+      s.vy = Math.min(s.vy, -8);
+      if (s.impactT > 0.28) {
+        const keepMask = s.mask;
+        const lost = s.lost;
+        const reclaimed = s.reclaimed;
+        const best = s.bestRun;
+        const falls = s.falls;
+        wipePosition(s, false);
+        s.mask = keepMask;
+        s.lost = lost;
+        s.reclaimed = reclaimed;
+        s.bestRun = best;
+        s.falls = falls;
+        s.failedOnce = true;
+        s.intro = 0;
       }
       s.prevHolding = holding;
       s.holding = holding;
@@ -939,12 +927,7 @@
             s.sfx.push("near");
           }
         }
-        const cp = HOLDS[s.checkpoint || 0];
-        const floorY = s.descending ? HOLDS[s.origin].y - 12 : cp.y - 1.3;
-        const passedRest = !s.descending && (s.checkpoint || 0) > 0 && s.vy < -2.2 && s.y < floorY;
-        const missedDrop = s.descending && s.vy < -2.2 && s.y < floorY;
-        const hitGround = s.y < 1.5 && s.vy < -5;
-        if ((passedRest || missedDrop || hitGround) && s.mode === "play") beginRecover(s);
+        if (s.y < 1.2 && s.vy < -6 && s.mode === "play") beginImpact(s);
       }
     }
 
