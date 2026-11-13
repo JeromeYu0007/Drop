@@ -14,13 +14,14 @@
   const SUMMIT_Y = 104.5;
 
   const TUNE = {
-    omega: [2.15, 1.62],
-    amp: [1.3, 0.98],
-    maxSpeed: [20.2, 16.2],
-    aimScale: [0.8, 0.66],
-    chargeRate: [0.85, 0.55],
-    windMul: [1.35, 0.34],
+    omega: [1.85, 1.28],
+    amp: [1.48, 1.12],
+    maxSpeed: [22.4, 18.2],
+    aimScale: [0.88, 0.74],
+    chargeRate: [1.15, 0.48],
+    windMul: [0.2, 1],
   };
+  const GATE = { y: 106.05, z: -0.62 };
 
   const RAW = [
     [8, 0, "start"],
@@ -64,100 +65,60 @@
       w: 0.48,
       zh: "奖杯",
       en: "Trophy",
-      lineZh: "很沉，刻着你的名字",
-      lineEn: "Heavy. Your name is cut into it.",
+      lineZh: "名字是后来刻的。",
+      lineEn: "The name was cut in later.",
+      backZh: "名字上有雪。你擦掉了。",
+      backEn: "Snow on the name. You wiped it off.",
     },
     letter: {
       bit: 8,
       w: 0.3,
       zh: "未寄出的信",
       en: "Unsent letter",
-      lineZh: "没有地址，也没有落款",
-      lineEn: "No address. No name at the end.",
+      lineZh: "第一行是你的名字。",
+      lineEn: "The first line is your name.",
+      backZh: "纸还是干的。你没有拆开。",
+      backEn: "The paper is still dry. You did not open it.",
     },
     ring: {
       bit: 2,
       w: 0.22,
       zh: "戒指",
       en: "Ring",
-      lineZh: "凉的，还是原来的尺寸",
-      lineEn: "Still cold. Still the same size.",
+      lineZh: "还是那只手的尺寸。",
+      lineEn: "Still the size of that hand.",
+      backZh: "比记忆里更凉。",
+      backEn: "Colder than you remembered.",
     },
     photo: {
       bit: 1,
       w: 0.2,
       zh: "旧照片",
       en: "Old photo",
-      lineZh: "一张被摸糊的脸",
-      lineEn: "A face worn soft by fingers.",
+      lineZh: "被摸掉的，是笑。",
+      lineEn: "What wore away was the smile.",
+      backZh: "你把有字的那一面朝下。",
+      backEn: "You turned the written side down.",
     },
   };
 
   const ENDINGS = {
-    0: {
-      zh: ["你是空着手到的。", "风穿过背包，像穿过一扇没关的窗。", "山顶很亮。亮得没有影子。"],
-      en: ["You arrived with empty hands.", "The wind goes through the pack like an open window.", "The summit is bright. Too bright for a shadow."],
-    },
-    1: {
-      zh: ["你留下了那张脸。", "其他的，都在下面响了一声。", "光上来的时候，你没有眨眼。"],
-      en: ["You kept the face.", "The rest struck once, somewhere below.", "When the light arrived, you did not blink."],
-    },
-    2: {
-      zh: ["戒指在掌心里暖了一点。", "你没有把它戴上。", "云海把山下的路盖住了。"],
-      en: ["The ring warmed a little in your palm.", "You did not put it on.", "The clouds have covered every road below."],
-    },
-    3: {
-      zh: ["人和约定还在。", "你把背包放到脚边，第一次。", "肩是松的。"],
-      en: ["The person, and the promise, are still here.", "You set the pack by your feet. The first time.", "Your shoulders drop."],
-    },
-    4: {
-      zh: ["名字在太阳底下发亮。", "你看了很久。", "没有掌声。风也很整齐。"],
-      en: ["Your name shines under the sun.", "You look for a long time.", "No applause. The wind is very tidy."],
-    },
-    5: {
-      zh: ["你带着一张脸，和自己的名字。", "一个被别人叫过。", "一个是你刻的。"],
-      en: ["You carried a face, and your own name.", "One of them was spoken by someone else.", "One of them you cut yourself."],
-    },
-    6: {
-      zh: ["证明还在。那枚戒指也还在。", "你没有交换出去。", "也没有丢掉。"],
-      en: ["The proof is here. So is the ring.", "You did not give it.", "You did not let it go."],
-    },
-    7: {
-      zh: ["信留在半山了。", "话停在那里，人上来了。", "你对着光，没有要补的句子。"],
-      en: ["The letter stayed on the mountain.", "The words stopped there. You did not.", "Facing the light, nothing left to add."],
-    },
-    8: {
-      zh: ["你把信读完了。", "没有地址。", "有一个字自己飞走了。"],
-      en: ["You finished reading the letter.", "It has no address.", "One word left on its own."],
-    },
-    9: {
-      zh: ["你记得，也还想说。", "这两样东西很轻。", "你还是没有松手。"],
-      en: ["You remember, and you still want to speak.", "These two things are light.", "Your hand did not open."],
-    },
-    10: {
-      zh: ["约定和那句没说的话都在。", "照片先下去了。", "像有人先转过身。"],
-      en: ["The promise is here, and the unsaid sentence.", "The photograph went down first.", "Like someone turning away."],
-    },
-    11: {
-      zh: ["最沉的一件不在了。", "剩下的，你都叫得出名字。", "你看着太阳升完。"],
-      en: ["The heaviest thing is gone.", "What remains, you can name.", "You watch the sun finish rising."],
-    },
-    12: {
-      zh: ["杯子上是名字，纸上是话。", "你都带上来了。", "人倒不一定在里面。"],
-      en: ["A name on the cup. Words on the paper.", "You brought them both.", "A person is not necessarily inside either."],
-    },
-    13: {
-      zh: ["约定留在了雪里。", "你带上来记得的、想说的，和刻着的名字。", "手是空的。"],
-      en: ["The promise stayed in the snow.", "You brought what you remember, what you meant to say, and the carved name.", "Your hand is empty."],
-    },
-    14: {
-      zh: ["那张脸没有上来。", "你记得重量，不太记得五官。", "光里只剩一个轮廓。"],
-      en: ["The face did not come up.", "You remember the weight more than the features.", "In the light, only an outline."],
-    },
-    15: {
-      zh: ["都还在。", "你站在光里面，肩没有松。", "可你到底是上来了。"],
-      en: ["All of it is still here.", "You stand in the light. Your shoulders do not drop.", "But you did arrive."],
-    },
+    0: { zh: ["手里什么也没有。", "光很白。你没有影子。"], en: ["Nothing in your hands.", "The light is white. You cast no shadow."] },
+    1: { zh: ["你只把那张笑带上来了。", "下面还有没说完的。"], en: ["You brought up only the smile.", "Something unsaid is still below."] },
+    2: { zh: ["它还是那只手的尺寸。", "你没有戴上。"], en: ["Still the size of that hand.", "You did not put it on."] },
+    3: { zh: ["笑，和那只手。", "话没有上来。"], en: ["The smile, and the hand.", "The words did not come up."] },
+    4: { zh: ["名字对着太阳。", "你不记得是谁先走的。"], en: ["The name faces the sun.", "You don't remember who left first."] },
+    5: { zh: ["一张脸。一个名字。", "都是你没放下的。"], en: ["A face. A name.", "Both still in your keeping."] },
+    6: { zh: ["证明还在。约定也在。", "人呢。"], en: ["The proof is here. So is the promise.", "And the person."] },
+    7: { zh: ["信还在雪里。", "你看着光，没有要补的句子。"], en: ["The letter is still in the snow.", "You watch the light. Nothing you would add."] },
+    8: { zh: ["你把它读到最后一行。", "还是没有地址。"], en: ["You read it to the last line.", "Still no address."] },
+    9: { zh: ["你记得那张脸，也还想说。", "尺寸不在你手里。"], en: ["You remember the face, and you still want to speak.", "The size is not in your hand."] },
+    10: { zh: ["话，和那只手的尺寸。", "你还是没有寄出。"], en: ["The words, and the size of that hand.", "You still did not send them."] },
+    11: { zh: ["最沉的那件不在了。", "剩下的，你都叫得出来。"], en: ["The heaviest thing is gone.", "What is left, you can name."] },
+    12: { zh: ["杯子上是一个名字。纸上是另一个。", "你两个都带来了。"], en: ["One name on the cup. Another on the paper.", "You brought both."] },
+    13: { zh: ["约定留在下面。", "你带着记得的、想说的，和后来刻上的。"], en: ["The promise stayed below.", "You brought what you remember, what you meant to say, and what was carved afterward."] },
+    14: { zh: ["那张脸没有上来。", "你记得重量，不太记得眼睛。"], en: ["The face did not come up.", "You remember the weight better than the eyes."] },
+    15: { zh: ["都还在。", "肩没有松。可你上来了。"], en: ["All of it is still here.", "Your shoulders do not drop. But you arrived."] },
   };
 
   const UI = {
@@ -167,12 +128,10 @@
     hintEn: "Hold. Release when the arc meets the hold.",
     hintFallZh: "下坠时按住，也许还能抓住",
     hintFallEn: "Hold as you fall. You may still catch.",
-    packZh: "打开背包",
-    packEn: "Open the pack",
-    packLeadZh: "带着，摆荡更短，风雪更重。放下一件，天会亮一点，可它再也不回来。山顶记得你留下的。",
-    packLeadEn: "Carried, the swing is shorter and the storm holds. Let one go, and the sky clears. It will not come back. The summit remembers what you kept.",
-    carryZh: "都带着，继续",
-    carryEn: "Carry them on",
+    packZh: "背包",
+    packEn: "Pack",
+    carryZh: "继续",
+    carryEn: "Go on",
     dropWordZh: "放下",
     dropWordEn: "Let go",
     restartZh: "重来",
@@ -221,18 +180,24 @@
       aimScale: mix(TUNE.aimScale[0], TUNE.aimScale[1], k),
       chargeRate: mix(TUNE.chargeRate[0], TUNE.chargeRate[1], k),
       windMul: mix(TUNE.windMul[0], TUNE.windMul[1], k),
+      grav: mix(0.9, 1.22, k),
+      stamina: mix(8.2, 5.4, k),
+      sway: mix(0.035, 0.09, k),
     };
+  }
+  function grav(mask) {
+    return G * params(mask).grav;
   }
 
   function stormOf(mask) {
     return weight01(mask);
   }
 
-  function wind(t, y, mask) {
+  function wind(t, y, mask, returning) {
     const storm = stormOf(mask);
     const gust = Math.sin(t * 0.72 + y * 0.02) * 0.7 + Math.sin(t * 1.45 + 1.3) * 0.3;
     const high = clamp((y - 68) / 40, 0, 1);
-    return gust * (0.08 + storm * 0.82 + high * 0.18);
+    return gust * (0.04 + storm * 1.05 + high * 0.12) * (returning ? 1.7 : 1);
   }
 
   function nhash(n) {
@@ -402,6 +367,15 @@
       resetFade: 0,
       restSeen: 0,
       stormVis: 1,
+      lost: [],
+      reclaimed: 0,
+      crown: false,
+      descending: false,
+      lock: 0,
+      needUp: false,
+      slip: 0,
+      reveal: "",
+      revealT: -1,
     };
   }
 
@@ -424,19 +398,24 @@
     return st;
   }
 
-  function arcMin(mask, holdT, hold, target, time) {
+  function arcMin(mask, holdT, hold, target, time, downOk, returning) {
     const st = swung(mask, holdT, time, hold.y);
     let y = hold.y + st.offY;
     let z = hold.z + st.offZ;
     let vy = st.vy;
     let vz = st.vz;
+    if (downOk && st.angle < -0.55) {
+      const shot = downShot(st, hold);
+      vy = shot.vy;
+      vz = shot.vz;
+    }
     let minD = 1e9;
     const dots = [];
     for (let i = 0; i < 80; i++) {
       const dt = 1 / 70;
       const tt = time + i * dt;
-      vz += wind(tt, y, mask) * dt;
-      vy -= G * dt;
+      vz += wind(tt, y, mask, !!returning) * dt;
+      vy -= grav(mask) * dt;
       const sp = Math.hypot(vz, vy) + 1e-4;
       const dc = DRAG * sp;
       vz -= (vz / sp) * dc * dt;
@@ -454,7 +433,7 @@
         const d = Math.hypot(z - target.z, y - target.y);
         if (d < minD) minD = d;
       }
-      if (vy < 0 && y < hold.y - 14) break;
+      if (vy < 0 && y < hold.y - 18) break;
     }
     return { minD: minD, dots: dots, st: st };
   }
@@ -494,13 +473,38 @@
     placeOnRope(s, h, 0, L * 0.35);
     s.catches += 1;
     s.burst = 1;
-    s.shake = Math.max(s.shake, 0.18);
-    s.sfx.push("catch");
+    s.shake = Math.max(s.shake, 0.1 + weight01(s.mask) * 0.22);
+    s.sfx.push(weight01(s.mask) > 0.55 ? "land" : "catch");
     if (!s.airCatch && s.launches > 0) s.airCatch = true;
-    if (h.k === "summit") beginEnding(s);
-    else if (isRest(h.k) && hasItems(s.mask) && (s.restSeen & (1 << index)) === 0) beginLedge(s);
+    if (h.k === "summit") {
+      s.crown = true;
+      s.descending = false;
+      s.mode = "play";
+      s.lock = 0.35;
+    } else if (isRest(h.k) && hasItems(s.mask) && (s.restSeen & (1 << index)) === 0) beginLedge(s);
     else s.mode = "play";
+    tryPickup(s);
     if (s.y > s.bestRun) s.bestRun = s.y;
+  }
+
+  function lowerHold(hold) {
+    let best = null;
+    let gap = 1e9;
+    for (let i = 0; i < HOLDS.length; i++) {
+      const h = HOLDS[i];
+      const dy = hold.y - h.y;
+      if (dy < 0.8 || dy > 12) continue;
+      if (dy < gap) { gap = dy; best = h; }
+    }
+    return best;
+  }
+
+  function downShot(st, hold) {
+    const speed = Math.min(7.2, Math.abs(st.vy) * 0.22 + 4.2);
+    const target = lowerHold(hold);
+    if (!target) return { vy: -speed, vz: 0 };
+    const dz = target.z - (hold.z + st.offZ);
+    return { vy: -speed * 0.92, vz: clamp(dz * 1.8, -2.4, 2.4) };
   }
 
   function launch(s) {
@@ -512,12 +516,52 @@
     s.vy = st.vy;
     s.vz = st.vz;
     s.angle = st.angle;
+    const goingBack = st.angle < -0.55;
+    if ((s.crown || s.descending) && goingBack) {
+      const shot = downShot(st, h);
+      s.vy = shot.vy;
+      s.vz = shot.vz;
+      s.descending = true;
+      s.crown = false;
+    }
     s.flightT = 0;
     s.origin = s.holdIndex;
     s.nearDone = false;
     s.launches += 1;
+    s.holdT = 0;
     s.mode = "play";
+    s.slip = 0;
     s.sfx.push("release");
+  }
+
+  function buryItem(s, kind) {
+    const spec = ITEMS[kind];
+    let home = 0;
+    for (let i = 0; i < HOLDS.length; i++) {
+      const h = HOLDS[i];
+      if (h.y < s.y - 4.5 && h.y > s.y - 14) home = i;
+    }
+    const h = HOLDS[home];
+    let z = Math.max(h.z + 0.22, faceZ(h.y + 0.1) + 0.32);
+    for (let i = 0; i < s.lost.length; i++) {
+      if (s.lost[i].hold === home) z += 0.16;
+    }
+    s.lost.push({ kind: kind, bit: spec.bit, y: h.y + 0.2, z: z, hold: home });
+  }
+
+  function tryPickup(s) {
+    if (!s.lost || !s.lost.length) return;
+    for (let i = s.lost.length - 1; i >= 0; i--) {
+      const it = s.lost[i];
+      if (Math.hypot(s.z - it.z, s.y - it.y) > 0.9 && s.holdIndex !== it.hold) continue;
+      if (s.holdIndex !== it.hold && Math.hypot(s.z - it.z, s.y - it.y) > 0.9) continue;
+      s.mask |= it.bit;
+      s.reclaimed |= it.bit;
+      s.lost.splice(i, 1);
+      s.reveal = it.kind;
+      s.revealT = 0;
+      s.sfx.push("pickup");
+    }
   }
 
   function dropItem(s, kind) {
@@ -531,13 +575,27 @@
     s.dropZ = s.z + 0.28;
     s.dropVy = -1.2;
     s.dropX = 0;
+    buryItem(s, kind);
     s.sfx.push("drop");
     s.shake = Math.max(s.shake, 0.08);
   }
 
   function keepItem(s) {
+    const h = HOLDS[s.holdIndex];
     s.mode = "play";
+    s.attached = true;
+    s.holdT = 0;
+    s.settle = 1;
     s.pressT = 0;
+    s.lock = 0.2;
+    s.needUp = true;
+    s.slip = 0;
+    s.vy = 0;
+    s.vz = 0;
+    s.angle = 0;
+    s.crown = false;
+    placeOnRope(s, h, 0, L * 0.92);
+    s.z = Math.max(s.z, faceZ(s.y) + BODY_R + 0.06);
     s.sfx.push("keep");
   }
 
@@ -560,11 +618,21 @@
     s.impactT = -1;
     s.launches = 0;
     s.restSeen = 0;
+    s.crown = false;
+    s.descending = false;
+    s.lock = 0;
+    s.needUp = false;
+    s.slip = 0;
+    s.reveal = "";
+    s.revealT = -1;
     if (fullItems) {
       s.mask = 15;
+      s.lost = [];
+      s.reclaimed = 0;
       s.learned = 0;
       s.failedOnce = false;
       s.bestRun = h.y;
+      s.stormVis = 1;
     }
     placeOnRope(s, h, 0, L);
     s.resetFade = 1;
@@ -573,10 +641,11 @@
   function step(s, dt, input) {
     input = input || {};
     s.sfx = [];
-    const holding = !!input.holding;
-    const released = s.prevHolding && !holding;
+    let holding = !!input.holding;
+    let released = s.prevHolding && !holding;
     s.time += dt;
-    const stormTarget = stormOf(s.mask);
+    let stormTarget = stormOf(s.mask);
+    if (s.descending) stormTarget = Math.max(stormTarget, 0.92);
     if (s.stormVis == null) s.stormVis = stormTarget;
     s.stormVis += (stormTarget - s.stormVis) * (1 - Math.exp(-dt * 1.8));
     s.burst = Math.max(0, s.burst - dt * 1.8);
@@ -584,6 +653,13 @@
     s.flashBest = Math.max(0, s.flashBest - dt);
     s.resetFade = Math.max(0, s.resetFade - dt * 2.4);
     if (s.nearT > 0) s.nearT = Math.max(0, s.nearT - dt);
+    if (s.revealT >= 0) {
+      s.revealT += dt;
+      if (s.revealT > 4.4) {
+        s.revealT = -1;
+        s.reveal = "";
+      }
+    }
 
     if (input.restart) {
       wipePosition(s, true);
@@ -667,36 +743,101 @@
     }
 
     // play
+    if (s.needUp) {
+      if (!input.holding) s.needUp = false;
+      holding = false;
+      released = false;
+    } else if (s.lock > 0) {
+      s.lock = Math.max(0, s.lock - dt);
+      holding = false;
+      released = false;
+    }
     if (s.attached) {
       const h = HOLDS[s.holdIndex];
-      s.settle = Math.min(1, s.settle + dt / 0.2);
+      const heavy = weight01(s.mask);
+      s.settle = Math.min(1, s.settle + dt / (0.2 + heavy * 0.15));
       const rope = mix(0.42, L, s.settle);
-      if (holding && s.settle > 0.9) {
-        s.holdT += dt;
-        const st = swung(s.mask, s.holdT, s.time, h.y);
-        s.angle = st.angle;
-        placeOnRope(s, h, st.angle, L);
-        resolveBody(s);
-        const ni = nextIndex(s.holdIndex);
-        if (ni >= 0 && s.holdT > 0.12) {
-          const hit = arcMin(s.mask, s.holdT, h, HOLDS[ni], s.time);
-          s.dots = hit.dots;
-          s.aimD = hit.minD;
-          const was = s.armed;
-          s.armed = hit.minD < CATCH;
-          if (s.armed && !was) s.sfx.push("arm");
-        } else {
-          s.armed = false;
-          s.dots = [];
-          s.aimD = 99;
+      tryPickup(s);
+      if (s.descending && !holding && s.settle > 0.88) {
+        s.slip += dt;
+        const ice = mix(2.4, 1.25, heavy);
+        if (s.slip > ice) {
+          s.attached = false;
+          s.vy = -3.2 - heavy * 2.2;
+          s.vz = 0.35;
+          s.slip = 0;
+          s.flightT = 0.2;
+          s.sfx.push("slip");
         }
-      } else {
-        if (released && s.holdT > 0.16 && s.settle > 0.9) launch(s);
+      } else s.slip = 0;
+      if (s.crown && !holding && s.holdT === 0 && s.attached) {
+        s.y = h.y + 0.22;
+        s.z = Math.max(h.z, faceZ(h.y) + BODY_R + 0.08);
+        s.angle = Math.sin(s.time * 1.1) * 0.02;
+        s.armed = false;
+        s.dots = [];
+      } else if (holding && s.settle > 0.9 && s.attached) {
+        s.holdT += dt;
+        if (s.holdT > params(s.mask).stamina) {
+          s.attached = false;
+          s.vy = -2.4 - heavy * 2.4;
+          s.vz = 0.25;
+          s.holdT = 0;
+          s.flightT = 0.16;
+          s.slip = 0;
+          s.sfx.push("slip");
+        } else {
+          const st = swung(s.mask, s.holdT, s.time, h.y);
+          s.angle = st.angle;
+          placeOnRope(s, h, st.angle, L);
+          resolveBody(s);
+          let target = null;
+          if (s.crown || s.descending) {
+            const peek = swung(s.mask, s.holdT, s.time, h.y);
+            if (peek.angle < -0.55) {
+              let best = null;
+              let gap = 1e9;
+              for (let i = 0; i < HOLDS.length; i++) {
+                const hd = HOLDS[i];
+                const dy = h.y - hd.y;
+                if (dy < 0.8 || dy > 14) continue;
+                if (dy < gap) { gap = dy; best = hd; }
+              }
+              target = best;
+            } else if (s.crown) target = GATE;
+          }
+          if (!target) {
+            const ni = nextIndex(s.holdIndex);
+            if (ni >= 0) target = HOLDS[ni];
+          }
+          if (target && s.holdT > 0.12) {
+            const returning = !!(s.descending || (s.crown && target && target !== GATE && swung(s.mask, s.holdT, s.time, h.y).angle < -0.55));
+            const hit = arcMin(s.mask, s.holdT, h, target, s.time, s.crown || s.descending, returning);
+            s.dots = hit.dots;
+            s.aimD = hit.minD;
+            const was = s.armed;
+            let need = s.descending ? CATCH * 0.82 : CATCH;
+            if (target && target.k && (isRest(target.k) || target.k === "summit")) need += 0.28;
+            if (s.crown && target === GATE) need = 1.2;
+            s.armed = hit.minD < need;
+            if (s.armed && !was) s.sfx.push("arm");
+          } else {
+            s.armed = false;
+            s.dots = [];
+            s.aimD = 99;
+          }
+        }
+      } else if (s.attached) {
+        if (released && s.crown && s.holdT > 0.1 && s.settle > 0.9) {
+          const st = swung(s.mask, s.holdT, s.time, h.y);
+          if (st.angle < -0.55) launch(s);
+          else beginEnding(s);
+        } else if (released && s.holdT > 0.16 && s.settle > 0.9) launch(s);
         s.holdT = 0;
         s.armed = false;
         s.dots = [];
-        if (s.attached) {
-          const idle = Math.sin(s.time * 1.25) * 0.055 * s.settle;
+        if (s.attached && !s.crown) {
+          const idle = Math.sin(s.time * (1.05 + heavy * 0.7)) * params(s.mask).sway * s.settle;
           s.angle = idle;
           placeOnRope(s, h, idle, rope);
           resolveBody(s);
@@ -705,8 +846,8 @@
     } else {
       s.flightT += dt;
       s.armed = false;
-      s.vz += wind(s.time, s.y, s.mask) * dt;
-      s.vy -= G * dt;
+      s.vz += wind(s.time, s.y, s.mask, s.descending) * dt;
+      s.vy -= grav(s.mask) * dt;
       const sp = Math.hypot(s.vz, s.vy) + 1e-4;
       const dc = DRAG * sp;
       s.vz -= (s.vz / sp) * dc * dt;
@@ -715,6 +856,9 @@
       s.y += s.vy * dt;
       resolveBody(s);
       if (sp > 0.8) s.angle = Math.atan2(-s.vz, s.vy);
+      if (s.crown && s.vy > -2 && Math.hypot(s.z - GATE.z, s.y - GATE.y) < 1.05) {
+        beginEnding(s);
+      }
 
       let caught = -1;
       let bestD = 1e9;
@@ -726,6 +870,7 @@
         // Still rising: the hold you came from, and anything below it, is not a catch.
         if (s.vy > 0.6 && hd.y < origin.y - 0.25) continue;
         let r = reach;
+        if (s.descending) r *= 0.82;
         if (isRest(hd.k) || hd.k === "summit") r += 0.32;
         const d = Math.hypot(s.z - hd.z, s.y - hd.y);
         const toward = (hd.y - s.y) * s.vy + (hd.z - s.z) * s.vz;
@@ -787,7 +932,16 @@
       let holding = false;
       const input = { holding: false, freezeIntro: true };
       if (s.mode === "ending") break;
-      if (s.mode === "ledge") {
+      if (s.crown && s.attached) {
+        if (s.holdT > 0.22 && s.holdT < 0.5) {
+          s.prevHolding = true;
+          s.holding = true;
+          input.holding = false;
+        } else {
+          input.holding = true;
+          if (s.holdT > 7.5) { stuck++; break; }
+        }
+      } else if (s.mode === "ledge") {
         if (options.dropAll) {
           const order = ["trophy", "letter", "ring", "photo"];
           let kind = "";
@@ -813,7 +967,7 @@
           input.holding = false;
         } else {
           input.holding = true;
-          if (s.holdT > 4.6) {
+          if (s.holdT > 7.2) {
             stuck++;
             break;
           }
@@ -821,6 +975,7 @@
       } else {
         input.holding = true; // reach a little farther while falling
       }
+      if (s.needUp || s.lock > 0) input.holding = false;
       if (options.noWind) {
         // zero wind by shifting time-independent: monkeypatch through y gate
         // handled below by replacing function? can't. Use a high wind start by
@@ -860,10 +1015,88 @@
     return windReal(t, y, mask);
   }
 
+  function catchNeed(descending, target) {
+    let need = descending ? CATCH * 0.82 : CATCH;
+    if (target && target.k && (isRest(target.k) || target.k === "summit")) need += 0.28;
+    return need;
+  }
+
+  function gotBit(s, bit) {
+    return (s.reclaimed & bit) !== 0 && (s.mask & bit) !== 0;
+  }
+
+  function simulateReturn(kind) {
+    kind = kind || "trophy";
+    const bit = ITEMS[kind].bit;
+    const s = createState();
+    s.intro = 0;
+    s.settle = 1;
+    const dt = 1 / 100;
+    let guard = 0;
+    while (guard < 70000) {
+      guard++;
+      if (s.mode === "ending") break;
+      if (s.falls > 3) break;
+      const input = { holding: false, freezeIntro: true };
+      const got = (s.reclaimed & bit) !== 0;
+      if (s.mode === "ledge") {
+        if (!got && (s.mask & bit)) input.dropKind = kind;
+        else input.keep = true;
+      } else if (s.mode === "drop" || s.mode === "impact" || s.needUp || s.lock > 0) {
+        input.holding = false;
+      } else if (!s.attached) {
+        input.holding = true;
+      } else if (s.crown && got) {
+        if (s.holdT > 0.22 && s.holdT < 0.48) {
+          s.prevHolding = true;
+          s.holding = true;
+          input.holding = false;
+        } else input.holding = true;
+      } else if ((s.crown && !got) || (s.descending && !got)) {
+        const here = HOLDS[s.holdIndex];
+        const target = lowerHold(here);
+        if (!target) break;
+        const hit = arcMin(s.mask, Math.max(0.2, s.holdT), here, target, s.time, true, true);
+        const need = catchNeed(true, target);
+        if (s.settle > 0.9 && s.holdT > 0.4 && hit.st && hit.st.angle < -0.55 && hit.minD < need) {
+          s.prevHolding = true;
+          s.holding = true;
+          input.holding = false;
+        } else input.holding = true;
+      } else {
+        const ni = nextIndex(s.holdIndex);
+        if (ni < 0) break;
+        const target = HOLDS[ni];
+        const preview = arcMin(s.mask, Math.max(0.2, s.holdT + dt), HOLDS[s.holdIndex], target, s.time, false, s.descending);
+        if (s.settle > 0.9 && s.holdT > 0.25 && preview.minD < catchNeed(s.descending, target)) {
+          s.prevHolding = true;
+          s.holding = true;
+          input.holding = false;
+        } else {
+          input.holding = true;
+          if (s.holdT > 8) break;
+        }
+      }
+      step(s, dt, input);
+    }
+    return {
+      ok: s.mode === "ending" && gotBit(s, bit),
+      mode: s.mode,
+      hold: s.holdIndex,
+      mask: s.mask,
+      reclaimed: s.reclaimed,
+      lost: s.lost.length,
+      falls: s.falls,
+      guard: guard,
+      y: Math.round(s.y * 10) / 10,
+    };
+  }
+
   return {
     L: L,
     G: G,
     CATCH: CATCH,
+    GATE: GATE,
     SUMMIT_Y: SUMMIT_Y,
     HOLDS: HOLDS,
     ITEMS: ITEMS,
@@ -886,6 +1119,7 @@
     step: step,
     arcMin: arcMin,
     isRest: isRest,
+    simulateReturn: simulateReturn,
     simulate: function (options) {
       options = options || {};
       windGate = !options.noWind;

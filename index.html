@@ -38,6 +38,7 @@
     align-items: center; justify-content: center; text-align: center;
     transition: opacity 0.8s ease;
   }
+  body.shot #title, body.shot #pack, body.shot #ending, body.shot #marks, body.shot #whisper { transition: none !important; }
   #title h1 {
     margin: 0; font-weight: 400; font-size: clamp(92px, 15vh, 168px);
     letter-spacing: 0; line-height: 1; text-shadow: 0 2px 2px rgba(0,0,0,0.28), 0 14px 40px rgba(0,0,0,0.5);
@@ -88,9 +89,8 @@
     border: 1px solid rgba(244, 239, 230, 0.16);
   }
   #pack.show, #ending.show { opacity: 1; pointer-events: auto; }
-  #pack h2 { margin: 0.15em 0 0; font-size: 26px; font-weight: 400; letter-spacing: 0.18em; }
-  #packLead { margin: 0.7em 0 0.85em; font-size: 13px; letter-spacing: 0.04em; line-height: 1.65; color: var(--dim); }
-  #pack .kicker { margin: 0; letter-spacing: 0.28em; font-size: 11px; opacity: 0.7; }
+  #pack h2 { margin: 0.35em 0 0.7em; font-size: 26px; font-weight: 400; letter-spacing: 0.18em; }
+  #pack .kicker { display: none; }
   .mem {
     display: flex; gap: 12px; align-items: center; text-align: left;
     width: 100%; margin: 0 0 8px; padding: 8px 10px;
@@ -113,13 +113,32 @@
     margin-top: 1.15em; border-bottom: 1px solid rgba(244,239,230,0.45);
     letter-spacing: 0.24em; font-size: 14px; padding: 8px 2px 4px;
   }
+  #marks {
+    position: absolute; left: 50%; bottom: calc(4.2vh + env(safe-area-inset-bottom));
+    transform: translateX(-50%); display: flex; gap: 6px; opacity: 0;
+    pointer-events: none;
+  }
+  #marks.show { opacity: 0.88; }
+  #marks.over { bottom: auto; top: calc(18vh + env(safe-area-inset-top)); }
+  #marks i {
+    width: 8px; height: 12px; display: block;
+    border: 1px solid rgba(244, 239, 230, 0.42);
+    background: transparent;
+  }
+  #marks i.on { background: #f4efe6; border-color: transparent; box-shadow: 0 0 8px rgba(244,239,230,0.35); }
+  #whisper {
+    position: absolute; left: 50%; top: 16vh; transform: translateX(-50%);
+    width: min(88vw, 460px); text-align: center; margin: 0;
+    font-size: 16px; letter-spacing: 0.1em; line-height: 1.6;
+    opacity: 0; pointer-events: none;
+    text-shadow: 0 2px 18px rgba(0,0,0,0.6);
+  }
   @media (max-aspect-ratio: 4/5) {
     #title h1 { font-size: clamp(84px, 12vh, 132px); }
     #meter { right: calc(10px + env(safe-area-inset-right)); top: 13vh; bottom: 16vh; }
     #hint { font-size: 13px; letter-spacing: 0.08em; }
     #pack { width: min(78vw, 420px); padding: 14px 14px 12px; }
     #pack h2 { font-size: 22px; }
-    #packLead { font-size: 12px; }
     .mem { padding: 7px 8px; }
   }
 </style>
@@ -144,10 +163,11 @@
   <section id="pack">
     <p class="kicker" id="packKicker"></p>
     <h2 id="packTitle"></h2>
-    <p id="packLead"></p>
     <div id="packItems"></div>
     <button id="packKeep" type="button"></button>
   </section>
+  <div id="marks" aria-hidden="true"></div>
+  <p id="whisper"></p>
   <section id="ending">
     <p id="e1"></p><p id="e2"></p><p id="e3"></p>
     <button id="again" type="button">再爬一次</button>
@@ -169,8 +189,9 @@ const ui = {
   pack: document.getElementById("pack"),
   packKicker: document.getElementById("packKicker"),
   packTitle: document.getElementById("packTitle"),
-  packLead: document.getElementById("packLead"),
   packItems: document.getElementById("packItems"),
+  marks: document.getElementById("marks"),
+  whisper: document.getElementById("whisper"),
   packKeep: document.getElementById("packKeep"),
   ending: document.getElementById("ending"),
   e1: document.getElementById("e1"),
@@ -181,7 +202,8 @@ const ui = {
   now: document.getElementById("nowMark"),
   best: document.getElementById("bestMark"),
 };
-const shot = new URLSearchParams(location.search).has("shot");
+const shotName = new URLSearchParams(location.search).get("shot") || "";
+const shot = !!shotName;
 const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const coarse = matchMedia("(pointer: coarse)").matches;
 const SAVE_KEY = "fangxia-v1";
@@ -191,6 +213,16 @@ const saved = loadSave();
 let lang = saved.lang === "en" ? "en" : "zh";
 let muted = !!saved.mute;
 let bestSaved = saved.best | 0;
+let found = saved.endings | 0;
+function persist() { writeSave({ best: bestSaved, mute: muted, lang, endings: found }); }
+function paintMarks() {
+  ui.marks.innerHTML = "";
+  for (let i = 0; i < 16; i++) {
+    const mark = document.createElement("i");
+    if (found & (1 << i)) mark.className = "on";
+    ui.marks.appendChild(mark);
+  }
+}
 const state = FX.createState();
 let holding = false, restartPulse = false, rush = false, snap = false;
 let viewScale = shot ? 1 : coarse ? 0.85 : 1;
@@ -271,7 +303,7 @@ let SKYNOW = { top: [8, 12, 24], bot: [24, 36, 64], sun: [255, 244, 230] };
 const scarf = [];
 for (let i = 0; i < 11; i++) scarf.push({ z: i * 0.11, y: 8.15, pz: i * 0.11, py: 8.15 });
 const flakes = [];
-for (let i = 0; i < 100; i++) {
+for (let i = 0; i < 170; i++) {
   flakes.push({
     z: Math.random() * 40 - 10,
     y: Math.random() * 140,
@@ -443,6 +475,8 @@ function drawSky() {
   const sx = W * (portrait ? 0.64 : 0.73);
   const sy = H * (0.5 - rise * 0.3);
   const sunR = mix(portrait ? 15 : 20, portrait ? 34 : 52, rise) * PX;
+  ctx.save();
+  ctx.globalAlpha = 1 - storm * 0.78;
   let glow = ctx.createRadialGradient(sx, sy, sunR * 0.15, sx, sy, sunR * 7);
   glow.addColorStop(0, cssa(sky.sun, 0.5));
   glow.addColorStop(0.16, cssa(sky.sun, 0.2));
@@ -468,6 +502,7 @@ function drawSky() {
   ctx.arc(sx, sy, sunR * 0.52, 0, Math.PI * 2);
   ctx.fillStyle = "#fffaf2";
   ctx.fill();
+  ctx.restore();
   if (ALT < 48 && storm < 0.75) {
     const mx = W * (portrait ? 0.28 : 0.22);
     const my = H * (0.22 + smooth(clamp(ALT / 48, 0, 1)) * 0.18);
@@ -638,10 +673,11 @@ function drawClouds() {
   const day = smooth(clamp((ALT - 14) / 42, 0, 1));
   const storm = state.stormVis == null ? 1 : state.stormVis;
   const bands = [
-    { p: 0.16, a: 0.34 + storm * 0.2, sc: 0.5, shade: true, n: 8, seed: 1.2 },
-    { p: 0.26, a: 0.5 + storm * 0.18, sc: 0.62, shade: true, n: 9, seed: 3.1 },
-    { p: 0.36, a: 0.58, sc: 0.7, shade: false, n: 10, seed: 5.5 },
-    { p: 0.48, a: 0.42 + (1 - storm) * 0.12, sc: 0.58, shade: false, n: 8, seed: 8.4 },
+    { p: 0.12, a: 0.28 + storm * 0.16, sc: 0.46, shade: true, n: 7, seed: 0.4 },
+    { p: 0.2, a: 0.4 + storm * 0.22, sc: 0.56, shade: true, n: 9, seed: 1.2 },
+    { p: 0.3, a: 0.55 + storm * 0.16, sc: 0.66, shade: true, n: 10, seed: 3.1 },
+    { p: 0.4, a: 0.62, sc: 0.74, shade: false, n: 11, seed: 5.5 },
+    { p: 0.52, a: 0.46 + (1 - storm) * 0.14, sc: 0.6, shade: false, n: 9, seed: 8.4 },
   ];
   for (let bi = 0; bi < bands.length; bi++) {
     const b = bands[bi];
@@ -827,14 +863,17 @@ function drawHolds() {
     ctx.beginPath();
     ctx.moveTo(root[0], root[1] - 2 * PX);
     ctx.quadraticCurveTo(up[0], up[1], tip[0], tip[1]);
-    ctx.strokeStyle = hot ? "rgba(255,220,180,0.9)" : "rgba(220,196,164,0.45)";
+    const icy = !!state.descending;
+    ctx.strokeStyle = icy
+      ? (hot ? "rgba(214,236,255,0.95)" : "rgba(176,214,232,0.72)")
+      : (hot ? "rgba(255,220,180,0.9)" : "rgba(220,196,164,0.45)");
     ctx.lineWidth = (hot ? 1.6 : 1) * PX;
     ctx.lineJoin = "round";
     ctx.lineCap = "round";
     ctx.stroke();
     ctx.beginPath();
     ctx.arc(tip[0], tip[1], (hot ? 2.4 : 1.7) * PX, 0, Math.PI * 2);
-    ctx.fillStyle = hot ? "#ffe6c4" : "rgba(230,200,160,0.75)";
+    ctx.fillStyle = state.descending ? (hot ? "#e7f4ff" : "rgba(198,224,236,0.8)") : (hot ? "#ffe6c4" : "rgba(230,200,160,0.75)");
     ctx.fill();
   }
 }
@@ -1082,7 +1121,7 @@ function leg(hip, knee, foot, toe, w0, w1) {
 }
 function drawClimber(dt) {
   const hold = FX.HOLDS[state.holdIndex] || FX.HOLDS[0];
-  const standing = state.mode === "ledge" || state.mode === "drop" || state.mode === "ending";
+  const standing = state.mode === "ledge" || state.mode === "drop" || state.mode === "ending" || (state.crown && !state.holding);
   let ang = 0;
   if (!standing && state.attached) ang = state.visAngle || 0;
   else if (!standing) ang = clamp(Math.atan2(state.vz, Math.max(0.85, -state.vy)) * 0.38, -0.5, 0.5);
@@ -1095,8 +1134,9 @@ function drawClimber(dt) {
   } else if (state.attached) {
     const handZ = hold.z + 0.03;
     const handY = hold.y + 0.06;
-    shZ = handZ + Math.sin(ang) * 0.7;
-    shY = handY - Math.cos(ang) * 0.7;
+    const sag = FX.weight01(state.mask) * 0.14;
+    shZ = handZ + Math.sin(ang) * (0.7 + sag);
+    shY = handY - Math.cos(ang) * (0.7 + sag);
   } else {
     shZ = state.z;
     shY = state.y + 0.42;
@@ -1156,6 +1196,68 @@ function drawClimber(dt) {
   drawRibbon(scarf, 3.1 * PX, 0.35 * PX, "#d94338");
 }
 
+function drawGate() {
+  const g = FX.GATE;
+  if (!g || Math.abs(g.y - cam.y) > H / ppm + 4) return;
+  const z = Math.max(g.z, FX.faceZ(g.y) + 0.72);
+  const top = toS(z, g.y + 1.15);
+  const bot = toS(z, g.y - 1.15);
+  const w = Math.max(14 * PX, 0.34 * ppm);
+  const midY = (top[1] + bot[1]) * 0.5;
+  const halo = ctx.createRadialGradient(top[0], midY, 4, top[0], midY, w * 5);
+  halo.addColorStop(0, "rgba(255,228,186,0.55)");
+  halo.addColorStop(1, "rgba(255,228,186,0)");
+  ctx.fillStyle = halo;
+  ctx.beginPath();
+  ctx.arc(top[0], midY, w * 5, 0, Math.PI * 2);
+  ctx.fill();
+  const glow = ctx.createLinearGradient(top[0], top[1], top[0], bot[1]);
+  glow.addColorStop(0, "rgba(255,250,240,0.15)");
+  glow.addColorStop(0.18, "rgba(255,236,206,0.95)");
+  glow.addColorStop(0.5, "rgba(255,214,160,0.88)");
+  glow.addColorStop(0.82, "rgba(255,196,140,0.7)");
+  glow.addColorStop(1, "rgba(255,186,120,0.05)");
+  ctx.fillStyle = glow;
+  ctx.fillRect(top[0] - w * 0.5, top[1], w, bot[1] - top[1]);
+  ctx.fillStyle = "rgba(255,252,244,0.95)";
+  ctx.fillRect(top[0] - w * 0.16, top[1] + (bot[1] - top[1]) * 0.18, w * 0.32, (bot[1] - top[1]) * 0.62);
+}
+function drawLost() {
+  const lost = state.lost || [];
+  for (let i = 0; i < lost.length; i++) {
+    const it = lost[i];
+    if (Math.abs(it.y - cam.y) > H / ppm + 2) continue;
+    const p = toS(it.z, it.y);
+    const glow = ctx.createRadialGradient(p[0], p[1], 1, p[0], p[1], 22 * PX);
+    glow.addColorStop(0, "rgba(255,214,150,0.55)");
+    glow.addColorStop(1, "rgba(255,214,150,0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(p[0], p[1], 22 * PX, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.save();
+    ctx.translate(p[0], p[1]);
+    const s = 11 * PX;
+    if (it.kind === "ring") {
+      ctx.lineWidth = 1.8 * PX;
+      ctx.strokeStyle = "#f0d48a";
+      ctx.beginPath();
+      ctx.arc(0, 0, s * 0.42, 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (it.kind === "trophy") {
+      ctx.fillStyle = "#e6b34d";
+      ctx.fillRect(-s * 0.28, -s * 0.05, s * 0.56, s * 0.42);
+      ctx.fillRect(-s * 0.46, -s * 0.22, s * 0.22, s * 0.28);
+      ctx.fillRect(s * 0.24, -s * 0.22, s * 0.22, s * 0.28);
+      ctx.fillStyle = "#f3d48a";
+      ctx.fillRect(-s * 0.1, -s * 0.34, s * 0.2, s * 0.16);
+    } else {
+      ctx.fillStyle = it.kind === "photo" ? "#d7dee8" : "#f4efe4";
+      ctx.fillRect(-s * 0.36, -s * 0.46, s * 0.72, s * 0.92);
+    }
+    ctx.restore();
+  }
+}
 function drawDrop() {
   if (state.dropT < 0 || !state.dropKind) return;
   const p = toS(state.dropZ, state.dropY);
@@ -1263,6 +1365,10 @@ function drawGrade() {
     ctx.fillStyle = "rgba(8,12,22," + (storm * 0.18) + ")";
     ctx.fillRect(0, 0, W, H);
   }
+  if (state.descending) {
+    ctx.fillStyle = "rgba(150,186,214,0.08)";
+    ctx.fillRect(0, 0, W, H);
+  }
   const v = ctx.createRadialGradient(W * 0.48, H * 0.42, H * 0.2, W * 0.5, H * 0.5, H * 0.78);
   v.addColorStop(0, "rgba(0,0,0,0)");
   v.addColorStop(1, "rgba(0,0,0,0.46)");
@@ -1324,6 +1430,8 @@ function render(dt) {
   drawWall();
   drawShelves();
   drawHolds();
+  drawLost();
+  drawGate();
   drawArc();
   drawClimber(dtS);
   drawDrop();
@@ -1362,11 +1470,19 @@ function audioStart() {
   o1.connect(g); o2.connect(g); g.connect(master);
   o1.start(); o2.start();
   audio.drone = { o1, o2, g };
+  const o3 = actx.createOscillator();
+  const g3 = actx.createGain();
+  o3.type = "sine";
+  o3.frequency.value = 523.25;
+  g3.gain.value = 0;
+  o3.connect(g3).connect(master);
+  o3.start();
+  audio.clear = g3;
 }
 function setMuted(v) {
   muted = v;
   if (audio.master) audio.master.gain.value = muted ? 0 : 0.85;
-  writeSave({ best: bestSaved, mute: muted, lang });
+  persist();
   ui.mute.classList.toggle("off", muted);
 }
 function tone(freq, dur, type, vol, slide) {
@@ -1409,6 +1525,10 @@ function playSfx(list) {
   for (const s of list) {
     if (s === "release") noiseBurst(0.28, 0.08, 900, 220);
     else if (s === "catch") { tone(174.6, 0.22, "sine", 0.05); tone(349.2, 0.4, "triangle", 0.035); }
+    else if (s === "land") { tone(92, 0.22, "sine", 0.07, 54); noiseBurst(0.18, 0.08, 160, 55); }
+    else if (s === "slip") noiseBurst(0.24, 0.055, 1600, 280);
+    else if (s === "pickup") { tone(494, 0.4, "sine", 0.04); tone(740, 0.7, "triangle", 0.028); }
+    else if (s === "keep") tone(311, 0.25, "sine", 0.02);
     else if (s === "arm") tone(740, 0.05, "sine", 0.02);
     else if (s === "near") tone(880, 0.35, "sine", 0.03, 420);
     else if (s === "drop") { tone(392, 2.4, "sine", 0.045); tone(523.25, 2.8, "triangle", 0.03); }
@@ -1427,6 +1547,13 @@ function music(alt, mode) {
   const climb = clamp((alt - 6) / 100, 0, 1);
   audio.drone.o1.frequency.setTargetAtTime(mix(78, 130.8, climb * (1 - storm * 0.35)), audio.ctx.currentTime, 0.4);
   audio.drone.g.gain.setTargetAtTime(quiet ? 0.004 : mode === "ending" ? 0.03 : 0.012, audio.ctx.currentTime, 0.4);
+  if (audio.clear) {
+    const open = mode === "play" && storm < 0.45 ? (0.45 - storm) * 0.03 : 0;
+    audio.clear.gain.setTargetAtTime(open, audio.ctx.currentTime, 0.6);
+  }
+  if (state.descending) {
+    audio.wind.gain.setTargetAtTime(clamp(0.08 + storm * 0.08, 0, 0.2), audio.ctx.currentTime, 0.2);
+  }
   if (state.time > audio.nextNote && mode === "play") {
     tone(SCALE[(Math.floor(alt / 9) + Math.floor(state.time * 0.2)) % SCALE.length], 1.6, "triangle", 0.02);
     audio.nextNote = state.time + 2.6 + (Math.sin(state.time * 0.3) * 0.5 + 0.5) * 1.8;
@@ -1451,13 +1578,12 @@ function syncUI() {
   ui.alt.textContent = Math.max(0, Math.round(alt)) + (lang === "zh" ? "米" : "m");
   ui.best.style.bottom = clamp(bestSaved / FX.SUMMIT_Y, 0, 1) * 100 + "%";
   ui.best.style.opacity = bestSaved > 8 ? "0.9" : "0";
-  const showPack = state.mode === "ledge" || state.mode === "drop";
+  const showPack = state.mode === "ledge";
   ui.pack.classList.toggle("show", showPack);
   document.getElementById("meter").style.opacity = showPack ? "0" : "";
   if (showPack) {
-    ui.packKicker.textContent = state.mode === "drop" ? "" : ttext("歇脚", "A rest");
-    ui.packTitle.textContent = state.mode === "drop" ? ttext("它往下走了", "It is falling") : ttext(U.packZh, U.packEn);
-    ui.packLead.textContent = state.mode === "drop" ? ttext("风雪会松一点。", "The storm eases.") : ttext(U.packLeadZh, U.packLeadEn);
+    ui.packKicker.textContent = "";
+    ui.packTitle.textContent = ttext(U.packZh, U.packEn);
     ui.packKeep.textContent = ttext(U.carryZh, U.carryEn);
     ui.packKeep.style.display = state.mode === "ledge" ? "" : "none";
     const key = lang + ":" + FX.ORDER.filter(function (k) { return state.mask & FX.ITEMS[k].bit; }).join(",");
@@ -1488,10 +1614,29 @@ function syncUI() {
   const showEnd = state.mode === "ending" && state.endingT > 0.8;
   ui.ending.classList.toggle("show", showEnd);
   if (state.mode === "ending") {
+    const bit = 1 << (state.mask & 15);
+    if ((found & bit) === 0) { found |= bit; persist(); paintMarks(); }
     const lines = (FX.ENDINGS[state.mask] || FX.ENDINGS[15])[lang === "en" ? "en" : "zh"];
-    ui.e1.textContent = lines[0];
-    ui.e2.textContent = lines[1];
-    ui.e3.textContent = lines[2];
+    ui.e1.textContent = lines[0] || "";
+    ui.e2.textContent = lines[1] || "";
+    let back = "";
+    FX.ORDER.forEach(function (k) {
+      const spec = FX.ITEMS[k];
+      if (!back && (state.reclaimed & spec.bit) && (state.mask & spec.bit)) back = ttext(spec.backZh, spec.backEn);
+    });
+    ui.e3.textContent = back;
+  }
+  const titleOn = parseFloat(ui.title.style.opacity) > 0.35;
+  ui.marks.classList.toggle("show", titleOn || showEnd);
+  ui.marks.classList.toggle("over", showEnd);
+  if (state.reveal && state.revealT >= 0 && FX.ITEMS[state.reveal]) {
+    const spec = FX.ITEMS[state.reveal];
+    ui.whisper.textContent = ttext(spec.backZh, spec.backEn);
+    const t = state.revealT;
+    const a = t < 0.35 ? t / 0.35 : t > 3.5 ? Math.max(0, 1 - (t - 3.5) / 0.9) : 1;
+    ui.whisper.style.opacity = String(a);
+  } else {
+    ui.whisper.style.opacity = "0";
   }
   ui.restart.style.visibility = state.mode === "ending" ? "hidden" : "visible";
 }
@@ -1534,7 +1679,7 @@ function frame(now) {
     const peak = Math.round(state.bestRun);
     if (peak > bestSaved) {
       bestSaved = peak;
-      writeSave({ best: bestSaved, mute: muted, lang });
+      persist();
       tone(587, 0.3, "sine", 0.03);
     }
     playSfx(sounds);
@@ -1555,6 +1700,7 @@ function unlock() {
 document.addEventListener("pointerdown", (e) => {
   unlock();
   if (e.target.closest && e.target.closest("button")) return;
+  if (state.mode === "ledge" || state.mode === "drop") return;
   holding = true; rush = true;
 }, { passive: false });
 document.addEventListener("pointerup", () => { holding = false; });
@@ -1570,7 +1716,7 @@ document.addEventListener("keydown", (e) => {
 document.addEventListener("keyup", (e) => { if (e.code === "Space") holding = false; });
 function toggleLang() {
   lang = lang === "zh" ? "en" : "zh";
-  writeSave({ best: bestSaved, mute: muted, lang });
+  persist();
   syncUI();
 }
 ui.mute.addEventListener("click", () => setMuted(!muted));
@@ -1580,8 +1726,49 @@ ui.restart.addEventListener("click", fullRestart);
 ui.again.addEventListener("click", fullRestart);
 ui.packKeep.addEventListener("click", function () { wantKeep = true; });
 setMuted(muted);
+paintMarks();
 syncUI();
-requestAnimationFrame(frame);
+function applyShot(name) {
+  if (name === "storm") {
+    window.__fx.teleport(3);
+    state.mask = 15;
+    state.stormVis = 1;
+    state.intro = 0;
+  } else if (name === "pack") {
+    window.__fx.openPack(5);
+    state.mask = 15;
+    state.stormVis = 1;
+  } else if (name === "clear") {
+    window.__fx.teleport(20);
+    state.mask = 1;
+    state.stormVis = 0.08;
+    state.intro = 0;
+  } else if (name === "gate") {
+    window.__fx.teleport(FX.HOLDS.length - 1);
+    state.crown = true;
+    state.mask = 0;
+    state.stormVis = 0.02;
+    state.intro = 0;
+    const h = FX.HOLDS[state.holdIndex];
+    state.y = h.y + 0.22;
+    state.z = Math.max(h.z, FX.faceZ(h.y) + 0.3);
+  } else if (name === "descent") {
+    window.__fx.teleport(5);
+    state.descending = true;
+    state.mask = 11;
+    state.stormVis = 0.95;
+    state.intro = 0;
+    const home = FX.HOLDS[4];
+    state.lost = [{ kind: "trophy", bit: 4, y: home.y + 0.22, z: Math.max(home.z + 0.35, FX.faceZ(home.y) + 0.4), hold: 4 }];
+  } else if (name === "ends") {
+    found = 0x5a3d;
+    paintMarks();
+    window.__fx.ending(9);
+    state.reclaimed = 8;
+    state.intro = 0;
+  }
+  snap = true;
+}
 
 window.__fx = {
   ready,
@@ -1641,6 +1828,13 @@ window.__fx = {
     snap = true;
   },
 };
+if (shot) document.body.classList.add("shot");
+if (shotName) {
+  applyShot(shotName);
+  render(0.016);
+  syncUI();
+}
+requestAnimationFrame(frame);
 </script>
 </body>
 </html>
