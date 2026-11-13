@@ -247,13 +247,12 @@ const FS = `#version 300 es
 precision highp float;
 out vec4 fragColor;
 uniform vec2 uRes;
-uniform float uTime, uFov, uDay, uQ, uRope, uPose, uWeight, uArmed, uDotN, uBurst, uFade, uSway;
+uniform float uTime, uFov, uDay, uQ, uRope, uPose, uWeight, uArmed, uDotN, uBurst, uSway;
 uniform vec3 uCam, uFwd, uRight, uUp, uSun, uGrip, uHang, uPiton;
 uniform vec2 uVel;
 uniform vec4 uItems;
 uniform vec4 uHolds[8];
 uniform vec3 uDots[12];
-uniform vec2 uLedge[5];
 uniform vec4 uDrop;
 
 float hash21(vec2 p) {
@@ -271,22 +270,16 @@ float noise(vec2 p) {
   float d = hash21(i + vec2(1.0, 1.0));
   return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
 }
-float fbm(vec2 p) {
-  float v = 0.0, a = 0.5;
-  for (int i = 0; i < 3; i++) {
-    v += a * noise(p);
-    p = p * 2.03 + vec2(1.7, 9.2);
-    a *= 0.5;
-  }
-  return v;
-}
-float fbm2(vec2 p) {
-  return noise(p) * 0.65 + noise(p * 2.1 + 3.0) * 0.35;
+float ridge(vec2 p) {
+  float a = 1.0 - abs(noise(p) * 2.0 - 1.0);
+  float b = 1.0 - abs(noise(p * 2.15 + 5.2) * 2.0 - 1.0);
+  return a * 0.62 + b * 0.38;
 }
 void radii(float y, out float rx, out float rz) {
-  float k = clamp(y / 110.0, 0.0, 1.0);
-  rx = mix(7.2, 3.4, k) + sin(y * 0.07 + 0.6) * 0.28;
-  rz = mix(16.0, 8.0, k) + sin(y * 0.05) * 1.1;
+  float k = clamp((y + 6.0) / 124.0, 0.0, 1.0);
+  float s = k * k * (3.0 - 2.0 * k);
+  rx = mix(11.2, 1.45, s) + sin(y * 0.055) * 1.15 + sin(y * 0.16 + 1.2) * 0.35;
+  rz = mix(15.8, 2.7, s) + sin(y * 0.047 + 0.8) * 1.35;
 }
 float faceX(float y, float z) {
   float rx, rz;
@@ -294,167 +287,140 @@ float faceX(float y, float z) {
   float zz = clamp(z / rz, -0.96, 0.96);
   return -rx * sqrt(max(0.0, 1.0 - zz * zz));
 }
-float hitEllipse(vec3 ro, vec3 rd, vec3 c, float rx, float rz, float y0, float y1, out vec3 n) {
+float rockSDF(vec3 p) {
+  float rx, rz;
+  radii(p.y, rx, rz);
+  float rg = ridge(vec2(p.y * 0.09, p.z * 0.11));
+  rx += rg * 0.85;
+  rz += rg * 0.45;
+  vec2 e = vec2(p.x / rx, p.z / rz);
+  float d = (length(e) - 1.0) * min(rx, rz);
+  d = max(d, p.y - 116.0);
+  return d;
+}
+float peakSDF(vec3 p, vec3 c, float rad, float hgt) {
+  vec3 q = p - c;
+  float k = clamp(q.y / hgt, 0.0, 1.0);
+  float r = mix(rad, rad * 0.08, k * k);
+  float d = length(q.xz) - r;
+  d = max(d, q.y - hgt);
+  d = max(d, -q.y - 8.0);
+  return d;
+}
+vec3 sunCol() {
+  return mix(vec3(1.0, 0.93, 0.82), vec3(1.0, 0.84, 0.62), smoothstep(0.15, 0.8, uDay));
+}
+vec3 sky(vec3 rd) {
+  float h = rd.y;
+  float day = clamp(uDay, 0.0, 1.0);
+  vec3 zen = mix(vec3(0.10, 0.22, 0.48), vec3(0.28, 0.55, 0.86), day);
+  vec3 hor = mix(vec3(0.96, 0.58, 0.36), vec3(1.0, 0.78, 0.55), pow(day, 0.7));
+  vec3 ground = mix(vec3(0.16, 0.18, 0.24), vec3(0.62, 0.5, 0.42), day);
+  vec3 col = mix(hor, zen, smoothstep(-0.02, 0.48, h));
+  col = mix(ground, col, smoothstep(-0.35, 0.02, h));
+  float sd = max(dot(rd, normalize(uSun)), 0.0);
+  vec3 sc = sunCol();
+  col += sc * pow(sd, 4.0) * 0.55;
+  col += sc * pow(sd, 18.0) * 0.85;
+  col += sc * pow(sd, 280.0) * 6.0;
+  vec2 sp = rd.xz / (abs(rd.y) + 0.5) * 36.0;
+  vec2 id = floor(sp);
+  vec2 f = fract(sp) - 0.5;
+  float n = hash21(id);
+  float star = smoothstep(0.04, 0.0, length(f)) * step(0.972, n);
+  col += star * (1.0 - smoothstep(0.42, 0.78, day)) * smoothstep(0.02, 0.3, h);
+  return col;
+}
+float cloudN(vec3 p) {
+  vec2 q = p.xz * 0.035 + vec2(p.y * 0.01, uTime * 0.012);
+  return noise(q) * 0.65 + noise(q * 2.05 + 4.0) * 0.35;
+}
+float cloudDen(vec3 p, vec3 ro) {
+  float h = clamp((p.y - 2.0) / 34.0, 0.0, 1.0);
+  float profile = smoothstep(0.0, 0.22, h) * smoothstep(1.0, 0.45, h);
+  float n = cloudN(p);
+  float d = smoothstep(0.38, 0.68, n) * profile * 1.35;
+  d *= smoothstep(7.0, 18.0, length(p - ro));
+  return d;
+}
+vec3 shadeRock(vec3 p, vec3 n, vec3 rd, float snowBias) {
+  vec2 uv = p.yz * 0.42;
+  float rg = ridge(uv);
+  float rgx = ridge(uv + vec2(0.08, 0.0));
+  float rgz = ridge(uv + vec2(0.0, 0.08));
+  vec3 n2 = normalize(n + vec3(0.0, (rg - rgx) * 0.12, (rg - rgz) * 0.12));
+  float grit = noise(p.yz * 0.18);
+  vec3 rock = mix(vec3(0.30, 0.36, 0.46), vec3(0.52, 0.50, 0.48), grit);
+  float snowN = smoothstep(0.5, 0.85, n.y);
+  float snowH = smoothstep(50.0, 86.0, p.y);
+  float snow = clamp(max(max(snowN, snowH), snowBias), 0.0, 1.0);
+  vec3 sn = mix(vec3(0.73, 0.8, 0.9), vec3(1.0, 0.98, 0.96), clamp(dot(n, normalize(uSun)) * 0.6 + 0.45, 0.0, 1.0));
+  vec3 albedo = mix(rock, sn, snow);
+  vec3 sc = sunCol();
+  vec3 skyA = vec3(0.42, 0.55, 0.78);
+  float ndl = dot(n2, normalize(uSun));
+  float key = smoothstep(-0.05, 0.55, ndl);
+  float rim = pow(1.0 - max(dot(n2, -rd), 0.0), 3.0);
+  vec3 col = mix(albedo * skyA, albedo * sc, key);
+  col += rim * sc * 0.7;
+  col += pow(max(dot(reflect(-normalize(uSun), n2), -rd), 0.0), 36.0) * snow * sc * 0.35;
+  return col;
+}
+float hitEll(vec3 ro, vec3 rd, vec3 c, float rx, float rz, float y0, float y1, out vec3 n) {
   vec3 o = ro - c;
-  float invx = 1.0 / (rx * rx);
-  float invz = 1.0 / (rz * rz);
-  float A = rd.x * rd.x * invx + rd.z * rd.z * invz;
-  float B = 2.0 * (o.x * rd.x * invx + o.z * rd.z * invz);
-  float C = o.x * o.x * invx + o.z * o.z * invz - 1.0;
+  float ix = 1.0 / (rx * rx);
+  float iz = 1.0 / (rz * rz);
+  float A = rd.x * rd.x * ix + rd.z * rd.z * iz;
+  float B = 2.0 * (o.x * rd.x * ix + o.z * rd.z * iz);
+  float C = o.x * o.x * ix + o.z * o.z * iz - 1.0;
   float disc = B * B - 4.0 * A * C;
   n = vec3(0.0, 1.0, 0.0);
-  if (disc < 0.0 || A < 1e-6) return -1.0;
+  if (disc < 0.0 || A < 1e-5) return -1.0;
   float s = sqrt(disc);
-  float t1 = (-B - s) / (2.0 * A);
-  float t2 = (-B + s) / (2.0 * A);
-  float ts[2] = float[2](t1, t2);
+  float tA = (-B - s) / (2.0 * A);
+  float tB = (-B + s) / (2.0 * A);
   for (int i = 0; i < 2; i++) {
-    float t = ts[i];
-    if (t < 0.03) continue;
+    float t = i == 0 ? tA : tB;
+    if (t < 0.04) continue;
     vec3 p = ro + rd * t;
-    if (p.y <= y1 && p.y >= y0) {
-      n = normalize(vec3((p.x - c.x) * invx, 0.0, (p.z - c.z) * invz));
+    if (p.y >= y0 && p.y <= y1) {
+      n = normalize(vec3((p.x - c.x) * ix, 0.0, (p.z - c.z) * iz));
       return t;
     }
   }
   if (abs(rd.y) > 1e-4) {
-    for (int k = 0; k < 2; k++) {
-      float yc = k == 0 ? y1 : y0;
-      float tc = (yc - ro.y) / rd.y;
-      if (tc < 0.03) continue;
+    float tc = (y1 - ro.y) / rd.y;
+    if (tc > 0.04) {
       vec3 p = ro + rd * tc;
       vec3 d = p - c;
-      if (d.x * d.x * invx + d.z * d.z * invz < 1.0) {
-        n = vec3(0.0, k == 0 ? 1.0 : -1.0, 0.0);
+      if (d.x * d.x * ix + d.z * d.z * iz < 1.0) {
+        n = vec3(0.0, 1.0, 0.0);
         return tc;
       }
     }
   }
   return -1.0;
 }
-float hitCliff(vec3 ro, vec3 rd, out vec3 n) {
-  float best = 1e9;
-  n = vec3(0.0, 1.0, 0.0);
-  float seed = 8.0;
-  for (int s = 0; s < 3; s++) {
-    float t = seed;
-    seed += 14.0;
-    vec3 nn = vec3(0.0, 1.0, 0.0);
-    bool ok = true;
-    for (int i = 0; i < 2; i++) {
-      float y = clamp(ro.y + rd.y * t, -20.0, 106.0);
-      float rx, rz;
-      radii(y, rx, rz);
-      float ht = hitEllipse(ro, rd, vec3(0.0), rx, rz, -40.0, 107.2, nn);
-      if (ht < 0.0) { ok = false; break; }
-      t = ht;
-    }
-    if (ok && t > 0.03 && t < best) { best = t; n = nn; }
+float marchRock(vec3 ro, vec3 rd, float t0, out vec3 n) {
+  float t = max(t0 - 1.6, 0.05);
+  float best = -1.0;
+  for (int i = 0; i < 16; i++) {
+    if (uQ < 0.5 && i >= 8) break;
+    vec3 p = ro + rd * t;
+    float d = rockSDF(p);
+    if (d < 0.045) { best = t; break; }
+    t += max(d * 0.65, 0.03);
+    if (t > t0 + 2.4) break;
   }
-  return best < 1e8 ? best : -1.0;
-}
-float hitBox(vec3 ro, vec3 rd, vec3 bmin, vec3 bmax, out vec3 n) {
-  vec3 inv = sign(rd) / max(abs(rd), vec3(1e-5));
-  vec3 t0s = (bmin - ro) * inv;
-  vec3 t1s = (bmax - ro) * inv;
-  vec3 tsm = min(t0s, t1s);
-  vec3 tbg = max(t0s, t1s);
-  float t0 = max(max(tsm.x, tsm.y), tsm.z);
-  float t1 = min(min(tbg.x, tbg.y), tbg.z);
-  n = vec3(0.0, 1.0, 0.0);
-  if (t1 < max(t0, 0.02)) return -1.0;
-  float t = t0 > 0.02 ? t0 : t1;
-  vec3 p = ro + rd * t;
-  vec3 c = (bmin + bmax) * 0.5;
-  vec3 e = max((bmax - bmin) * 0.5, vec3(0.001));
-  vec3 q = abs(p - c) / e;
-  if (q.y >= q.x && q.y >= q.z) n = vec3(0.0, sign(p.y - c.y), 0.0);
-  else if (q.x >= q.z) n = vec3(sign(p.x - c.x), 0.0, 0.0);
-  else n = vec3(0.0, 0.0, sign(p.z - c.z));
-  return t;
-}
-vec3 sunCol() {
-  return mix(vec3(0.85, 0.88, 0.95), vec3(1.05, 0.72, 0.42), smoothstep(0.25, 0.95, uDay));
-}
-vec3 sky(vec3 rd) {
-  float h = rd.y;
-  float day = clamp(uDay, 0.0, 1.0);
-  vec3 zen = mix(vec3(0.025, 0.04, 0.09), vec3(0.18, 0.42, 0.78), day);
-  vec3 hor = mix(vec3(0.22, 0.24, 0.34), vec3(1.02, 0.55, 0.30), pow(day, 0.72));
-  vec3 down = mix(vec3(0.05, 0.055, 0.07), vec3(0.55, 0.48, 0.46), day);
-  vec3 col = mix(hor, zen, smoothstep(-0.02, 0.62, h));
-  col = mix(down, col, smoothstep(-0.28, 0.06, h));
-  float sd = max(dot(rd, normalize(uSun)), 0.0);
-  vec3 sc = sunCol();
-  col += sc * pow(sd, 3.0) * 0.55;
-  col += sc * pow(sd, 14.0) * 0.7;
-  col += sc * pow(sd, 220.0) * 4.0;
-  vec2 sp = rd.xz / (abs(rd.y) + 0.45) * 28.0;
-  vec2 sid = floor(sp);
-  vec2 sf = fract(sp) - 0.5;
-  float sn = hash21(sid);
-  float star = smoothstep(0.045, 0.0, length(sf)) * step(0.965, sn);
-  col += star * (1.0 - smoothstep(0.45, 0.8, day)) * smoothstep(0.05, 0.35, h) * 0.85;
-  float cir = fbm(rd.xz / (abs(rd.y) + 0.35) * 1.4 + vec2(uTime * 0.008, 0.2));
-  col = mix(col, vec3(1.0, 0.96, 0.92), smoothstep(0.58, 0.86, cir) * smoothstep(0.0, 0.4, h) * 0.16 * day);
-  return col;
-}
-float cloudDen(vec3 p, vec3 ro) {
-  float h = clamp((p.y - 50.0) / 48.0, 0.0, 1.0);
-  float profile = smoothstep(0.0, 0.18, h) * smoothstep(1.0, 0.42, h);
-  float summit = smoothstep(96.0, 112.0, p.y) * smoothstep(130.0, 108.0, p.y);
-  float n = fbm2(p.xz * 0.05 + vec2(p.y * 0.015, uTime * 0.012));
-  float d = smoothstep(0.48, 0.78, n) * profile + summit * smoothstep(0.55, 0.8, n) * 0.45;
-  float dist = length(p - ro);
-  d *= smoothstep(5.5, 14.0, dist);
-  return d;
-}
-vec3 shadeRock(vec3 p, vec3 n, vec3 rd) {
-  vec2 uv = vec2(p.y * 0.21, p.z * 0.21);
-  float h = fbm(uv);
-  float groove = noise(vec2(p.y * 0.35, p.z * 1.7));
-  float crack = noise(vec2(p.y * 1.3, p.z * 3.2));
-  vec3 n2 = normalize(n + vec3((crack - 0.5) * 0.1, (h - 0.5) * 0.05, (groove - 0.5) * 0.12));
-  float snow = smoothstep(0.05, 0.55, n2.y + (groove - 0.35) * 0.45);
-  float alt = smoothstep(42.0, 100.0, p.y);
-  snow = clamp(max(snow, alt * smoothstep(-0.2, 0.45, n2.y) * 0.85), 0.0, 1.0);
-  vec3 rock = mix(vec3(0.16, 0.18, 0.24), vec3(0.38, 0.4, 0.44), h);
-  rock = mix(rock, vec3(0.22, 0.16, 0.14), smoothstep(0.62, 0.9, crack) * 0.55);
-  rock *= 0.88 + 0.12 * groove;
-  vec3 sn = vec3(0.86, 0.9, 0.95);
-  vec3 albedo = mix(rock, sn, snow);
-  float band = 0.0;
-  for (int i = 0; i < 5; i++) {
-    float dy = abs(p.y - uLedge[i].x);
-    float dz = abs(p.z - uLedge[i].y);
-    band = max(band, (1.0 - smoothstep(0.08, 0.42, dy)) * (1.0 - smoothstep(0.2, 1.35, dz)));
-  }
-  albedo = mix(albedo, vec3(0.92, 0.94, 0.97), band);
-  vec3 sc = sunCol();
-  vec3 skyA = mix(vec3(0.25, 0.32, 0.48), vec3(0.5, 0.64, 0.82), uDay);
-  float ndl = dot(n2, normalize(uSun));
-  float diff = clamp(ndl, 0.0, 1.0);
-  float wrap = clamp(ndl * 0.5 + 0.5, 0.0, 1.0);
-  float ao = clamp(0.42 + 0.58 * groove, 0.3, 1.0);
-  ao *= 0.6 + 0.4 * smoothstep(-0.45, 0.7, n2.y);
-  vec3 col = albedo * (skyA * (0.38 + wrap * 0.4) + sc * diff * 1.25) * ao;
-  col += band * sc * 0.45;
-  float rim = pow(1.0 - max(dot(n2, -rd), 0.0), 2.6);
-  col += rim * mix(vec3(0.45, 0.55, 0.75), sc, uDay) * 0.35;
-  float edge = pow(1.0 - max(dot(normalize(n), -rd), 0.0), 2.2);
-  col += edge * sc * 0.18;
-  float spec = pow(max(dot(reflect(-normalize(uSun), n2), -rd), 0.0), 48.0) * snow;
-  col += spec * sc * 0.65;
-  float glint = pow(noise(p.yz * 5.0 + uTime * 0.02), 28.0) * snow * diff;
-  col += glint * sc * 0.12;
-  vec2 sd = p.yz - uGrip.yz;
-  float sh = exp(-dot(sd, sd) * 0.22);
-  col *= 1.0 - sh * 0.34;
-  if (uBurst > 0.01) {
-    float ring = exp(-abs(length(sd) - (1.0 - uBurst) * 1.6) * 6.0);
-    col += vec3(0.85, 0.9, 1.0) * ring * uBurst * 0.55;
-  }
-  return col;
+  if (best < 0.0) best = t0;
+  vec3 p = ro + rd * best;
+  vec2 e = vec2(0.08, 0.0);
+  n = normalize(vec3(
+    rockSDF(p + e.xyy) - rockSDF(p - e.xyy),
+    rockSDF(p + e.yxy) - rockSDF(p - e.yxy),
+    rockSDF(p + e.yyx) - rockSDF(p - e.yyx)
+  ));
+  return best;
 }
 float rSphere(vec3 ro, vec3 rd, vec3 c, float r, out vec3 n) {
   vec3 oc = ro - c;
@@ -476,11 +442,10 @@ float rEllipsoid(vec3 ro, vec3 rd, vec3 c, vec3 r, out vec3 n) {
   if (h < 0.0) return -1.0;
   float t = (-B - sqrt(h)) / (2.0 * A);
   if (t < 0.002) return -1.0;
-  vec3 p = ro + rd * t;
-  n = normalize((p - c) / (r * r));
+  n = normalize((ro + rd * t - c) / (r * r));
   return t;
 }
-vec3 segHit(vec3 ro, vec3 rd, vec3 a, vec3 b) {
+vec3 seg(vec3 ro, vec3 rd, vec3 a, vec3 b) {
   vec3 v = b - a;
   vec3 w = ro - a;
   float A = dot(rd, rd);
@@ -490,7 +455,7 @@ vec3 segHit(vec3 ro, vec3 rd, vec3 a, vec3 b) {
   float E = dot(v, w);
   float den = A * C - B * B;
   float sc, tc;
-  if (den < 1e-5) { sc = 0.0; tc = clamp(E / C, 0.0, 1.0); }
+  if (den < 1e-5) { sc = 0.0; tc = clamp(E / max(C, 1e-5), 0.0, 1.0); }
   else {
     sc = (B * E - C * D) / den;
     tc = (A * E - B * D) / den;
@@ -498,85 +463,101 @@ vec3 segHit(vec3 ro, vec3 rd, vec3 a, vec3 b) {
     else if (tc > 1.0) { tc = 1.0; sc = clamp((B - D) / A, 0.0, 1e4); }
   }
   sc = max(sc, 0.0);
-  vec3 cp = ro + rd * sc;
-  vec3 cq = a + v * tc;
-  return vec3(sc, tc, length(cp - cq));
+  return vec3(sc, tc, length((ro + rd * sc) - (a + v * tc)));
 }
-bool take(float t, vec3 n, vec3 alb, float em, inout float bt, inout vec3 bn, inout vec3 ba, inout float be) {
-  if (t > 0.002 && t < bt) { bt = t; bn = n; ba = alb; be = em; return true; }
+bool take(float t, vec3 n, vec3 alb, float em, float kind, inout float bt, inout vec3 bn, inout vec3 ba, inout float be, inout float bk) {
+  if (t > 0.002 && t < bt) { bt = t; bn = n; ba = alb; be = em; bk = kind; return true; }
   return false;
 }
-void character(vec3 ro, vec3 rd, inout float bt, inout vec3 bn, inout vec3 ba, inout float be) {
-  vec3 bound = uGrip + vec3(-0.25, 0.15, 0.0);
-  vec3 oc = ro - bound;
-  float bb = dot(oc, rd);
-  if (bb * bb - dot(oc, oc) + 6.8 < 0.0) return;
-  vec3 hang = normalize(uHang);
-  vec3 side = normalize(cross(hang, vec3(1.0, 0.05, 0.0)));
-  float packS = mix(0.62, 1.18, clamp(uWeight, 0.0, 1.0));
-  vec3 hand, head, chest, hip;
-  if (uPose > 0.5) {
-    hand = uGrip + vec3(0.0, 1.45, 0.0);
-    head = uGrip + vec3(-0.02, 1.38, 0.0);
-    chest = uGrip + vec3(0.0, 0.92, 0.0);
-    hip = uGrip + vec3(0.0, 0.48, 0.0);
-    hang = vec3(0.0, -1.0, 0.0);
-    side = vec3(0.0, 0.0, 1.0);
-  } else {
-    hand = uGrip;
-    head = hand + hang * 0.26 + vec3(-0.04, 0.0, 0.0);
-    chest = hand + hang * 0.62;
-    hip = hand + hang * 1.02;
-  }
-  vec3 pack = chest + hang * 0.08 + vec3(-0.22, 0.0, 0.0) * packS + side * uSway * 0.12;
-  vec3 n;
-  float t;
-  // hood, clearly above the pack
-  t = rSphere(ro, rd, head + vec3(-0.06, 0.0, 0.0), 0.15, n);
-  take(t, n, vec3(0.09, 0.1, 0.13), 0.0, bt, bn, ba, be);
-  // torso
-  vec3 hs = segHit(ro, rd, head, hip);
-  if (hs.z < 0.11) take(hs.x, normalize(ro + rd * hs.x - mix(head, hip, hs.y)), vec3(0.08, 0.09, 0.12), 0.0, bt, bn, ba, be);
-  // backpack sits on the back, under the hood
-  t = rEllipsoid(ro, rd, pack, vec3(0.22, 0.28, 0.2) * packS, n);
-  take(t, n, vec3(0.32, 0.11, 0.09), 0.02, bt, bn, ba, be);
-  float kick = sin(uTime * 2.0) * 0.06;
-  vec3 k1 = hip + hang * 0.38 + side * (0.07 + kick);
-  vec3 f1 = k1 + hang * 0.36;
-  vec3 k2 = hip + hang * 0.38 - side * (0.07 + kick);
-  vec3 f2 = k2 + hang * 0.36;
-  hs = segHit(ro, rd, hip, k1);
-  if (hs.z < 0.05) take(hs.x, normalize(ro + rd * hs.x - mix(hip, k1, hs.y)), vec3(0.07, 0.08, 0.1), 0.0, bt, bn, ba, be);
-  hs = segHit(ro, rd, k1, f1);
-  if (hs.z < 0.04) take(hs.x, normalize(ro + rd * hs.x - mix(k1, f1, hs.y)), vec3(0.06, 0.07, 0.09), 0.0, bt, bn, ba, be);
-  hs = segHit(ro, rd, hip, k2);
-  if (hs.z < 0.05) take(hs.x, normalize(ro + rd * hs.x - mix(hip, k2, hs.y)), vec3(0.07, 0.08, 0.1), 0.0, bt, bn, ba, be);
-  hs = segHit(ro, rd, k2, f2);
-  if (hs.z < 0.04) take(hs.x, normalize(ro + rd * hs.x - mix(k2, f2, hs.y)), vec3(0.06, 0.07, 0.09), 0.0, bt, bn, ba, be);
-  vec3 shoulder = mix(head, chest, 0.55) + side * 0.08;
-  hs = segHit(ro, rd, shoulder, hand);
-  if (hs.z < 0.045) take(hs.x, normalize(ro + rd * hs.x - mix(shoulder, hand, hs.y)), vec3(0.1, 0.11, 0.14), 0.0, bt, bn, ba, be);
-  // scarf blows sideways, a strip of red
-  vec3 neck = mix(head, chest, 0.35);
-  vec3 scarf = normalize(side * 0.85 + vec3(-0.35, 0.05, 0.0) + vec3(0.0, -uVel.y, -uVel.x) * 0.03);
-  vec3 s1 = neck + scarf * 0.42 + vec3(0.0, sin(uTime * 3.0) * 0.04, 0.0);
-  vec3 s2 = s1 + scarf * 0.38 + hang * 0.12;
-  hs = segHit(ro, rd, neck, s1);
-  if (hs.z < 0.04) take(hs.x, normalize(ro + rd * hs.x - mix(neck, s1, hs.y)), vec3(0.78, 0.14, 0.1), 0.65, bt, bn, ba, be);
-  hs = segHit(ro, rd, s1, s2);
-  if (hs.z < 0.03) take(hs.x, normalize(ro + rd * hs.x - mix(s1, s2, hs.y)), vec3(0.82, 0.16, 0.11), 0.8, bt, bn, ba, be);
-  if (uItems.z > 0.5) {
-    t = rSphere(ro, rd, pack - hang * 0.22 * packS + vec3(-0.08, 0.0, 0.0), 0.055, n);
-    take(t, n, vec3(0.86, 0.7, 0.28), 0.25, bt, bn, ba, be);
+void limb(vec3 ro, vec3 rd, vec3 a, vec3 b, float rad, vec3 alb, float em, inout float bt, inout vec3 bn, inout vec3 ba, inout float be, inout float bk) {
+  vec3 h = seg(ro, rd, a, b);
+  if (h.z < rad) {
+    vec3 p = ro + rd * h.x;
+    vec3 q = mix(a, b, h.y);
+    take(h.x, normalize(p - q), alb, em, 1.0, bt, bn, ba, be, bk);
   }
 }
-void ribbon(vec3 ro, vec3 rd, vec3 a, vec3 b, float rad, vec3 col, float em, inout float bt, inout vec3 bn, inout vec3 ba, inout float be) {
-  vec3 hs = segHit(ro, rd, a, b);
-  if (hs.z < rad) {
-    vec3 p = ro + rd * hs.x;
-    vec3 q = mix(a, b, hs.y);
-    take(hs.x, normalize(p - q + 1e-4), col, em, bt, bn, ba, be);
+void ikArm(vec3 ro, vec3 rd, vec3 shoulder, vec3 hand, vec3 pole, float l1, float l2, vec3 alb, inout float bt, inout vec3 bn, inout vec3 ba, inout float be, inout float bk) {
+  vec3 ab = hand - shoulder;
+  float dist = length(ab);
+  float maxL = l1 + l2 - 0.02;
+  if (dist > maxL) ab *= maxL / max(dist, 0.001);
+  dist = length(ab);
+  float hgt = (l1 * l1 - l2 * l2 + dist * dist) / (2.0 * max(dist, 0.001));
+  vec3 mid = shoulder + ab * (hgt / max(dist, 0.001));
+  float rr = sqrt(max(l1 * l1 - hgt * hgt, 0.0004));
+  vec3 axis = ab / max(dist, 0.001);
+  vec3 bend = normalize(pole - axis * dot(pole, axis));
+  vec3 elbow = mid + bend * rr;
+  limb(ro, rd, shoulder, elbow, 0.055, alb, 0.0, bt, bn, ba, be, bk);
+  limb(ro, rd, elbow, hand, 0.045, alb, 0.0, bt, bn, ba, be, bk);
+  vec3 n;
+  float t = rSphere(ro, rd, hand, 0.06, n);
+  take(t, n, vec3(0.55, 0.38, 0.30), 0.0, 1.0, bt, bn, ba, be, bk);
+}
+void character(vec3 ro, vec3 rd, inout float bt, inout vec3 bn, inout vec3 ba, inout float be, inout float bk) {
+  vec3 hang = normalize(uHang);
+  bool stand = uPose > 0.5;
+  vec3 up = stand ? vec3(0.0, 1.0, 0.0) : -hang;
+  vec3 wall = vec3(-1.0, 0.0, 0.0);
+  vec3 side = normalize(cross(up, wall));
+  vec3 root = uGrip;
+  if (!stand && uRope > 0.5) root = uPiton + wall * 1.85;
+  vec3 oc = ro - (root - up * 0.7);
+  float b = dot(oc, rd);
+  if (b * b - dot(oc, oc) + 9.0 < 0.0) return;
+
+  vec3 shoulder = stand ? root + vec3(0.0, 1.25, 0.0) : root - up * 0.78;
+  vec3 hip = shoulder - up * 0.48;
+  vec3 hem = hip - up * 0.58;
+  vec3 hood = shoulder + up * 0.46 + wall * 0.02;
+  float packK = mix(0.62, 1.45, clamp(uWeight, 0.0, 1.0));
+  vec3 cloak = vec3(0.11, 0.13, 0.18);
+  vec3 n;
+  float t;
+  t = rSphere(ro, rd, hood, 0.22, n);
+  take(t, n, cloak, 0.0, 1.0, bt, bn, ba, be, bk);
+  t = rSphere(ro, rd, mix(shoulder, hip, 0.45) + wall * 0.08, 0.28, n);
+  take(t, n, cloak, 0.0, 1.0, bt, bn, ba, be, bk);
+  t = rSphere(ro, rd, hip + wall * 0.06, 0.24, n);
+  take(t, n, cloak, 0.0, 1.0, bt, bn, ba, be, bk);
+  t = rSphere(ro, rd, hem + wall * 0.04, 0.2, n);
+  take(t, n, cloak * 0.9, 0.0, 1.0, bt, bn, ba, be, bk);
+  vec3 packC = hip + wall * (0.32 + 0.1 * packK) + side * (0.05 + uSway * 0.1);
+  t = rEllipsoid(ro, rd, packC, vec3(0.28, 0.36, 0.24) * packK, n);
+  take(t, n, vec3(0.46, 0.18, 0.13), 0.03, 1.0, bt, bn, ba, be, bk);
+  t = rEllipsoid(ro, rd, packC + wall * 0.12 * packK + up * 0.08 * packK, vec3(0.12, 0.08, 0.14) * packK, n);
+  take(t, n, vec3(0.33, 0.12, 0.1), 0.0, 1.0, bt, bn, ba, be, bk);
+  if (uItems.z > 0.5) {
+    t = rSphere(ro, rd, packC + up * 0.22 * packK + wall * 0.05, 0.055, n);
+    take(t, n, vec3(0.92, 0.72, 0.28), 0.35, 1.0, bt, bn, ba, be, bk);
   }
+  vec3 neck = hood - up * 0.05;
+  vec3 s0 = neck;
+  for (int i = 0; i < 4; i++) {
+    float fi = float(i);
+    vec3 dir = normalize(side * 0.9 + wall * 0.55 + vec3(0.0, sin(uTime * 2.4 + fi) * 0.45 - 0.12, cos(uTime * 1.7 + fi * 1.3) * 0.35));
+    dir += vec3(0.0, -uVel.y, -uVel.x) * 0.01;
+    vec3 s1 = s0 + dir * 0.28;
+    limb(ro, rd, s0, s1, 0.07 - fi * 0.008, vec3(0.82, 0.18, 0.12), 0.7, bt, bn, ba, be, bk);
+    s0 = s1;
+  }
+  if (!stand && uRope > 0.5) {
+    vec3 pole = wall + up * 0.2;
+    ikArm(ro, rd, shoulder + side * 0.14, uPiton + side * 0.05 + wall * 0.08, pole, 0.42, 0.4, cloak * 1.15, bt, bn, ba, be, bk);
+    ikArm(ro, rd, shoulder - side * 0.12, uPiton - side * 0.04 + wall * 0.08, pole, 0.42, 0.4, cloak * 1.15, bt, bn, ba, be, bk);
+  } else {
+    limb(ro, rd, shoulder + side * 0.12, hip + side * 0.16 - up * 0.15, 0.045, cloak * 1.1, 0.0, bt, bn, ba, be, bk);
+    limb(ro, rd, shoulder - side * 0.12, hip - side * 0.16 - up * 0.15, 0.045, cloak * 1.1, 0.0, bt, bn, ba, be, bk);
+  }
+  vec3 k1 = hem + side * 0.07 - up * 0.02;
+  vec3 f1 = k1 - up * 0.28 + side * 0.03;
+  vec3 k2 = hem - side * 0.07 - up * 0.02;
+  vec3 f2 = k2 - up * 0.28 - side * 0.03;
+  limb(ro, rd, hem, k1, 0.05, cloak, 0.0, bt, bn, ba, be, bk);
+  limb(ro, rd, k1, f1, 0.04, vec3(0.08, 0.08, 0.1), 0.0, bt, bn, ba, be, bk);
+  limb(ro, rd, hem, k2, 0.05, cloak, 0.0, bt, bn, ba, be, bk);
+  limb(ro, rd, k2, f2, 0.04, vec3(0.08, 0.08, 0.1), 0.0, bt, bn, ba, be, bk);
 }
 void main() {
   vec2 uv = (gl_FragCoord.xy / uRes) * 2.0 - 1.0;
@@ -584,227 +565,229 @@ void main() {
   float ty = tan(uFov * 0.5);
   vec3 rd = normalize(uFwd + uRight * (uv.x * aspect * ty) + uUp * (uv.y * ty));
   vec3 ro = uCam;
-  vec3 nCliff;
-  float t = hitCliff(ro, rd, nCliff);
-  vec3 spN;
-  float ts = hitEllipse(ro, rd, vec3(3.0, 0.0, -27.0), 4.2, 3.1, -10.0, 132.0, spN);
-  if (ts > 0.0 && (t < 0.0 || ts < t)) { t = ts; nCliff = spN; }
-  float tr = hitEllipse(ro, rd, vec3(1.0, 0.0, 24.0), 3.4, 2.6, 10.0, 118.0, spN);
-  if (tr > 0.0 && (t < 0.0 || tr < t)) { t = tr; nCliff = spN; }
-  vec3 col;
-  float depth = 1.0;
   vec3 sc = sunCol();
-  float farT = 90.0;
-  if (t > 0.0 && t < farT) {
-    vec3 p = ro + rd * t;
-    col = shadeRock(p, nCliff, rd);
-    depth = clamp(t / 80.0, 0.0, 1.0);
-  } else {
-    col = sky(rd);
-    t = farT;
-    depth = 1.0;
+
+  float yGuess = clamp(ro.y + rd.y * 18.0, 0.0, 110.0);
+  float rx, rz;
+  radii(yGuess, rx, rz);
+  vec3 n0;
+  float tBase = hitEll(ro, rd, vec3(0.0), rx + 1.0, rz + 0.6, -30.0, 116.0, n0);
+  float tRock = -1.0;
+  vec3 nRock = vec3(0.0, 1.0, 0.0);
+  if (tBase > 0.0) tRock = marchRock(ro, rd, tBase, nRock);
+
+  vec3 nFar;
+  float tFar = hitEll(ro, rd, vec3(10.0, -8.0, -38.0), 7.5, 6.2, -12.0, 96.0, nFar);
+  float tFar2 = hitEll(ro, rd, vec3(6.0, -16.0, 42.0), 6.0, 5.0, -10.0, 78.0, n0);
+  float tScene = 1e4;
+  vec3 nScene = vec3(0.0, 1.0, 0.0);
+  float snowB = 0.0;
+  float kind = 0.0;
+  if (tRock > 0.0 && tRock < tScene) { tScene = tRock; nScene = nRock; kind = 1.0; }
+  if (tFar > 0.0 && tFar < tScene) { tScene = tFar; nScene = nFar; kind = 2.0; snowB = 0.35; }
+  if (tFar2 > 0.0 && tFar2 < tScene) { tScene = tFar2; nScene = n0; kind = 2.0; snowB = 0.25; }
+
+  vec3 col = sky(rd);
+  float depth = 1.0;
+  float tHit = 90.0;
+  if (kind > 0.0 && tScene < 90.0) {
+    vec3 p = ro + rd * tScene;
+    col = shadeRock(p, nScene, rd, snowB);
+    if (kind > 1.5) col = mix(col, vec3(0.55, 0.62, 0.74), 0.35);
+    depth = clamp(tScene / 90.0, 0.0, 1.0);
+    tHit = tScene;
   }
-  float tCloud0 = 0.0;
-  float tCloud1 = min(t, 78.0);
-  float y0 = 48.0, y1 = 120.0;
+
+  float y0 = 0.0, y1 = 28.0;
+  float tC0 = 0.0, tC1 = 0.0;
+  bool cloudRay = false;
   if (abs(rd.y) > 1e-3) {
     float ta = (y0 - ro.y) / rd.y;
     float tb = (y1 - ro.y) / rd.y;
     float a = max(min(ta, tb), 0.0);
-    float b = min(max(ta, tb), tCloud1);
-    if (b > a) { tCloud0 = a; tCloud1 = b; }
-  } else if (ro.y > y0 && ro.y < y1) {
-    tCloud0 = 0.0; tCloud1 = min(t, 40.0);
-  } else tCloud1 = 0.0;
-  if (tCloud1 > tCloud0 + 0.5) {
-    int cs = uQ < 0.5 ? 3 : 5;
-    float dt = (tCloud1 - tCloud0) / float(cs);
-    float tt = tCloud0 + dt * 0.5;
+    float b = min(max(ta, tb), tHit);
+    if (b > a + 0.4) { tC0 = a; tC1 = b; cloudRay = true; }
+  }
+  if (cloudRay) {
+    int cs = uQ < 0.5 ? 4 : 7;
+    float dt = (tC1 - tC0) / float(cs);
+    float tt = tC0 + dt * 0.5;
     float trans = 1.0;
     vec3 acc = vec3(0.0);
-    float sunUp = clamp(normalize(uSun).y * 0.7 + 0.35, 0.2, 1.0);
-    for (int i = 0; i < 5; i++) {
-      if (i >= cs || trans < 0.04) break;
+    float sunUp = clamp(normalize(uSun).y * 0.8 + 0.25, 0.15, 1.0);
+    for (int i = 0; i < 7; i++) {
+      if (i >= cs || trans < 0.05) break;
       vec3 p = ro + rd * tt;
       float den = cloudDen(p, ro);
-      if (den > 0.02) {
-        float light = sunUp * (0.55 + 0.45 * clamp((p.y - 50.0) / 40.0, 0.0, 1.0));
-        vec3 cc = mix(vec3(0.45, 0.5, 0.62), sc, light);
-        cc = mix(cc, vec3(1.0, 0.9, 0.8), clamp(uDay, 0.0, 1.0) * light * 0.35);
-        float alpha = 1.0 - exp(-den * dt * 0.42);
-        acc += trans * alpha * cc * light;
+      if (den > 0.01) {
+        float light = sunUp * (0.45 + 0.55 * smoothstep(2.0, 34.0, p.y));
+        vec3 cc = mix(vec3(0.62, 0.68, 0.78), sc, light);
+        cc = mix(cc, vec3(1.0, 0.9, 0.78), light * clamp(uDay, 0.0, 1.0) * 0.45);
+        float alpha = 1.0 - exp(-den * dt * 0.55);
+        acc += trans * alpha * cc * (0.55 + light);
         trans *= 1.0 - alpha;
       }
       tt += dt;
     }
     col = col * trans + acc;
   }
-  vec3 fogCol = mix(vec3(0.55, 0.62, 0.74), vec3(0.95, 0.72, 0.52), clamp(uDay, 0.0, 1.0));
-  float hitY = ro.y + rd.y * min(t, 40.0);
-  float low = smoothstep(8.0, -18.0, hitY);
-  float fog = 1.0 - exp(-min(t, 90.0) * 0.0075);
-  fog = clamp(fog * 0.85 + low * 0.55 * smoothstep(4.0, 24.0, t), 0.0, 0.78);
-  col = mix(col, fogCol, fog);
 
-  float bt = t;
-  vec3 bn, ba; float be = 0.0;
-  character(ro, rd, bt, bn, ba, be);
-  if (uRope > 0.5) {
-    ribbon(ro, rd, uPiton, uGrip, 0.025, vec3(0.12, 0.08, 0.07), 0.0, bt, bn, ba, be);
-    vec3 mid = mix(uPiton, uGrip, 0.15);
-    ribbon(ro, rd, uPiton, mid + vec3(-0.05, -0.08, 0.05), 0.03, vec3(0.72, 0.12, 0.09), 0.45, bt, bn, ba, be);
+  vec3 fogC = mix(vec3(0.62, 0.72, 0.86), vec3(0.96, 0.78, 0.62), clamp(uDay, 0.0, 1.0) * 0.45);
+  float fog = 1.0 - exp(-tHit * 0.0016);
+  col = mix(col, fogC, clamp(fog, 0.0, 0.28));
+  if (rd.y < 0.12) {
+    float tc = (24.0 - ro.y) / min(rd.y, -0.04);
+    if (tc > 1.0 && tc < tHit) {
+      vec3 p = ro + rd * tc;
+      float cn = cloudN(p * 1.4);
+      float deck = smoothstep(0.42, 0.72, cn) * smoothstep(90.0, 18.0, tc);
+      vec3 cc = mix(vec3(0.78, 0.84, 0.92), vec3(1.0, 0.9, 0.78), clamp(uDay, 0.0, 1.0));
+      col = mix(col, cc, deck * 0.9);
+    }
   }
+
+  float bt = tHit;
+  vec3 bn = vec3(0.0, 1.0, 0.0);
+  vec3 ba = vec3(0.0);
+  float be = 0.0;
+  float bk = 0.0;
+  character(ro, rd, bt, bn, ba, be, bk);
+
+  if (uRope > 0.5) {
+    vec3 a = uPiton + vec3(-0.05, 0.0, 0.0);
+    vec3 mid = mix(a, uGrip, 0.5) + vec3(-0.25, -0.08, sin(uTime + uSway) * 0.08);
+    limb(ro, rd, a, mid, 0.018, vec3(0.16, 0.12, 0.1), 0.0, bt, bn, ba, be, bk);
+    limb(ro, rd, mid, uGrip + vec3(0.0, 0.15, 0.0), 0.016, vec3(0.16, 0.12, 0.1), 0.0, bt, bn, ba, be, bk);
+  }
+
   for (int i = 0; i < 8; i++) {
     vec4 h = uHolds[i];
     if (h.y < -50.0) continue;
     float x = faceX(h.y, h.z);
-    vec3 pinC = vec3(x, h.y, h.z);
-    float tp = dot(pinC - ro, rd);
-    if (tp < 0.0 || length((ro + rd * tp) - pinC) > 1.6) continue;
-    vec3 pin = vec3(x + 0.02, h.y, h.z);
-    float flutter = sin(uTime * 2.2 + h.y * 0.7) * 0.16;
-    float reach = h.w > 1.5 ? 0.42 : 0.28;
-    vec3 tip = pin + vec3(-0.25, -reach, flutter);
-    float em = h.w > 1.5 ? 0.7 : 0.28;
-    if (uArmed > 0.5 && h.w > 1.5) em = 1.05;
-    ribbon(ro, rd, pin, pin + vec3(0.05, -0.05, 0.0), 0.03, vec3(0.45, 0.42, 0.4), 0.05, bt, bn, ba, be);
-    ribbon(ro, rd, pin + vec3(-0.02, -0.02, 0.0), tip, 0.028, vec3(0.75, 0.16, 0.12), em, bt, bn, ba, be);
+    vec3 c = vec3(x - 0.85, h.y, h.z);
+    vec3 n;
+    float ts = rEllipsoid(ro, rd, c, vec3(0.55, 0.32, 0.42), n);
+    float snowH = h.w > 2.5 ? 0.8 : 0.15;
+    if (ts > 0.0 && ts < bt) {
+      vec3 rc = shadeRock(ro + rd * ts, n, rd, snowH);
+      take(ts, n, rc, 0.0, 3.0, bt, bn, ba, be, bk);
+    }
+    vec3 mark = c + vec3(-0.42, 0.12, 0.0);
+    float tm = rSphere(ro, rd, mark, h.w > 1.5 ? 0.16 : 0.1, n);
+    float em = h.w > 1.5 ? 1.8 : 0.7;
+    if (uArmed > 0.5 && h.w > 1.5) em = 1.6;
+    take(tm, n, vec3(1.0, 0.62, 0.32), em, 1.0, bt, bn, ba, be, bk);
+    limb(ro, rd, c, mark, 0.035, vec3(0.55, 0.5, 0.46), 0.15, bt, bn, ba, be, bk);
   }
+
   if (uDotN > 0.5) {
     for (int i = 0; i < 12; i++) {
       if (float(i) >= uDotN) break;
       vec3 d = uDots[i];
-      if (d.y < -50.0) continue;
+      if (d.y < -40.0) continue;
       vec3 n;
-      float rad = 0.055 + (uArmed > 0.5 ? 0.02 : 0.0);
-      float ts = rSphere(ro, rd, d, rad, n);
-      float em = mix(0.25, 1.1, float(i) / max(uDotN, 1.0));
-      if (uArmed > 0.5) em += 0.4;
-      take(ts, n, vec3(1.0, 0.78, 0.45), em, bt, bn, ba, be);
+      float ts = rSphere(ro, rd, d + vec3(-0.15, 0.0, 0.0), 0.07, n);
+      float em = mix(0.2, 0.9, float(i) / max(uDotN, 1.0));
+      take(ts, n, vec3(1.0, 0.82, 0.5), em, 1.0, bt, bn, ba, be, bk);
     }
   }
   if (uDrop.w > 0.5) {
     vec3 n;
-    vec3 c = uDrop.xyz + vec3(sin(uTime * 6.0) * 0.1, 0.0, cos(uTime * 5.0) * 0.1);
-    vec3 alb = vec3(0.8);
-    float em = 0.2;
-    if (uDrop.w < 1.5) alb = vec3(0.75, 0.78, 0.84);
-    else if (uDrop.w < 2.5) { alb = vec3(0.9, 0.75, 0.35); em = 0.6; }
-    else if (uDrop.w < 3.5) { alb = vec3(0.85, 0.68, 0.25); em = 0.45; }
-    else alb = vec3(0.86, 0.84, 0.76);
-    float ts = rSphere(ro, rd, c, 0.12, n);
-    take(ts, n, alb, em, bt, bn, ba, be);
+    vec3 c = uDrop.xyz;
+    vec3 alb = vec3(0.9, 0.75, 0.4);
+    float em = 0.3;
+    if (uDrop.w < 1.5) alb = vec3(0.82, 0.84, 0.9);
+    else if (uDrop.w > 3.5) alb = vec3(0.9, 0.88, 0.8);
+    float ts = rSphere(ro, rd, c, 0.14, n);
+    take(ts, n, alb, em, 1.0, bt, bn, ba, be, bk);
   }
-  if (bt < t - 0.001) {
-    vec3 p = ro + rd * bt;
-    vec3 scn = sunCol();
-    float ndl = clamp(dot(bn, normalize(uSun)) * 0.6 + 0.4, 0.0, 1.0);
-    float rim = pow(1.0 - max(dot(bn, -rd), 0.0), 2.0);
-    vec3 lit = ba * (ndl * scn * 1.15 + vec3(0.18, 0.22, 0.32)) + rim * mix(vec3(0.4, 0.5, 0.7), scn, uDay) * 0.55;
+
+  if (bt < tHit - 0.001 && bk > 0.5 && bk < 2.5) {
+    float ndl = clamp(dot(bn, normalize(uSun)), 0.0, 1.0);
+    float rim = pow(1.0 - max(dot(bn, -rd), 0.0), 1.7);
+    vec3 lit = ba * (vec3(0.32, 0.4, 0.55) * 0.65 + sc * ndl * 1.25);
+    lit += rim * sc * 0.95;
     lit += ba * be;
-    float cf = clamp(1.0 - exp(-bt * 0.02), 0.0, 0.55);
-    col = mix(lit, fogCol, cf);
-    depth = clamp(bt / 80.0, 0.0, 1.0);
+    float cf = clamp(1.0 - exp(-bt * 0.004), 0.0, 0.35);
+    col = mix(lit, fogC, cf);
+    depth = clamp(bt / 90.0, 0.0, 1.0);
+  } else if (bk > 2.5) {
+    col = ba;
+    depth = clamp(bt / 90.0, 0.0, 1.0);
   }
-  col *= uFade;
+
   col = max(col, 0.0);
-  vec3 enc = col / (vec3(1.0) + col);
-  fragColor = vec4(enc, depth);
-}`;
+  fragColor = vec4(col / (vec3(1.0) + col), depth);
+}
+`;
 
 const CS = `#version 300 es
 precision highp float;
 out vec4 fragColor;
 uniform sampler2D uTex;
-uniform vec2 uRes, uBlur;
-uniform float uTime, uFall, uDay, uFade, uFlash;
+uniform vec2 uRes, uSunUv;
+uniform float uTime, uDay, uFade, uFlash;
 float hash21(vec2 p) {
   p = fract(p * vec2(123.34, 345.45));
   p += dot(p, p + 34.345);
   return fract(p.x * p.y);
 }
 vec3 aces(vec3 x) {
-  const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
-  return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+  return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
 }
 vec3 restore(vec3 e) { return e / max(vec3(1.0) - e, vec3(0.004)); }
 void main() {
   vec2 uv = gl_FragCoord.xy / uRes;
+  vec3 hdr = restore(texture(uTex, uv).rgb);
   vec2 px = 1.0 / uRes;
-  vec3 c0 = restore(texture(uTex, uv).rgb);
-  float depth = texture(uTex, uv).a;
-  vec3 blurC = c0;
-  float bs = clamp(uFall * 0.8, 0.0, 0.85);
-  if (bs > 0.02) {
-    vec2 dir = (length(uBlur) > 1e-4 ? normalize(uBlur) : vec2(0.0, -1.0));
-    blurC = vec3(0.0);
-    float wsum = 0.0;
-    for (int i = -3; i <= 3; i++) {
-      float w = 1.0 - abs(float(i)) / 4.0;
-      blurC += restore(texture(uTex, uv + dir * px * float(i) * 5.0 * bs).rgb) * w;
-      wsum += w;
-    }
-    blurC /= wsum;
-    c0 = mix(c0, blurC, bs * 0.75);
-  }
-  float dof = smoothstep(0.35, 0.95, depth) * (uQSafe());
-  vec3 wide = vec3(0.0);
-  vec2 o[8];
-  o[0] = vec2(1.0, 0.0); o[1] = vec2(-1.0, 0.0); o[2] = vec2(0.0, 1.0); o[3] = vec2(0.0, -1.0);
-  o[4] = vec2(0.7, 0.7); o[5] = vec2(-0.7, 0.7); o[6] = vec2(0.7, -0.7); o[7] = vec2(-0.7, -0.7);
-  for (int i = 0; i < 8; i++) wide += restore(texture(uTex, uv + o[i] * px * (2.0 + depth * 4.0)).rgb);
-  wide /= 8.0;
-  c0 = mix(c0, wide, smoothstep(0.72, 1.0, depth) * 0.08);
-
   vec3 bloom = vec3(0.0);
-  for (int i = 1; i <= 5; i++) {
-    float fi = float(i);
-    vec2 s = px * fi * 4.0;
-    vec3 a = restore(texture(uTex, uv + vec2(s.x, 0.0)).rgb);
-    vec3 b = restore(texture(uTex, uv - vec2(s.x, 0.0)).rgb);
-    vec3 c = restore(texture(uTex, uv + vec2(0.0, s.y)).rgb);
-    vec3 d = restore(texture(uTex, uv - vec2(0.0, s.y)).rgb);
-    bloom += (a + b + c + d) * (0.22 / fi);
-  }
-  c0 += max(bloom - vec3(1.35), 0.0) * 0.12;
+  bloom += restore(texture(uTex, uv + vec2(px.x * 3.0, 0.0)).rgb);
+  bloom += restore(texture(uTex, uv - vec2(px.x * 3.0, 0.0)).rgb);
+  bloom += restore(texture(uTex, uv + vec2(0.0, px.y * 3.0)).rgb);
+  bloom += restore(texture(uTex, uv - vec2(0.0, px.y * 3.0)).rgb);
+  hdr += max(bloom * 0.25 - vec3(0.85), 0.0) * 0.35;
 
-  float l = dot(c0, vec3(0.2126, 0.7152, 0.0722));
-  vec3 sh = vec3(0.86, 0.9, 1.04);
+  vec2 toSun = uSunUv - uv;
+  float rays = 0.0;
+  if (uSunUv.x > -0.2 && uSunUv.x < 1.2 && uSunUv.y > -0.2 && uSunUv.y < 1.2) {
+    for (int i = 1; i <= 6; i++) {
+      vec3 s = restore(texture(uTex, uv + toSun * (float(i) / 8.0) * 0.65).rgb);
+      float l = max(s.r, max(s.g, s.b));
+      rays += smoothstep(0.65, 1.4, l) * (1.0 - float(i) / 8.0);
+    }
+  }
+  hdr += vec3(1.0, 0.72, 0.4) * rays * 0.06;
+
+  float luma = dot(hdr, vec3(0.2126, 0.7152, 0.0722));
+  vec3 sh = vec3(0.9, 0.94, 1.04);
   vec3 hi = mix(vec3(1.02, 0.98, 0.94), vec3(1.06, 0.94, 0.84), clamp(uDay, 0.0, 1.0));
-  c0 *= mix(sh, hi, smoothstep(0.08, 0.7, l));
-  c0 = mix(c0, c0 * vec3(0.9, 0.93, 1.02), uFall * 0.2);
-  c0 = aces(c0 * 1.05);
-  float l2 = dot(c0, vec3(0.2126, 0.7152, 0.0722));
-  c0 = mix(vec3(l2), c0, 1.06);
-  vec2 centered = uv * 2.0 - 1.0;
-  float vig = smoothstep(1.25, 0.25, length(centered * vec2(0.85, 1.0)));
-  c0 *= mix(0.72, 1.0, vig);
-  float ca = 0.0012 + uFall * 0.004;
-  c0.r = mix(c0.r, restore(texture(uTex, uv + vec2(ca, 0.0)).rgb).r, 0.35);
-  c0.b = mix(c0.b, restore(texture(uTex, uv - vec2(ca, 0.0)).rgb).b, 0.35);
+  hdr *= mix(sh, hi, smoothstep(0.12, 0.75, luma));
+  vec3 col = aces(hdr * 1.08);
+  float l2 = dot(col, vec3(0.2126, 0.7152, 0.0722));
+  col = mix(vec3(l2), col, 1.08);
+
   float sn = 0.0;
   for (int i = 0; i < 2; i++) {
     float fi = float(i);
-    float sc = 22.0 + fi * 17.0;
-    vec2 q = uv * vec2(sc * 0.72, sc);
-    q.y += uTime * (0.035 + fi * 0.03) * (1.0 + uFall * 5.0);
-    q.x += uTime * 0.01 + sin(q.y * 1.5) * 0.02;
+    vec2 q = uv * vec2(46.0 + fi * 28.0, 62.0 + fi * 20.0);
+    q.y += uTime * (0.03 + fi * 0.02);
+    q.x += sin(uTime * 0.2 + fi) * 0.15;
     vec2 id = floor(q);
     vec2 f = fract(q) - 0.5;
-    float n = hash21(id + fi * 9.0);
-    f += (vec2(n, hash21(id + 2.0)) - 0.5) * 0.45;
-    f.y *= mix(1.0, 0.45, uFall);
-    float d = length(f);
-    sn += smoothstep(0.045, 0.0, d) * step(0.72, n);
+    float n = hash21(id + fi * 3.0);
+    f += (vec2(n, hash21(id + 1.7)) - 0.5) * 0.4;
+    sn += smoothstep(0.035, 0.0, length(f)) * step(0.82, n) * (0.45 + fi * 0.25);
   }
-  c0 += sn * mix(0.22, 0.5, uFall);
-  float g = hash21(gl_FragCoord.xy + fract(uTime * 13.0));
-  c0 += (g - 0.5) * 0.028;
-  c0 = mix(c0, vec3(0.9, 0.94, 1.0), clamp(uFlash, 0.0, 1.0));
-  c0 *= uFade;
-  fragColor = vec4(clamp(c0, 0.0, 1.0), 1.0);
+  col += sn * 0.28;
+
+  vec2 c = uv * 2.0 - 1.0;
+  col *= mix(0.78, 1.0, smoothstep(1.25, 0.42, length(c * vec2(0.85, 1.0))));
+  float g = hash21(gl_FragCoord.xy + fract(uTime * 11.0));
+  col += (g - 0.5) * 0.02;
+  col = mix(col, vec3(0.93, 0.95, 1.0), clamp(uFlash, 0.0, 0.85));
+  col *= uFade;
+  fragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
 }
-float uQSafe() { return 1.0; }
 `;
 
 // The composite shader above calls uQSafe which is defined after main in GLSL — illegal.
@@ -860,7 +843,7 @@ function locs(prog, names) {
   return o;
 }
 SU = locs(sceneProg, ["uRes","uTime","uFov","uDay","uQ","uRope","uPose","uWeight","uArmed","uDotN","uBurst","uFade","uSway","uCam","uFwd","uRight","uUp","uSun","uGrip","uHang","uPiton","uVel","uItems","uHolds[0]","uDots[0]","uLedge[0]","uDrop"]);
-CU = locs(compProg, ["uTex","uRes","uBlur","uTime","uFall","uDay","uFade","uFlash"]);
+CU = locs(compProg, ["uTex","uRes","uSunUv","uTime","uDay","uFade","uFlash"]);
 
 const tex = gl.createTexture();
 const fbo = gl.createFramebuffer();
@@ -1002,33 +985,32 @@ function music(dt, alt, mode) {
 
 function desiredCam(aspect) {
   const standing = state.mode === "ledge" || state.mode === "drop" || state.mode === "ending";
-  const y = standing ? state.y : state.y;
+  const y = state.y;
   const z = state.z;
   const fx = FX.faceX(y, z);
   const portrait = aspect < 0.92;
-  const fall = clamp((-state.vy - 5) / 16, 0, 1);
+  const fall = clamp((-state.vy - 4) / 14, 0, 1);
   let close;
   if (state.mode === "ending") {
-    const dist = portrait ? 7.6 : 10.5;
     close = {
-      pos: [fx - dist, y + 2.4 + Math.sin(state.endingT * 0.18) * 0.25, z + (portrait ? 1.1 : 3.2)],
-      look: [fx - 0.15, y + 1.25, z],
-      fov: (portrait ? 46 : 30) * Math.PI / 180,
+      pos: [fx - (portrait ? 8.5 : 12.5), y + 4.2, z + (portrait ? 2.4 : 6.5)],
+      look: [fx + 0.4, y + 1.15, z - 0.4],
+      fov: (portrait ? 42 : 32) * Math.PI / 180,
     };
   } else {
-    const dist = portrait ? 7.4 : 10.2;
-    const side = portrait ? 0.2 : 0.85;
+    const dist = (portrait ? 9.2 : 12.4) + fall * (portrait ? 4.0 : 7.0);
+    const side = portrait ? 2.2 : 4.8;
     close = {
-      pos: [fx - dist, y + (portrait ? 0.15 : 0.35) + fall * 2.0, z + side],
-      look: [fx + 0.5, y + mix(portrait ? 0.55 : 0.35, -1.8, fall), z],
-      fov: (portrait ? 48 : 34) * Math.PI / 180,
+      pos: [fx - dist, y + (portrait ? 0.8 : 1.3) + fall * 2.6, z + side],
+      look: [fx + 0.8, y + mix(portrait ? 1.5 : 1.7, -2.2, fall), z - 0.2],
+      fov: ((portrait ? 44 : 32) + fall * 7) * Math.PI / 180,
     };
   }
-const wide = {
-      pos: [FX.faceX(22, 0) - 26, 18, 8],
-      look: [FX.faceX(40, 0) + 1.2, 46, -1],
-      fov: 0.62,
-    };
+  const wide = {
+    pos: [-46, 38, 34],
+    look: [-1, 58, -2],
+    fov: portrait ? 0.9 : 0.72,
+  };
   const t = smooth(1 - state.intro);
   return {
     pos: [
@@ -1048,9 +1030,9 @@ const wide = {
 function gripOf() {
   const standing = state.mode === "ledge" || state.mode === "drop" || state.mode === "ending";
   if (standing) {
-    return [FX.faceX(state.y, state.z) - 0.95, state.y, state.z];
+    return [FX.faceX(state.y, state.z) - 1.35, state.y, state.z];
   }
-  return [FX.faceX(state.y, state.z) - 0.5, state.y, state.z];
+  return [FX.faceX(state.y, state.z) - 1.75, state.y, state.z];
 }
 
 const holdBuf = new Float32Array(8 * 4);
@@ -1100,31 +1082,21 @@ function render(dt) {
     return { fwd, right: rr, up: uu };
   })();
 
-  const grip = gripOf();
-  const g2 = [grip[0], grip[1], grip[2]];
-  const rel = sub(g2, basisPos);
-  const zc = Math.max(0.2, dot(rel, basis.fwd));
-  const speed = Math.hypot(state.vy, state.vz);
-  if (speed > 4 && zc > 0.2) {
-    const ty = Math.tan(cam.fov * 0.5);
-    const vx = dot([0, state.vy, state.vz], basis.right);
-    const vy = dot([0, state.vy, state.vz], basis.up);
-    blur[0] = (vx / zc) / (ty * aspect) * 0.02;
-    blur[1] = (vy / zc) / ty * 0.02;
-  } else {
-    blur[0] *= 0.8;
-    blur[1] *= 0.8;
-  }
-  prevGrip = null;
-
   const standing = state.mode === "ledge" || state.mode === "drop" || state.mode === "ending";
+  const grip = gripOf();
   const hang = standing ? [0, -1, 0] : [0, -Math.cos(state.visAngle), Math.sin(state.visAngle)];
   const hold = FX.HOLDS[state.holdIndex];
   const piton = [FX.faceX(hold.y, hold.z) + 0.05, hold.y, hold.z];
   const climb = clamp((Math.max(state.y, hold.y) - 6) / 100, 0, 1);
-  const day = 0.42 + 0.58 * Math.pow(climb, 0.9);
-  const elev = 0.1 + day * 0.62;
-  const sun = norm([-0.4, elev, 0.52]);
+  const day = clamp(0.5 + 0.5 * smooth(clamp((cam.look[1] - 12) / 90, 0, 1)), 0, 1);
+  const sun = norm([-0.88, 0.34, 0.18]);
+  const sunPoint = add(basisPos, mul(sun, 120));
+  const sunRel = sub(sunPoint, basisPos);
+  const sunZ = Math.max(0.2, dot(sunRel, basis.fwd));
+  const sunTy = Math.tan(cam.fov * 0.5);
+  const sunNdcX = (dot(sunRel, basis.right) / sunZ) / (sunTy * aspect);
+  const sunNdcY = (dot(sunRel, basis.up) / sunZ) / sunTy;
+  const sunUv = [sunNdcX * 0.5 + 0.5, sunNdcY * 0.5 + 0.5];
   const w01 = FX.weight01(state.mask);
   const items = FX.ITEMS;
   const item4 = [
@@ -1209,9 +1181,8 @@ function render(dt) {
   gl.bindTexture(gl.TEXTURE_2D, tex);
   gl.uniform1i(CU.uTex, 0);
   gl.uniform2f(CU.uRes, bw, bh);
-  gl.uniform2f(CU.uBlur, reduce ? 0 : blur[0], reduce ? 0 : blur[1]);
+  gl.uniform2f(CU.uSunUv, sunUv[0], sunUv[1]);
   gl.uniform1f(CU.uTime, state.time);
-  gl.uniform1f(CU.uFall, fallAmt);
   gl.uniform1f(CU.uDay, day);
   gl.uniform1f(CU.uFade, fade);
   gl.uniform1f(CU.uFlash, flash);

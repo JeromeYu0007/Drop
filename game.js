@@ -247,10 +247,11 @@
   }
 
   function radii(y) {
-    const k = clamp(y / 110, 0, 1);
+    const k = clamp((y + 6) / 124, 0, 1);
+    const s = k * k * (3 - 2 * k);
     return {
-      rx: mix(7.2, 3.4, k) + Math.sin(y * 0.07 + 0.6) * 0.28,
-      rz: mix(16, 8, k) + Math.sin(y * 0.05) * 1.1,
+      rx: mix(11.2, 1.45, s) + Math.sin(y * 0.055) * 1.15 + Math.sin(y * 0.16 + 1.2) * 0.35,
+      rz: mix(15.8, 2.7, s) + Math.sin(y * 0.047 + 0.8) * 1.35,
     };
   }
   function faceX(y, z) {
@@ -484,7 +485,7 @@
     }
 
     if (s.intro > 0 && !input.freezeIntro) {
-      const rate = input.skipIntro ? 1.8 : 0.22;
+      const rate = input.skipIntro ? 1.6 : 0.085;
       s.intro = Math.max(0, s.intro - dt * rate);
     }
 
