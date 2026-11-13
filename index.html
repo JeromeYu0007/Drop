@@ -1941,7 +1941,7 @@ function render(dt) {
   if (state.mode === "ending") lead = portrait ? 1.15 : 1.45;
   else lead = mix(lead, 0.15, fall);
   const anchorY = state.attached ? FX.HOLDS[state.holdIndex].y : state.y;
-  if (state.mode !== "ending" && state.lost && state.lost.length && (state.descending || state.crown)) {
+  if (state.mode !== "ending" && state.descending && state.lost && state.lost.length) {
     let near = null;
     for (let i = 0; i < state.lost.length; i++) {
       const it = state.lost[i];
@@ -2247,10 +2247,6 @@ function frame(now) {
     if (shotName !== "flight") acc += raw * (focus ? 0.46 : 1);
     const sounds = [];
     const input = { holding, restart: restartPulse, skipIntro: rush || reduce, keep: wantKeep, dropKind: wantDrop, choice: wantChoice };
-    restartPulse = false;
-    wantKeep = false;
-    wantDrop = "";
-    wantChoice = "";
     let n = 0;
     while (acc >= 1 / 120 && n < 8) {
       FX.step(state, 1 / 120, input);
@@ -2260,6 +2256,13 @@ function frame(now) {
       input.restart = false;
       input.keep = false;
       input.dropKind = "";
+      input.choice = "";
+    }
+    if (n > 0) {
+      restartPulse = false;
+      wantKeep = false;
+      wantDrop = "";
+      wantChoice = "";
     }
     const peak = Math.round(state.bestRun);
     if (peak > bestSaved) {

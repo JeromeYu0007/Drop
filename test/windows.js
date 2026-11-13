@@ -2,6 +2,9 @@
 const FX = require("../game.js");
 
 const PHASES = [0.4, 2.1, 4.2, 6.8];
+// The slow gust. Real climbs release across this whole cycle, not only the first few seconds.
+const GUST_PERIOD = (Math.PI * 2) / 0.16;
+const PHASE_COUNT = 32;
 const MASKS = [
   { name: "empty", mask: 0 },
   { name: "full", mask: 15 },
@@ -149,7 +152,48 @@ function longest(mask, i, phase, down, want, t0, t1) {
   return { span: Math.max(0, b - a), a: a, b: b };
 }
 
+function arrivalTimes() {
+  const seen = { 0: {}, 15: {} };
+  for (const mask of [0, 15]) {
+    const s = FX.createState();
+    s.mask = mask;
+    s.intro = 0;
+    s.settle = 1;
+    let guard = 0;
+    while (guard++ < 50000 && s.mode !== "ending" && s.falls < 2) {
+      const input = { holding: false, freezeIntro: true };
+      if (s.mode === "ledge") input.keep = true;
+      else if (s.mode !== "play" || s.needUp || s.lock > 0) input.holding = false;
+      else if (!s.attached) input.holding = true;
+      else if (s.crown) input.choice = "door";
+      else {
+        if (seen[mask][s.holdIndex] == null) seen[mask][s.holdIndex] = s.time;
+        const ni = s.holdIndex + 1;
+        if (ni >= FX.HOLDS.length) break;
+        if (s.holdT > 0.6 && caught(mask, s.holdIndex, s.holdT, s.time, false, ni)) {
+          s.prevHolding = true;
+          s.holding = true;
+          input.holding = false;
+        } else input.holding = true;
+      }
+      FX.step(s, DT, input);
+    }
+  }
+  return seen;
+}
+
+function phasesFor(i, arrivals) {
+  const samples = [];
+  if (arrivals[0][i] != null) samples.push(arrivals[0][i]);
+  if (arrivals[15][i] != null) samples.push(arrivals[15][i]);
+  const base = samples.length ? Math.min.apply(null, samples) : 6 + i;
+  const phases = [];
+  for (let k = 0; k < PHASE_COUNT; k++) phases.push(base + (k / PHASE_COUNT) * GUST_PERIOD);
+  return phases;
+}
+
 function measure() {
+  const arrivals = arrivalTimes();
   const rows = [];
   let failed = 0;
   for (let i = 0; i < FX.HOLDS.length; i++) {
@@ -176,7 +220,7 @@ function measure() {
     for (const pack of MASKS) {
       cell.up[pack.name] = [];
       cell.down[pack.name] = [];
-      for (const phase of PHASES) {
+      for (const phase of phasesFor(i, arrivals)) {
         if (upTo >= 0) {
           const w = longest(pack.mask, i, phase, false, upTo, 0.5, 2.15);
           cell.up[pack.name].push(w.span);
