@@ -163,7 +163,8 @@ function measure() {
       up: {},
       down: {},
     };
-    let upMin = 1e9;
+    let upE = 1e9;
+    let upF = 1e9;
     let downMin = downTo >= 0 ? 1e9 : null;
     for (const pack of MASKS) {
       cell.up[pack.name] = [];
@@ -172,7 +173,8 @@ function measure() {
         if (upTo >= 0) {
           const w = longest(pack.mask, i, phase, false, upTo, 0.5, 2.15);
           cell.up[pack.name].push(w.span);
-          if (w.span < upMin) upMin = w.span;
+          if (pack.name === "empty" && w.span < upE) upE = w.span;
+          if (pack.name === "full" && w.span < upF) upF = w.span;
         }
         if (downTo >= 0) {
           const w = longest(pack.mask, i, phase, true, downTo, 1.28, 3.4);
@@ -181,10 +183,15 @@ function measure() {
         }
       }
     }
-    cell.upMin = upTo >= 0 ? upMin : null;
+    const upMin = upTo >= 0 ? Math.min(upE, upF) : null;
+    cell.upMin = upMin;
     cell.downMin = downMin;
-    cell.upOk = upTo < 0 || (upMin + 1e-6 >= band.min && upMin - 1e-6 <= band.max);
-    cell.downOk = downTo < 0 || downMin + 1e-6 >= 0.18;
+    // Worst phase across both packs. A longer pack may sit above the band; the short one may not.
+    const inBand = function (v) {
+      return v + 1e-6 >= band.min && v - 1e-6 <= band.max;
+    };
+    cell.upOk = upTo < 0 || inBand(upMin);
+    cell.downOk = downTo < 0 || downMin + 1e-6 >= 0.25;
     if (!cell.upOk || !cell.downOk) failed++;
     rows.push(cell);
   }

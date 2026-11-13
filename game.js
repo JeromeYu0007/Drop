@@ -39,25 +39,25 @@
     [27.6, 0.28, "hold"],
     [29.9, 0.7, "hold"],
     [32.2, 0.15, "letter"],
-    [35.4, 0.12, "hold"],
-    [37.5, -0.1, "hold"],
+    [35.8, 0.43, "hold"],
+    [37.6, 0.43, "hold"],
     [39.7, 0.0, "hold"],
     [41.9, 0.02, "ring"],
-    [44.1, -1.1, "hold"],
-    [45.8, -0.85, "hold"],
-    [47.7, -0.55, "hold"],
-    [49.9, -0.48, "hold"],
-    [52.1, -0.48, "hold"],
-    [54.3, -0.48, "hold"],
-    [56.5, -0.3, "hold"],
-    [58.7, -0.1, "hold"],
-    [60.9, 0.02, "hold"],
-    [63.1, 0.02, "photo"],
-    [65.3, -1.05, "ice"],
-    [67.5, -0.85, "ice"],
-    [69.4, -0.55, "ice"],
-    [71.6, -0.25, "ice"],
-    [73.8, 0.0, "summit"],
+    [44.1, -1.08, "hold"],
+    [46.25, -0.49, "hold"],
+    [47.7, -1.4, "hold"],
+    [50.8, -0.8, "hold"],
+    [52.1, -1.78, "hold"],
+    [54.3, -1.83, "hold"],
+    [56.5, -2.4, "hold"],
+    [58.15, -3.4, "hold"],
+    [60.5, -2.8, "hold"],
+    [63.1, -2.8, "photo"],
+    [65.3, -3.9, "ice"],
+    [67.5, -3.34, "ice"],
+    [70.8, -4.1, "ice"],
+    [72.45, -5.0, "ice"],
+    [74.2, -4.28, "summit"],
   ];
   const SUMMIT_Y = RAW[RAW.length - 1][0];
   const GATE = { y: SUMMIT_Y + 1.55, z: RAW[RAW.length - 1][1] + 0.48 };
@@ -202,7 +202,9 @@
 
   function wind(t, y, mask, returning) {
     const storm = stormOf(mask);
-    const gust = Math.sin(t * 0.72 + y * 0.02) * 0.7 + Math.sin(t * 1.45 + 1.3) * 0.3;
+    // Same two gusts, much slower, so phases a few seconds apart barely disagree.
+    // A heavy pack still multiplies the push; the way down still gets the extra.
+    const gust = Math.sin(t * 0.16 + y * 0.015) * 0.55 + Math.sin(t * 0.31 + 1.3) * 0.22;
     const high = clamp((y - 68) / 40, 0, 1);
     return gust * (0.04 + storm * 1.05 + high * 0.12) * (returning ? 1.35 : 1);
   }

@@ -388,7 +388,8 @@ flakeSprite.width = flakeSprite.height = 32;
   g.fillRect(0, 0, 32, 32);
 }
 
-function bakeRidge(seed, snowAt) {
+function bakeRidge(seed, snowAt, near) {
+  near = near == null ? 0.55 : near;
   const TW = 1600, TH = 280;
   const c = document.createElement("canvas");
   c.width = TW;
@@ -441,16 +442,25 @@ function bakeRidge(seed, snowAt) {
       const shade = clamp(lit + detail, 0.12, 0.9);
       const snow = h > snowAt && edge > 0.72 && soft[x] > 0.4;
       const haze = clamp(depth * 1.8, 0, 1);
-      const rockR = 28 + shade * 70;
-      const rockG = 34 + shade * 74;
-      const rockB = 48 + shade * 78;
-      const snowC = 186 + shade * 48;
-      let r = snow ? snowC : rockR;
-      let gc = snow ? snowC + 4 : rockG;
-      let b = snow ? snowC + 10 : rockB;
-      r = r * (1 - haze) + 18 * haze;
-      gc = gc * (1 - haze) + 24 * haze;
-      b = b * (1 - haze) + 38 * haze;
+      // Far ranges are a pale blue haze. Near ranges keep a darker, steeper rock.
+      const lift = 150 * (1 - near);
+      const gain = 8 + near * 72;
+      let r = 16 + lift * 0.55 + (shade - 0.45) * gain + near * (shade - 0.35) * 22;
+      let gc = 22 + lift * 0.68 + (shade - 0.45) * gain * 0.82;
+      let b = 48 + lift * 0.95 + (shade - 0.45) * gain * 0.45;
+      if (snow) {
+        const snowC = 150 + (1 - near) * 70 + shade * 20;
+        r = snowC * (0.55 + near * 0.45);
+        gc = snowC * (0.6 + near * 0.4);
+        b = snowC * (0.75 + (1 - near) * 0.2);
+      }
+      const skyR = 70 + (1 - near) * 50;
+      const skyG = 88 + (1 - near) * 40;
+      const skyB = 120 + (1 - near) * 30;
+      const air = (1 - near) * 0.72 + haze * (0.15 + (1 - near) * 0.2);
+      r = r * (1 - air) + skyR * air;
+      gc = gc * (1 - air) + skyG * air;
+      b = b * (1 - air) + skyB * air;
       if (edge > 0.92) { r += 18; gc += 20; b += 26; }
       const a = clamp(1 - Math.max(0, depth - 0.22) * 2.4, 0, 1);
       d[i] = r;
@@ -463,11 +473,11 @@ function bakeRidge(seed, snowAt) {
   return c;
 }
 const RIDGES = [
-  bakeRidge(1.2, 0.72),
-  bakeRidge(4.8, 0.66),
-  bakeRidge(9.1, 0.6),
-  bakeRidge(13.4, 0.56),
-  bakeRidge(18.7, 0.52),
+  bakeRidge(1.2, 0.72, 0),
+  bakeRidge(4.8, 0.66, 0.28),
+  bakeRidge(9.1, 0.6, 0.55),
+  bakeRidge(13.4, 0.56, 0.78),
+  bakeRidge(18.7, 0.52, 1),
 ];
 
 function bakeRock() {
@@ -478,41 +488,42 @@ function bakeRock() {
   const g = c.getContext("2d");
   const img = g.createImageData(TW, TH);
   const d = img.data;
-  const field = new Float32Array(TW * TH);
+  // A handful of large faces. Each face has its own slope, so the light breaks on the edge.
+  const SLOPE = [
+    { x: 0.72, y: -0.62 },
+    { x: -0.58, y: 0.22 },
+    { x: 0.18, y: -0.12 },
+    { x: 0.95, y: 0.38 },
+    { x: -0.12, y: -0.78 },
+  ];
+  const lx = 0.42, ly = -0.58, lz = 0.7;
+  const llen = Math.hypot(lx, ly, lz);
   for (let y = 0; y < TH; y++) {
     for (let x = 0; x < TW; x++) {
-      const warp = fbm2(x * 0.006, y * 0.004, 3);
-      const big = fbm2(x * 0.0035 + warp * 1.4, y * 0.0028, 3);
-      const mid = fbm2(x * 0.014 + 4.2, y * 0.011, 3);
-      const grain = fbm2(x * 0.05, y * 0.04, 2);
-      const fx = fbm2(x * 0.02, y * 0.0015 + 8, 2);
-      const fracture = Math.exp(-Math.pow((fx - 0.5) * 7.5, 2));
-      const ledgeN = fbm2(y * 0.007 + warp, x * 0.004, 2);
-      const ledge = Math.exp(-Math.pow((ledgeN - 0.62) * 10, 2));
-      field[y * TW + x] = big * 0.9 + mid * 0.28 + grain * 0.08 - fracture * 0.85 - ledge * 0.42;
-    }
-  }
-  const lx = 0.45, ly = -0.55, lz = 0.7;
-  for (let y = 1; y < TH - 1; y++) {
-    for (let x = 1; x < TW - 1; x++) {
-      const i = y * TW + x;
-      const dx = field[i + 1] - field[i - 1];
-      const dy = field[i + TW] - field[i - TW];
-      let nx = -dx, ny = -dy, nz = 1.15;
+      const warp = fbm2(x * 0.012, y * 0.009, 2);
+      const region = fbm2((x + warp * 28) * 0.0075, (y + warp * 36) * 0.0055, 2);
+      const id = Math.min(4, Math.max(0, Math.floor(region * 5)));
+      const sl = SLOPE[id];
+      const grain = fbm2(x * 0.062, y * 0.051, 2);
+      const gdx = fbm2((x + 2) * 0.062, y * 0.051, 2) - fbm2((x - 2) * 0.062, y * 0.051, 2);
+      const gdy = fbm2(x * 0.062, (y + 2) * 0.051, 2) - fbm2(x * 0.062, (y - 2) * 0.051, 2);
+      let nx = sl.x * 0.9 + gdx * 5.5;
+      let ny = sl.y * 0.9 + gdy * 5.5;
+      let nz = 1.05;
       const len = Math.hypot(nx, ny, nz) || 1;
       nx /= len; ny /= len; nz /= len;
-      const lambert = clamp(nx * lx + ny * ly + nz * lz, 0, 1);
-      const ao = field[i] < -0.15 ? 0.55 : field[i] < 0 ? 0.78 : 1;
-      const snow = ny < -0.25 && lambert > 0.35 ? clamp((-ny - 0.25) * 2.2, 0, 1) : 0;
-      const crack = field[i] < -0.35 ? 0.35 : 1;
-      const lit = lambert * ao * crack;
-      const rockR = 22 + lit * 46;
-      const rockG = 26 + lit * 50;
-      const rockB = 36 + lit * 58;
-      const p = i * 4;
-      d[p] = rockR * (1 - snow) + (150 + lit * 40) * snow;
-      d[p + 1] = rockG * (1 - snow) + (158 + lit * 36) * snow;
-      d[p + 2] = rockB * (1 - snow) + (170 + lit * 30) * snow;
+      const lambert = clamp((nx * lx + ny * ly + nz * lz) / llen, 0, 1);
+      const fx = fbm2(x * 0.028, y * 0.006 + 8, 2);
+      const fracture = Math.exp(-Math.pow((fx - 0.46) * 8.5, 2));
+      const lit = clamp(0.22 + lambert * 0.78 * (1 - fracture * 0.5) + (grain - 0.5) * 0.1, 0, 1);
+      const snow = ny < -0.28 && lambert > 0.42 ? clamp((-ny - 0.28) * 1.6, 0, 0.55) : 0;
+      const rockR = 14 + lit * 62;
+      const rockG = 18 + lit * 64;
+      const rockB = 28 + lit * 70;
+      const p = (y * TW + x) * 4;
+      d[p] = rockR * (1 - snow) + (148 + lit * 28) * snow;
+      d[p + 1] = rockG * (1 - snow) + (156 + lit * 24) * snow;
+      d[p + 2] = rockB * (1 - snow) + (168 + lit * 18) * snow;
       d[p + 3] = 255;
     }
   }
@@ -874,10 +885,10 @@ function drawBirds() {
   }
 }
 const RANGE_LAYERS = [
-  { img: 0, y: 0.62, h: 0.18, parallax: 0.04, alpha: 0.34, drift: 4 },
-  { img: 1, y: 0.72, h: 0.2, parallax: 0.09, alpha: 0.52, drift: 7 },
-  { img: 2, y: 0.82, h: 0.24, parallax: 0.15, alpha: 0.74, drift: 10 },
-  { img: 4, y: 0.9, h: 0.28, parallax: 0.22, alpha: 0.94, drift: 14 },
+  { img: 0, y: 0.62, h: 0.18, parallax: 0.04, alpha: 0.78, drift: 4 },
+  { img: 1, y: 0.72, h: 0.2, parallax: 0.09, alpha: 0.84, drift: 7 },
+  { img: 2, y: 0.82, h: 0.24, parallax: 0.15, alpha: 0.9, drift: 10 },
+  { img: 4, y: 0.9, h: 0.28, parallax: 0.22, alpha: 0.98, drift: 14 },
 ];
 function drawRanges(from, to) {
   const storm = state.stormVis == null ? 1 : state.stormVis;
@@ -1170,6 +1181,7 @@ function drawHolds() {
     ctx.closePath();
     ctx.fillStyle = "rgba(0,0,0,0.5)";
     ctx.fill();
+    ctx.save();
     ctx.beginPath();
     ctx.moveTo(wallHi[0], wallHi[1]);
     ctx.lineTo(lip[0], lip[1]);
@@ -1177,22 +1189,29 @@ function drawHolds() {
     ctx.lineTo(keel[0], keel[1]);
     ctx.lineTo(wallLo[0], wallLo[1]);
     ctx.closePath();
-    ctx.fillStyle = icy ? "#2c3844" : "#2a241e";
-    ctx.fill();
+    ctx.clip();
+    const srcY = Math.max(0, Math.floor((((h.y % 18) + 18) % 18) / 18 * (ROCK.height - 40)));
+    const srcX = 24 + ((h.i * 37) % 90);
+    const boxL = Math.min(wallHi[0], lip[0], nose[0], keel[0]) - 2;
+    const boxT = Math.min(wallHi[1], lip[1], nose[1]) - 2;
+    const boxW = Math.max(12, Math.abs(nose[0] - wallHi[0]) + 14);
+    const boxH = Math.max(10, Math.abs(wallLo[1] - wallHi[1]) + 8);
+    ctx.drawImage(ROCK, srcX, srcY, 64, 32, boxL, boxT, boxW, boxH);
+    ctx.restore();
     ctx.beginPath();
     ctx.moveTo(wallHi[0], wallHi[1]);
     ctx.lineTo(lip[0], lip[1]);
     ctx.lineTo(nose[0], nose[1]);
     ctx.lineTo(wallHi[0], wallHi[1] + Math.max(4 * PX, ppm * 0.05));
     ctx.closePath();
-    ctx.fillStyle = icy ? "#6d7c8a" : "#5c6570";
+    ctx.fillStyle = icy ? "rgba(186, 214, 232, 0.22)" : "rgba(232, 224, 210, 0.1)";
     ctx.fill();
     ctx.beginPath();
     ctx.moveTo(lip[0], lip[1]);
     ctx.lineTo(nose[0], nose[1]);
     ctx.lineTo(keel[0], keel[1]);
     ctx.closePath();
-    ctx.fillStyle = icy ? "#1a222a" : "#16120e";
+    ctx.fillStyle = icy ? "rgba(8, 14, 20, 0.28)" : "rgba(6, 5, 4, 0.34)";
     ctx.fill();
     if (hot) {
       ctx.beginPath();
