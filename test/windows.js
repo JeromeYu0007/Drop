@@ -45,7 +45,14 @@ function grade(h, next) {
 function limitsFor(g) {
   if (g === "easy") return { min: 0.6, max: 9 };
   if (g === "normal") return { min: 0.3, max: 0.6 };
-  return { min: 0.2, max: 0.35 };
+  return { min: 0.2, max: 0.4 };
+}
+
+function meanOf(xs) {
+  if (!xs || !xs.length) return null;
+  let s = 0;
+  for (let i = 0; i < xs.length; i++) s += xs[i];
+  return s / xs.length;
 }
 
 function targetFor(g) {
@@ -184,14 +191,22 @@ function measure() {
       }
     }
     const upMin = upTo >= 0 ? Math.min(upE, upF) : null;
+    const ups = (cell.up.empty || []).concat(cell.up.full || []);
+    const downs = (cell.down.empty || []).concat(cell.down.full || []);
     cell.upMin = upMin;
+    cell.upMean = meanOf(ups);
     cell.downMin = downMin;
-    // Worst phase across both packs. A longer pack may sit above the band; the short one may not.
+    cell.downMax = downs.length ? Math.max.apply(null, downs) : null;
     const inBand = function (v) {
       return v + 1e-6 >= band.min && v - 1e-6 <= band.max;
     };
-    cell.upOk = upTo < 0 || inBand(upMin);
-    cell.downOk = downTo < 0 || downMin + 1e-6 >= 0.25;
+    if (upTo < 0) cell.upOk = true;
+    else if (g === "hard") {
+      // Every phase, empty and full, sits in 0.20–0.40, and the mean in 0.20–0.35.
+      const allIn = ups.every(function (v) { return v + 1e-6 >= 0.2 && v - 1e-6 <= 0.4; });
+      cell.upOk = allIn && cell.upMean + 1e-6 >= 0.2 && cell.upMean - 1e-6 <= 0.35;
+    } else cell.upOk = inBand(upMin);
+    cell.downOk = downTo < 0 || downs.every(function (v) { return v + 1e-6 >= 0.25 && v - 1e-6 <= 0.4; });
     if (!cell.upOk || !cell.downOk) failed++;
     rows.push(cell);
   }
@@ -206,7 +221,7 @@ function fmt(v) {
 function main() {
   const t0 = Date.now();
   const report = measure();
-  const head = "i  y     kind    grade  need  upE   upF   upMin downE downF downMin";
+  const head = "i  y     kind    grade  need  upE   upF   upMin  uMean downE downF downMin";
   console.log(head);
   for (const r of report.rows) {
     const upE = r.up.empty && r.up.empty.length ? Math.min.apply(null, r.up.empty) : null;
@@ -223,6 +238,7 @@ function main() {
       fmt(upE).padStart(5),
       fmt(upF).padStart(5),
       fmt(r.upMin).padStart(6),
+      fmt(r.grade === "hard" ? r.upMean : null).padStart(6),
       fmt(dnE).padStart(5),
       fmt(dnF).padStart(5),
       fmt(r.downMin).padStart(7),
@@ -235,4 +251,4 @@ function main() {
 }
 
 if (require.main === module) main();
-module.exports = { measure, grade, targetFor, limitsFor, caught, lowerIndex, PHASES, DT };
+module.exports = { measure, grade, targetFor, limitsFor, caught, longest, lowerIndex, PHASES, DT };

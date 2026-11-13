@@ -34,28 +34,28 @@
     [16.8, -0.02, "hold"],
     [19.0, 0.02, "trophy"],
     [21.2, -0.92, "hold"],
-    [23.4, -0.5, "hold"],
+    [23.4, -0.46, "hold"],
     [25.4, -0.1, "hold"],
     [27.6, 0.28, "hold"],
     [29.9, 0.7, "hold"],
     [32.2, 0.15, "letter"],
-    [35.8, 0.43, "hold"],
+    [35.8, 0.48, "hold"],
     [37.6, 0.43, "hold"],
     [39.7, 0.0, "hold"],
     [41.9, 0.02, "ring"],
     [44.1, -1.08, "hold"],
-    [46.25, -0.49, "hold"],
-    [47.7, -1.4, "hold"],
-    [50.8, -0.8, "hold"],
-    [52.1, -1.78, "hold"],
-    [54.3, -1.83, "hold"],
+    [46.25, -0.40, "hold"],
+    [47.7, -1.28, "hold"],
+    [52.30, -0.8, "hold"],
+    [53.6, -1.78, "hold"],
+    [55.3, -1.83, "hold"],
     [56.5, -2.4, "hold"],
-    [58.15, -3.4, "hold"],
-    [60.5, -2.8, "hold"],
+    [58.18, -3.4, "hold"],
+    [60.5, -2.76, "hold"],
     [63.1, -2.8, "photo"],
     [65.3, -3.9, "ice"],
     [67.5, -3.34, "ice"],
-    [70.8, -4.1, "ice"],
+    [70.8, -4.06, "ice"],
     [72.45, -5.0, "ice"],
     [74.2, -4.28, "summit"],
   ];
@@ -204,7 +204,7 @@
     const storm = stormOf(mask);
     // Same two gusts, much slower, so phases a few seconds apart barely disagree.
     // A heavy pack still multiplies the push; the way down still gets the extra.
-    const gust = Math.sin(t * 0.16 + y * 0.015) * 0.55 + Math.sin(t * 0.31 + 1.3) * 0.22;
+    const gust = Math.sin(t * 0.16 + y * 0.015) * 0.30 + Math.sin(t * 0.31 + 1.3) * 0.12;
     const high = clamp((y - 68) / 40, 0, 1);
     return gust * (0.04 + storm * 1.05 + high * 0.12) * (returning ? 1.35 : 1);
   }
@@ -415,7 +415,7 @@
     let z = hold.z + st.offZ;
     let vy = st.vy;
     let vz = st.vz;
-    if (downOk && wantsDown(mask, holdT)) {
+    if (downOk && downBeat(mask, holdT)) {
       const shot = downShot(st, hold);
       vy = shot.vy;
       vz = shot.vz;
@@ -492,8 +492,13 @@
       s.descending = false;
       s.mode = "play";
       s.lock = 0.35;
-    } else if (isRest(h.k) && hasItems(s.mask) && (s.restSeen & (1 << index)) === 0) beginLedge(s);
-    else s.mode = "play";
+    } else if (isRest(h.k) && hasItems(s.mask) && (s.restSeen & (1 << index)) === 0) {
+      s.crown = false;
+      beginLedge(s);
+    } else {
+      s.crown = false;
+      s.mode = "play";
+    }
     tryPickup(s);
     if (s.y > s.bestRun) s.bestRun = s.y;
   }
@@ -505,6 +510,11 @@
     // Upward full-charge releases land first, around one second.
     // Only after that window does the line turn down toward the hold below.
     return holdT > Math.max(1.28, peak + 0.7) && st.angle < 0.55;
+  }
+
+  function downBeat(mask, holdT) {
+    // The line has turned down, and it only stays on the hold for a short beat.
+    return wantsDown(mask, holdT) && holdT < 1.62;
   }
 
   function lowerHold(hold) {
@@ -536,7 +546,7 @@
     s.vy = st.vy;
     s.vz = st.vz;
     s.angle = st.angle;
-    const goingBack = wantsDown(s.mask, s.holdT);
+    const goingBack = downBeat(s.mask, s.holdT);
     if ((s.crown || s.descending) && goingBack) {
       const shot = downShot(st, h);
       s.vy = shot.vy;
@@ -783,7 +793,7 @@
     }
 
     // play
-    if (s.crown && s.attached && input.choice === "door") {
+    if (s.crown && s.attached && input.choice === "door" && HOLDS[s.holdIndex].k === "summit") {
       beginEnding(s);
       s.prevHolding = false;
       s.holding = false;
@@ -810,6 +820,7 @@
         const ice = s.descending ? mix(2.4, 1.25, heavy) : mix(2.1, 1.45, heavy);
         if (s.slip > ice) {
           s.attached = false;
+          s.crown = false;
           s.vy = -3.2 - heavy * 2.2;
           s.vz = 0.35;
           s.slip = 0;
@@ -827,6 +838,7 @@
         s.holdT += dt;
         if (s.holdT > params(s.mask).stamina) {
           s.attached = false;
+          s.crown = false;
           s.vy = -2.4 - heavy * 2.4;
           s.vz = 0.25;
           s.holdT = 0;
@@ -839,15 +851,16 @@
           placeOnRope(s, h, st.angle, L);
           resolveBody(s);
           let target = null;
-          if ((s.crown || s.descending) && wantsDown(s.mask, s.holdT)) {
+          const turned = (s.crown || s.descending) && wantsDown(s.mask, s.holdT);
+          if ((s.crown || s.descending) && downBeat(s.mask, s.holdT)) {
             target = lowerHold(h);
-          } else if (s.crown) target = GATE;
-          if (!target) {
+          } else if (s.crown && !turned) target = GATE;
+          if (!target && !turned) {
             const ni = nextIndex(s.holdIndex);
             if (ni >= 0) target = HOLDS[ni];
           }
           if (target && s.holdT > 0.12) {
-            const downAim = (s.crown || s.descending) && wantsDown(s.mask, s.holdT);
+            const downAim = (s.crown || s.descending) && downBeat(s.mask, s.holdT);
             const hit = arcMin(s.mask, s.holdT, h, target, s.time, downAim, s.descending || downAim);
             s.dots = hit.dots;
             s.aimD = hit.minD;
@@ -865,10 +878,16 @@
           }
         }
       } else if (s.attached) {
-        const down = (s.crown || s.descending) && wantsDown(s.mask, s.holdT);
+        const turned = (s.crown || s.descending) && wantsDown(s.mask, s.holdT);
+        const down = (s.crown || s.descending) && downBeat(s.mask, s.holdT);
+        const onTop = s.crown && h.k === "summit";
+        // On the summit a short press is the door. A release that is not
+        // aimed at the hold below never throws the climber off.
+        // Once the line has turned down, a late release stays put. It does not
+        // flip into an upward launch that would still land on the hold below.
         if (released && down && s.armed && s.holdT > 0.16 && s.settle > 0.9) launch(s);
-        else if (released && s.crown && s.armed && !down && s.holdT > 0.16 && s.settle > 0.9) beginEnding(s);
-        else if (released && !down && s.holdT > 0.16 && s.settle > 0.9) launch(s);
+        else if (released && onTop && !turned && s.holdT > 0.05 && s.holdT <= 1.28 && s.settle > 0.9) beginEnding(s);
+        else if (released && !onTop && !turned && s.holdT > 0.16 && s.settle > 0.9) launch(s);
         s.holdT = 0;
         s.armed = false;
         s.dots = [];
@@ -1173,9 +1192,10 @@
         const here = HOLDS[s.holdIndex];
         const target = lowerHold(here);
         if (!target) break;
+        const beat = downBeat(s.mask, Math.max(0.2, s.holdT));
         const hit = arcMin(s.mask, Math.max(0.2, s.holdT), here, target, s.time, true, true);
-        const need = catchNeed(true, target);
-        if (s.settle > 0.9 && s.holdT > 0.4 && hit.st && hit.st.angle < -0.55 && hit.minD < need) {
+        const need = CATCH * 1.12;
+        if (s.settle > 0.9 && beat && hit.minD < need) {
           s.prevHolding = true;
           s.holding = true;
           input.holding = false;

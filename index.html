@@ -21,9 +21,16 @@
   #c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
   #ui { position: fixed; inset: 0; pointer-events: none; }
   button {
-    pointer-events: auto; background: none; border: 0; color: var(--paper);
+    pointer-events: none; background: none; border: 0; color: var(--paper);
     font: inherit; letter-spacing: 0.18em; font-size: 13px; opacity: 0.78;
-    padding: 12px 10px; cursor: pointer;
+    padding: 12px 10px; cursor: pointer; touch-action: manipulation;
+  }
+  #bar button { pointer-events: auto; }
+  #pack.show button, #ending.show button { pointer-events: auto; }
+  #pack:not(.show), #pack:not(.show) *,
+  #ending:not(.show), #ending:not(.show) *,
+  #title, #title *, #hint, #meter, #meter *, #marks, #marks *, #whisper {
+    pointer-events: none !important;
   }
   button:hover, button:focus-visible { opacity: 1; }
   button.off { opacity: 0.32; text-decoration: line-through; }
@@ -94,16 +101,24 @@
   #pack .kicker { display: none; }
   .mem {
     display: flex; gap: 12px; align-items: center; text-align: left;
-    width: 100%; margin: 0 0 8px; padding: 8px 10px;
+    width: 100%; margin: 0 0 8px; padding: 10px 8px 10px 10px;
+    min-height: 48px;
     border: 1px solid rgba(244, 239, 230, 0.16);
     background: rgba(255, 255, 255, 0.03);
   }
+  .mem > div { flex: 1; min-width: 0; }
   .mem b { display: block; font-weight: 400; letter-spacing: 0.14em; font-size: 15px; }
-  .mem span { display: block; margin-top: 0.2em; font-size: 12px; letter-spacing: 0.04em; color: var(--dim); }
-  .mem i { font-style: normal; margin-left: auto; letter-spacing: 0.16em; font-size: 12px; color: #e7c9a2; white-space: nowrap; }
+  .mem span {
+    display: block; margin-top: 0.2em; font-size: 12px; letter-spacing: 0.04em; color: var(--dim);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .mem i {
+    flex: none; font-style: normal; margin: -6px -4px -6px 8px; padding: 14px 12px;
+    letter-spacing: 0.16em; font-size: 13px; color: #e7c9a2; white-space: nowrap;
+  }
   #packKeep {
     margin-top: 6px; letter-spacing: 0.18em; border-bottom: 1px solid rgba(244,239,230,0.4);
-    padding: 8px 4px 3px;
+    padding: 12px 8px; min-height: 44px;
   }
   #ending {
     bottom: calc(8vh + env(safe-area-inset-bottom)); width: min(92vw, 440px);
@@ -1656,6 +1671,72 @@ function drawGate() {
   ctx.fillStyle = "rgba(255,252,244,0.95)";
   ctx.fillRect(top[0] - w * 0.16, top[1] + (bot[1] - top[1]) * 0.18, w * 0.32, (bot[1] - top[1]) * 0.62);
 }
+function nearestLostBelow() {
+  const lost = state.lost || [];
+  const ay = state.attached ? FX.HOLDS[state.holdIndex].y : state.y;
+  let best = null;
+  for (let i = 0; i < lost.length; i++) {
+    const it = lost[i];
+    if (it.y >= ay - 0.3) continue;
+    if (!best || it.y > best.y) best = it;
+  }
+  return best;
+}
+function drawLostCue() {
+  const it = nearestLostBelow();
+  if (!it || !(state.descending || state.crown)) return;
+  const p = toS(it.z, it.y);
+  if (p[0] > 28 && p[0] < W - 28 && p[1] > 28 && p[1] < H - 28) return;
+  const x = clamp(p[0], 46 * PX, W - 46 * PX);
+  const y = clamp(p[1], 46 * PX, H - 46 * PX);
+  const pulse = 0.45 + 0.25 * Math.sin(state.time * 3);
+  ctx.save();
+  ctx.globalAlpha = 0.55 + pulse * 0.35;
+  const glow = ctx.createRadialGradient(x, y, 2, x, y, 26 * PX);
+  glow.addColorStop(0, "rgba(255,214,150,0.85)");
+  glow.addColorStop(1, "rgba(255,214,150,0)");
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(x, y, 26 * PX, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+let backHintT = -1;
+let backHintWait = true;
+function updateBackHint(dt) {
+  if (!state.crown) {
+    backHintT = -1;
+    backHintWait = true;
+    return;
+  }
+  const dropped = state.lost && state.lost.length;
+  if (backHintWait && dropped && state.attached) {
+    backHintT = 0;
+    backHintWait = false;
+  }
+  if (backHintT < 0) return;
+  if (holding && backHintT > 0.18) {
+    backHintT = -1;
+    return;
+  }
+  backHintT += dt;
+  if (backHintT > 3.4) backHintT = -1;
+}
+function drawBackHint() {
+  if (backHintT < 0) return;
+  const t = backHintT;
+  const fade = t < 0.4 ? t / 0.4 : t > 2.5 ? Math.max(0, 1 - (t - 2.5) / 0.9) : 1;
+  if (fade <= 0.02) return;
+  const p = toS(state.z + 0.48, state.y + 0.95);
+  ctx.save();
+  ctx.globalAlpha = 0.38 * fade;
+  ctx.fillStyle = "#f6f1e8";
+  ctx.font = (13 * PX) + "px Palatino, Songti SC, STSong, serif";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillText(lang === "en" ? "Hold, to turn back" : "长按，可以回头", p[0], p[1]);
+  ctx.restore();
+}
 function drawLost() {
   const lost = state.lost || [];
   for (let i = 0; i < lost.length; i++) {
@@ -1860,6 +1941,18 @@ function render(dt) {
   if (state.mode === "ending") lead = portrait ? 1.15 : 1.45;
   else lead = mix(lead, 0.15, fall);
   const anchorY = state.attached ? FX.HOLDS[state.holdIndex].y : state.y;
+  if (state.mode !== "ending" && state.lost && state.lost.length && (state.descending || state.crown)) {
+    let near = null;
+    for (let i = 0; i < state.lost.length; i++) {
+      const it = state.lost[i];
+      if (it.y < anchorY - 0.4 && (!near || it.y > near.y)) near = it;
+    }
+    if (near) {
+      const viewM = H / Math.max(1, playPpm);
+      const gap = anchorY - near.y;
+      lead -= clamp(gap - viewM * 0.22, 0, viewM * 0.48);
+    }
+  }
   const playY = anchorY + lead;
   const wideY = 9.6;
   const dampK = reduce ? 8 : mix(3.2, 7.5, fall);
@@ -1893,11 +1986,14 @@ function render(dt) {
   drawWall();
   drawShelves();
   drawHolds();
+  updateBackHint(dtS);
   drawLost();
+  drawLostCue();
   drawEdgeCue();
   drawGate();
   drawArc();
   drawClimber(dtS);
+  drawBackHint();
   drawDrop();
   drawBurst();
   drawSnow(dtS);
@@ -2045,6 +2141,7 @@ function syncUI() {
   ui.best.style.opacity = bestSaved > 8 ? "0.9" : "0";
   const showPack = state.mode === "ledge";
   ui.pack.classList.toggle("show", showPack);
+  ui.pack.toggleAttribute("inert", !showPack);
   document.getElementById("meter").style.opacity = showPack ? "0" : "";
   if (showPack) {
     ui.packKicker.textContent = "";
@@ -2067,7 +2164,11 @@ function syncUI() {
           b.querySelector("b").textContent = ttext(spec.zh, spec.en);
           b.querySelector("span").textContent = ttext(spec.lineZh, spec.lineEn);
           b.querySelector("i").textContent = ttext(U.dropWordZh, U.dropWordEn);
-          b.addEventListener("click", function () { wantDrop = k; });
+          b.addEventListener("pointerup", function (e) {
+            if (e.button != null && e.button !== 0) return;
+            e.stopPropagation();
+            wantDrop = k;
+          });
           ui.packItems.appendChild(b);
         });
       }
@@ -2078,6 +2179,7 @@ function syncUI() {
   }
   const showEnd = state.mode === "ending" && state.endingT > 0.8;
   ui.ending.classList.toggle("show", showEnd);
+  ui.ending.toggleAttribute("inert", !showEnd);
   if (state.mode === "ending") {
     const bit = 1 << (state.mask & 15);
     if ((found & bit) === 0) { found |= bit; persist(); paintMarks(); }
@@ -2104,6 +2206,9 @@ function syncUI() {
     ui.whisper.style.opacity = "0";
   }
   ui.restart.style.visibility = state.mode === "ending" ? "hidden" : "visible";
+  ui.restart.toggleAttribute("inert", state.mode === "ending");
+  ui.title.toggleAttribute("inert", true);
+  ui.hint.toggleAttribute("inert", true);
 }
 
 let wantKeep = false;
@@ -2248,8 +2353,8 @@ function applyShot(name) {
     state.mask = 11;
     state.stormVis = 0.95;
     state.intro = 0;
-    const home = FX.HOLDS[4];
-    state.lost = [{ kind: "trophy", bit: 4, y: home.y + 0.22, z: Math.max(home.z + 0.35, FX.faceZ(home.y) + 0.4), hold: 4 }];
+    const home = FX.HOLDS[2];
+    state.lost = [{ kind: "trophy", bit: 4, y: home.y + 0.22, z: Math.max(home.z + 0.35, FX.faceZ(home.y) + 0.4), hold: 2 }];
   } else if (name === "hang") {
     window.__fx.teleport(8);
     state.mask = 15;
