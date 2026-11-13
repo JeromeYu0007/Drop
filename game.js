@@ -163,14 +163,18 @@
   const UI = {
     titleZh: "放下",
     titleEn: "LET GO",
-    hintZh: "按住蓄力，弧线碰到红绳再松开",
-    hintEn: "Hold. Release when the arc meets the red.",
+    hintZh: "按住蓄力，弧线碰到岩点再松开",
+    hintEn: "Hold. Release when the arc meets the hold.",
     hintFallZh: "下坠时按住，也许还能抓住",
     hintFallEn: "Hold as you fall. You may still catch.",
-    holdZh: "按住放下",
-    holdEn: "Hold to let go",
-    tapZh: "轻点留下",
-    tapEn: "Tap to keep",
+    packZh: "打开背包",
+    packEn: "Open the pack",
+    packLeadZh: "带着，摆荡更短，风雪更重。放下一件，天会亮一点，可它再也不回来。山顶记得你留下的。",
+    packLeadEn: "Carried, the swing is shorter and the storm holds. Let one go, and the sky clears. It will not come back. The summit remembers what you kept.",
+    carryZh: "都带着，继续",
+    carryEn: "Carry them on",
+    dropWordZh: "放下",
+    dropWordEn: "Let go",
     restartZh: "重来",
     restartEn: "Again",
     againZh: "再爬一次",
@@ -220,11 +224,90 @@
     };
   }
 
+  function stormOf(mask) {
+    return weight01(mask);
+  }
+
   function wind(t, y, mask) {
-    if (y < 74) return 0;
-    const k = clamp((y - 74) / 34, 0, 1);
-    const gust = Math.sin(t * 0.72 + y * 0.025) * 0.72 + Math.sin(t * 1.55 + 1.4) * 0.28;
-    return gust * 2.15 * k * params(mask).windMul;
+    const storm = stormOf(mask);
+    const gust = Math.sin(t * 0.72 + y * 0.02) * 0.7 + Math.sin(t * 1.45 + 1.3) * 0.3;
+    const high = clamp((y - 68) / 40, 0, 1);
+    return gust * (0.08 + storm * 0.82 + high * 0.18);
+  }
+
+  function nhash(n) {
+    const s = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+    return s - Math.floor(s);
+  }
+  function vnoise(x) {
+    const i = Math.floor(x);
+    const f = x - i;
+    const u = f * f * (3 - 2 * f);
+    return nhash(i) * (1 - u) + nhash(i + 1) * u;
+  }
+  function routeZ(y) {
+    if (y <= HOLDS[0].y) return HOLDS[0].z;
+    const last = HOLDS[HOLDS.length - 1];
+    if (y >= last.y) return last.z;
+    let i = 0;
+    while (i < HOLDS.length - 2 && HOLDS[i + 1].y < y) i++;
+    const a = HOLDS[i], b = HOLDS[i + 1];
+    return a.z + (b.z - a.z) * ((y - a.y) / (b.y - a.y || 1));
+  }
+  function faceCap(y) {
+    let cap = 8;
+    const reach = 3.1;
+    for (let i = 0; i < HOLDS.length; i++) {
+      const h = HOLDS[i];
+      const dy = Math.abs(y - h.y);
+      if (dy > reach) continue;
+      const u = dy / reach;
+      const local = h.z - 0.46 + u * u * 1.15;
+      if (local < cap) cap = local;
+    }
+    return cap;
+  }
+  // Right-hand edge of the solid rock. Smooth, stable, and kept clear of every hold.
+  function faceZ(y) {
+    const n =
+      (vnoise(y * 0.31 + 1.7) - 0.58) * 0.34 +
+      (vnoise(y * 0.73 + 5.2) - 0.64) * 0.14 +
+      (vnoise(y * 1.55 + 9.4) - 0.72) * 0.045;
+    let lip = 0;
+    for (let i = 0; i < HOLDS.length; i++) {
+      const h = HOLDS[i];
+      if (!isRest(h.k) && h.k !== "summit") continue;
+      const u = (h.y - y + 0.05) / 0.28;
+      if (u <= 0 || u >= 1) continue;
+      const a = Math.sin(u * Math.PI);
+      if (a > lip) lip = a;
+    }
+    const z = routeZ(y) - 0.72 + n + lip * 0.18;
+    return Math.min(z, faceCap(y));
+  }
+  const BODY_R = 0.22;
+  function resolveBody(s) {
+    const ys = [0, 0.38, -0.46];
+    let push = 0;
+    let overhang = false;
+    const faceHip = faceZ(s.y);
+    for (let i = 0; i < ys.length; i++) {
+      const y = s.y + ys[i];
+      const limit = faceZ(y) + BODY_R;
+      if (s.z < limit) {
+        const pen = limit - s.z;
+        if (pen > push) push = pen;
+        if (ys[i] > 0.2 && faceZ(y) > faceHip + 0.1 && s.vy > 0.8) overhang = true;
+      }
+    }
+    if (push <= 0) return false;
+    s.z += push;
+    if (s.vz < 0) s.vz = 0;
+    if (overhang) {
+      s.vy = Math.min(0, s.vy);
+      s.shake = Math.max(s.shake, 0.12);
+    }
+    return true;
   }
 
   function sampleRelease(mask, t) {
@@ -317,6 +400,8 @@
       sfx: [],
       flashBest: 0,
       resetFade: 0,
+      restSeen: 0,
+      stormVis: 1,
     };
   }
 
@@ -326,8 +411,21 @@
     s.angle = angle;
   }
 
-  function arcMin(mask, holdT, hold, target, time) {
+  function swung(mask, holdT, time, y) {
     const st = sampleRelease(mask, holdT);
+    const bias = wind(time, y, mask) * 0.04;
+    st.angle += bias;
+    const p = params(mask);
+    st.aim = clamp(st.angle * p.aimScale, -1.25, 1.25);
+    st.vy = Math.cos(st.aim) * st.speed;
+    st.vz = Math.sin(st.aim) * st.speed;
+    st.offY = -Math.cos(st.angle) * L;
+    st.offZ = Math.sin(st.angle) * L;
+    return st;
+  }
+
+  function arcMin(mask, holdT, hold, target, time) {
+    const st = swung(mask, holdT, time, hold.y);
     let y = hold.y + st.offY;
     let z = hold.z + st.offZ;
     let vy = st.vy;
@@ -345,7 +443,13 @@
       vy -= (vy / sp) * dc * dt;
       z += vz * dt;
       y += vy * dt;
-      if (i % 6 === 0) dots.push({ y: y, z: z, x: faceX(y, z) - 0.55 });
+      const ghost = { y: y, z: z, vy: vy, vz: vz, shake: 0 };
+      if (resolveBody(ghost)) {
+        z = ghost.z;
+        vy = ghost.vy;
+        vz = ghost.vz;
+      }
+      if (i % 6 === 0) dots.push({ y: y, z: z });
       if (target) {
         const d = Math.hypot(z - target.z, y - target.y);
         if (d < minD) minD = d;
@@ -363,10 +467,16 @@
     s.shake = Math.max(s.shake, 0.25);
   }
 
+  function hasItems(mask) {
+    for (const k in ITEMS) if (mask & ITEMS[k].bit) return true;
+    return false;
+  }
+
   function beginLedge(s) {
     s.mode = "ledge";
     s.seenRelease = !s.holding;
     s.pressT = 0;
+    s.restSeen |= 1 << s.holdIndex;
     s.sfx.push("ledge");
   }
 
@@ -388,14 +498,14 @@
     s.sfx.push("catch");
     if (!s.airCatch && s.launches > 0) s.airCatch = true;
     if (h.k === "summit") beginEnding(s);
-    else if (isRest(h.k) && ITEMS[h.k] && s.mask & ITEMS[h.k].bit) beginLedge(s);
+    else if (isRest(h.k) && hasItems(s.mask) && (s.restSeen & (1 << index)) === 0) beginLedge(s);
     else s.mode = "play";
     if (s.y > s.bestRun) s.bestRun = s.y;
   }
 
   function launch(s) {
     const h = HOLDS[s.holdIndex];
-    const st = sampleRelease(s.mask, s.holdT);
+    const st = swung(s.mask, s.holdT, s.time, h.y);
     s.attached = false;
     s.y = h.y + st.offY;
     s.z = h.z + st.offZ;
@@ -410,23 +520,19 @@
     s.sfx.push("release");
   }
 
-  function dropItem(s) {
-    const h = HOLDS[s.holdIndex];
-    const spec = ITEMS[h.k];
-    if (!spec || !(s.mask & spec.bit)) {
-      s.mode = "play";
-      return;
-    }
+  function dropItem(s, kind) {
+    const spec = ITEMS[kind];
+    if (!spec || !(s.mask & spec.bit)) return;
     s.mask &= ~spec.bit;
     s.mode = "drop";
     s.dropT = 0;
-    s.dropKind = h.k;
-    s.dropY = h.y + 0.8;
-    s.dropZ = h.z;
-    s.dropVy = 1.4;
-    s.dropX = faceX(h.y, h.z) - 1.3;
+    s.dropKind = kind;
+    s.dropY = s.y + 0.2;
+    s.dropZ = s.z + 0.28;
+    s.dropVy = -1.2;
+    s.dropX = 0;
     s.sfx.push("drop");
-    s.shake = Math.max(s.shake, 0.12);
+    s.shake = Math.max(s.shake, 0.08);
   }
 
   function keepItem(s) {
@@ -453,6 +559,7 @@
     s.endingT = 0;
     s.impactT = -1;
     s.launches = 0;
+    s.restSeen = 0;
     if (fullItems) {
       s.mask = 15;
       s.learned = 0;
@@ -469,6 +576,9 @@
     const holding = !!input.holding;
     const released = s.prevHolding && !holding;
     s.time += dt;
+    const stormTarget = stormOf(s.mask);
+    if (s.stormVis == null) s.stormVis = stormTarget;
+    s.stormVis += (stormTarget - s.stormVis) * (1 - Math.exp(-dt * 1.8));
     s.burst = Math.max(0, s.burst - dt * 1.8);
     s.shake *= Math.exp(-dt * 5.5);
     s.flashBest = Math.max(0, s.flashBest - dt);
@@ -525,8 +635,8 @@
       s.dropT += dt;
       s.dropVy -= G * 0.35 * dt;
       s.dropY += s.dropVy * dt;
-      s.dropZ += Math.sin(s.time * 3) * dt * 0.4;
-      if (s.dropT > 1.25) {
+      s.dropZ += Math.sin(s.time * 2.2) * dt * 0.25;
+      if (s.dropT > 2.05) {
         s.dropT = -1;
         s.mode = "play";
       }
@@ -536,17 +646,15 @@
     }
 
     if (s.mode === "ledge") {
-      if (input.keep) {
-        keepItem(s);
-      } else if (input.drop) {
-        dropItem(s);
-      } else if (!s.seenRelease) {
+      if (!s.seenRelease) {
         if (!holding) s.seenRelease = true;
+      } else if (input.dropKind) {
+        dropItem(s, input.dropKind);
+      } else if (input.keep || (released && s.pressT > 0.02 && s.pressT < 0.42)) {
+        keepItem(s);
       } else if (holding) {
         s.pressT += dt;
-        if (s.pressT > 0.62) dropItem(s);
       } else {
-        if (released && s.pressT > 0.02 && s.pressT < 0.28) keepItem(s);
         s.pressT = 0;
       }
       const h = HOLDS[s.holdIndex];
@@ -565,9 +673,10 @@
       const rope = mix(0.42, L, s.settle);
       if (holding && s.settle > 0.9) {
         s.holdT += dt;
-        const st = sampleRelease(s.mask, s.holdT);
+        const st = swung(s.mask, s.holdT, s.time, h.y);
         s.angle = st.angle;
         placeOnRope(s, h, st.angle, L);
+        resolveBody(s);
         const ni = nextIndex(s.holdIndex);
         if (ni >= 0 && s.holdT > 0.12) {
           const hit = arcMin(s.mask, s.holdT, h, HOLDS[ni], s.time);
@@ -590,6 +699,7 @@
           const idle = Math.sin(s.time * 1.25) * 0.055 * s.settle;
           s.angle = idle;
           placeOnRope(s, h, idle, rope);
+          resolveBody(s);
         }
       }
     } else {
@@ -603,6 +713,7 @@
       s.vy -= (s.vy / sp) * dc * dt;
       s.z += s.vz * dt;
       s.y += s.vy * dt;
+      resolveBody(s);
       if (sp > 0.8) s.angle = Math.atan2(-s.vz, s.vy);
 
       let caught = -1;
@@ -677,8 +788,15 @@
       const input = { holding: false, freezeIntro: true };
       if (s.mode === "ending") break;
       if (s.mode === "ledge") {
-        if (options.dropAll) input.drop = true;
-        else input.keep = true;
+        if (options.dropAll) {
+          const order = ["trophy", "letter", "ring", "photo"];
+          let kind = "";
+          for (let ki = 0; ki < order.length; ki++) {
+            if (s.mask & ITEMS[order[ki]].bit) { kind = order[ki]; break; }
+          }
+          if (kind) input.dropKind = kind;
+          else input.keep = true;
+        } else input.keep = true;
       } else if (s.mode === "drop" || s.mode === "impact") {
         input.holding = false;
       } else if (s.attached) {
@@ -755,6 +873,12 @@
     weight01: weight01,
     params: params,
     wind: wind,
+    stormOf: stormOf,
+    faceZ: faceZ,
+    routeZ: routeZ,
+    BODY_R: BODY_R,
+    ORDER: ["trophy", "letter", "ring", "photo"],
+    hasItems: hasItems,
     sampleRelease: sampleRelease,
     faceX: faceX,
     radii: radii,
