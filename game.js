@@ -11,49 +11,54 @@
   const DRAG = 0.016;
   const CATCH = 0.7;
   const CATCH_HOLD = 0.96;
-  const SUMMIT_Y = 104.5;
-
+  // Light pack charges and swings faster. A heavy pack is slower, never unreachable.
   const TUNE = {
-    omega: [1.85, 1.28],
-    amp: [1.48, 1.12],
-    maxSpeed: [22.4, 18.2],
-    aimScale: [0.88, 0.74],
-    chargeRate: [1.15, 0.48],
+    omega: [3.35, 3.05],
+    amp: [1.22, 1.05],
+    maxSpeed: [19.4, 16.6],
+    aimScale: [0.82, 0.74],
+    chargeRate: [2.4, 1.55],
     windMul: [0.2, 1],
   };
-  const GATE = { y: 106.05, z: -0.62 };
 
+  // Difficulty curve, bottom to top:
+  // approach, overhang, recovery, long gap, recovery, chimney, sparse, ice, door.
   const RAW = [
-    [8, 0, "start"],
-    [10.1, -0.35, "hold"],
-    [12.3, 0.1, "hold"],
-    [14.65, -0.45, "hold"],
-    [17.15, 0, "hold"],
-    [19.8, -0.45, "trophy"],
-    [22.9, 0.5, "hold"],
-    [26.1, -0.55, "hold"],
-    [29.4, 0.35, "hold"],
-    [32.65, -0.75, "hold"],
-    [36, 0, "hold"],
-    [39.15, -0.35, "letter"],
-    [42.8, 0.75, "hold"],
-    [46.6, -0.45, "hold"],
-    [50.15, 0, "hold"],
-    [54, -1.15, "hold"],
-    [57.8, 0, "hold"],
-    [61.25, -0.35, "ring"],
-    [65.25, 0.9, "hold"],
-    [69.45, -0.3, "hold"],
-    [72.7, 0.05, "hold"],
-    [76.95, -1.25, "hold"],
-    [81, -0.1, "hold"],
-    [84.65, -0.55, "photo"],
-    [89.05, 0.45, "hold"],
-    [93.55, -0.5, "hold"],
-    [96.7, -0.25, "hold"],
-    [101.15, -1.3, "hold"],
-    [104.5, -1.05, "summit"],
+    [8, 0.05, "start"],
+    [10.3, -0.2, "hold"],
+    [12.6, 0.22, "hold"],
+    [14.9, -0.12, "hold"],
+    [17.2, 0.18, "hold"],
+    [19.6, -0.05, "trophy"],
+    [21.8, -0.95, "hold"],
+    [24.5, 1.15, "hold"],
+    [26.8, 0.2, "hold"],
+    [29.0, -0.25, "hold"],
+    [31.2, 0.12, "hold"],
+    [33.4, -0.08, "letter"],
+    [36.9, 0.42, "hold"],
+    [39.1, -0.18, "hold"],
+    [41.3, 0.16, "hold"],
+    [43.5, -0.06, "hold"],
+    [45.7, 0.1, "ring"],
+    [47.7, 0.08, "hold"],
+    [49.6, -0.06, "hold"],
+    [51.5, 0.1, "hold"],
+    [53.4, -0.04, "hold"],
+    [55.4, 0.06, "hold"],
+    [58.2, 0.62, "hold"],
+    [61.0, -0.48, "hold"],
+    [63.7, 0.55, "hold"],
+    [66.0, 0.02, "photo"],
+    [68.4, -0.28, "ice"],
+    [70.9, 0.48, "ice"],
+    [73.3, -0.22, "ice"],
+    [75.6, 0.32, "ice"],
+    [77.9, 0.02, "ice"],
+    [80.4, 0.12, "summit"],
   ];
+  const SUMMIT_Y = RAW[RAW.length - 1][0];
+  const GATE = { y: SUMMIT_Y + 1.55, z: RAW[RAW.length - 1][1] + 0.48 };
 
   const HOLDS = RAW.map(function (h, i) {
     return { y: h[0], z: h[1], k: h[2], i: i };
@@ -197,7 +202,7 @@
     const storm = stormOf(mask);
     const gust = Math.sin(t * 0.72 + y * 0.02) * 0.7 + Math.sin(t * 1.45 + 1.3) * 0.3;
     const high = clamp((y - 68) / 40, 0, 1);
-    return gust * (0.04 + storm * 1.05 + high * 0.12) * (returning ? 1.7 : 1);
+    return gust * (0.04 + storm * 1.05 + high * 0.12) * (returning ? 1.35 : 1);
   }
 
   function nhash(n) {
@@ -376,6 +381,8 @@
       slip: 0,
       reveal: "",
       revealT: -1,
+      checkpoint: 0,
+      recoverT: -1,
     };
   }
 
@@ -404,7 +411,7 @@
     let z = hold.z + st.offZ;
     let vy = st.vy;
     let vz = st.vz;
-    if (downOk && st.angle < -0.55) {
+    if (downOk && wantsDown(mask, holdT)) {
       const shot = downShot(st, hold);
       vy = shot.vy;
       vz = shot.vz;
@@ -476,6 +483,9 @@
     s.shake = Math.max(s.shake, 0.1 + weight01(s.mask) * 0.22);
     s.sfx.push(weight01(s.mask) > 0.55 ? "land" : "catch");
     if (!s.airCatch && s.launches > 0) s.airCatch = true;
+    if (isRest(h.k) || index === 0) {
+      if (index >= (s.checkpoint || 0)) s.checkpoint = index;
+    }
     if (h.k === "summit") {
       s.crown = true;
       s.descending = false;
@@ -485,6 +495,14 @@
     else s.mode = "play";
     tryPickup(s);
     if (s.y > s.bestRun) s.bestRun = s.y;
+  }
+
+  function wantsDown(mask, holdT) {
+    const p = params(mask);
+    const st = sampleRelease(mask, holdT);
+    const peak = Math.PI / (2 * p.omega);
+    // The upward aim comes first. Only after that does the line drop toward the hold below.
+    return holdT > Math.max(1.05, peak + 0.42) && st.angle < 0.45;
   }
 
   function lowerHold(hold) {
@@ -500,11 +518,11 @@
   }
 
   function downShot(st, hold) {
-    const speed = Math.min(7.2, Math.abs(st.vy) * 0.22 + 4.2);
+    const speed = Math.min(6.4, Math.abs(st.vy) * 0.16 + 4.4);
     const target = lowerHold(hold);
     if (!target) return { vy: -speed, vz: 0 };
     const dz = target.z - (hold.z + st.offZ);
-    return { vy: -speed * 0.92, vz: clamp(dz * 1.8, -2.4, 2.4) };
+    return { vy: -speed * 0.88, vz: clamp(dz * 2.2, -3.1, 3.1) };
   }
 
   function launch(s) {
@@ -516,7 +534,7 @@
     s.vy = st.vy;
     s.vz = st.vz;
     s.angle = st.angle;
-    const goingBack = st.angle < -0.55;
+    const goingBack = wantsDown(s.mask, s.holdT);
     if ((s.crown || s.descending) && goingBack) {
       const shot = downShot(st, h);
       s.vy = shot.vy;
@@ -625,6 +643,8 @@
     s.slip = 0;
     s.reveal = "";
     s.revealT = -1;
+    s.checkpoint = 0;
+    s.recoverT = -1;
     if (fullItems) {
       s.mask = 15;
       s.lost = [];
@@ -636,6 +656,29 @@
     }
     placeOnRope(s, h, 0, L);
     s.resetFade = 1;
+  }
+
+  function beginRecover(s) {
+    const h = HOLDS[s.checkpoint || 0];
+    s.mode = "recover";
+    s.recoverT = 0;
+    s.attached = false;
+    s.holdIndex = s.checkpoint || 0;
+    s.origin = s.holdIndex;
+    s.y = h.y + 2.15;
+    s.z = h.z + 0.2;
+    s.vy = -5.5;
+    s.vz = 0;
+    s.angle = 0.4;
+    s.holdT = 0;
+    s.crown = false;
+    s.dots = [];
+    s.armed = false;
+    s.failedOnce = true;
+    s.falls += 1;
+    s.intro = 0;
+    s.shake = 0.4;
+    s.sfx.push("impact");
   }
 
   function step(s, dt, input) {
@@ -675,20 +718,24 @@
       s.intro = Math.max(0, s.intro - dt * rate);
     }
 
-    if (s.mode === "impact") {
-      s.impactT += dt;
-      s.vy = Math.min(s.vy, -8);
-      if (s.impactT > 0.28) {
-        const keepMask = s.mask;
-        const best = s.bestRun;
-        const failed = true;
-        wipePosition(s, false);
-        s.mask = keepMask;
-        s.bestRun = best;
-        s.failedOnce = failed;
-        s.falls += 1;
-        s.intro = 0;
-        s.sfx.push("impact");
+    if (s.mode === "impact" || s.mode === "recover") {
+      s.recoverT += dt;
+      s.impactT = s.recoverT;
+      const h = HOLDS[s.checkpoint || 0];
+      s.vy -= G * 0.55 * dt;
+      s.y += s.vy * dt;
+      s.z += (h.z - s.z) * Math.min(1, dt * 6);
+      if (s.y < h.y + 0.28 || s.recoverT > 0.62) {
+        const seen = s.restSeen;
+        catchHold(s, s.checkpoint || 0);
+        s.restSeen = seen;
+        if (isRest(h.k) && (seen & (1 << s.holdIndex))) s.mode = "play";
+        s.settle = 1;
+        s.lock = 0.3;
+        s.needUp = true;
+        s.holdT = 0;
+        s.vy = 0;
+        s.vz = 0;
       }
       s.prevHolding = holding;
       s.holding = holding;
@@ -743,6 +790,12 @@
     }
 
     // play
+    if (s.crown && s.attached && input.choice === "door") {
+      beginEnding(s);
+      s.prevHolding = false;
+      s.holding = false;
+      return s;
+    }
     if (s.needUp) {
       if (!input.holding) s.needUp = false;
       holding = false;
@@ -758,9 +811,10 @@
       s.settle = Math.min(1, s.settle + dt / (0.2 + heavy * 0.15));
       const rope = mix(0.42, L, s.settle);
       tryPickup(s);
-      if (s.descending && !holding && s.settle > 0.88) {
+      const onIce = h.k === "ice";
+      if ((s.descending || onIce) && !holding && s.settle > 0.88) {
         s.slip += dt;
-        const ice = mix(2.4, 1.25, heavy);
+        const ice = s.descending ? mix(2.4, 1.25, heavy) : mix(2.1, 1.45, heavy);
         if (s.slip > ice) {
           s.attached = false;
           s.vy = -3.2 - heavy * 2.2;
@@ -792,31 +846,21 @@
           placeOnRope(s, h, st.angle, L);
           resolveBody(s);
           let target = null;
-          if (s.crown || s.descending) {
-            const peek = swung(s.mask, s.holdT, s.time, h.y);
-            if (peek.angle < -0.55) {
-              let best = null;
-              let gap = 1e9;
-              for (let i = 0; i < HOLDS.length; i++) {
-                const hd = HOLDS[i];
-                const dy = h.y - hd.y;
-                if (dy < 0.8 || dy > 14) continue;
-                if (dy < gap) { gap = dy; best = hd; }
-              }
-              target = best;
-            } else if (s.crown) target = GATE;
-          }
+          if ((s.crown || s.descending) && wantsDown(s.mask, s.holdT)) {
+            target = lowerHold(h);
+          } else if (s.crown) target = GATE;
           if (!target) {
             const ni = nextIndex(s.holdIndex);
             if (ni >= 0) target = HOLDS[ni];
           }
           if (target && s.holdT > 0.12) {
-            const returning = !!(s.descending || (s.crown && target && target !== GATE && swung(s.mask, s.holdT, s.time, h.y).angle < -0.55));
-            const hit = arcMin(s.mask, s.holdT, h, target, s.time, s.crown || s.descending, returning);
+            const downAim = (s.crown || s.descending) && wantsDown(s.mask, s.holdT);
+            const hit = arcMin(s.mask, s.holdT, h, target, s.time, downAim, s.descending || downAim);
             s.dots = hit.dots;
             s.aimD = hit.minD;
             const was = s.armed;
-            let need = s.descending ? CATCH * 0.82 : CATCH;
+            let need = downAim ? CATCH * 1.12 : CATCH;
+            if (!downAim && target && target.k === "ice") need *= 0.92;
             if (target && target.k && (isRest(target.k) || target.k === "summit")) need += 0.28;
             if (s.crown && target === GATE) need = 1.2;
             s.armed = hit.minD < need;
@@ -828,11 +872,10 @@
           }
         }
       } else if (s.attached) {
-        if (released && s.crown && s.holdT > 0.1 && s.settle > 0.9) {
-          const st = swung(s.mask, s.holdT, s.time, h.y);
-          if (st.angle < -0.55) launch(s);
-          else beginEnding(s);
-        } else if (released && s.holdT > 0.16 && s.settle > 0.9) launch(s);
+        const down = (s.crown || s.descending) && wantsDown(s.mask, s.holdT);
+        if (released && down && s.armed && s.holdT > 0.16 && s.settle > 0.9) launch(s);
+        else if (released && s.crown && s.armed && !down && s.holdT > 0.16 && s.settle > 0.9) beginEnding(s);
+        else if (released && !down && s.holdT > 0.16 && s.settle > 0.9) launch(s);
         s.holdT = 0;
         s.armed = false;
         s.dots = [];
@@ -870,7 +913,8 @@
         // Still rising: the hold you came from, and anything below it, is not a catch.
         if (s.vy > 0.6 && hd.y < origin.y - 0.25) continue;
         let r = reach;
-        if (s.descending) r *= 0.82;
+        if (s.descending && s.vy < 0) r *= 1.12;
+        else if (hd.k === "ice") r *= 0.92;
         if (isRest(hd.k) || hd.k === "summit") r += 0.32;
         const d = Math.hypot(s.z - hd.z, s.y - hd.y);
         const toward = (hd.y - s.y) * s.vy + (hd.z - s.z) * s.vz;
@@ -894,11 +938,12 @@
             s.sfx.push("near");
           }
         }
-        if (s.y < 1.2 && s.vy < -6) {
-          s.mode = "impact";
-          s.impactT = 0;
-          s.shake = 0.55;
-        }
+        const cp = HOLDS[s.checkpoint || 0];
+        const floorY = s.descending ? HOLDS[s.origin].y - 12 : cp.y - 1.3;
+        const passedRest = !s.descending && (s.checkpoint || 0) > 0 && s.vy < -2.2 && s.y < floorY;
+        const missedDrop = s.descending && s.vy < -2.2 && s.y < floorY;
+        const hitGround = s.y < 1.5 && s.vy < -5;
+        if ((passedRest || missedDrop || hitGround) && s.mode === "play") beginRecover(s);
       }
     }
 
@@ -933,14 +978,7 @@
       const input = { holding: false, freezeIntro: true };
       if (s.mode === "ending") break;
       if (s.crown && s.attached) {
-        if (s.holdT > 0.22 && s.holdT < 0.5) {
-          s.prevHolding = true;
-          s.holding = true;
-          input.holding = false;
-        } else {
-          input.holding = true;
-          if (s.holdT > 7.5) { stuck++; break; }
-        }
+        input.choice = "door";
       } else if (s.mode === "ledge") {
         if (options.dropAll) {
           const order = ["trophy", "letter", "ring", "photo"];
@@ -1047,11 +1085,7 @@
       } else if (!s.attached) {
         input.holding = true;
       } else if (s.crown && got) {
-        if (s.holdT > 0.22 && s.holdT < 0.48) {
-          s.prevHolding = true;
-          s.holding = true;
-          input.holding = false;
-        } else input.holding = true;
+        input.choice = "door";
       } else if ((s.crown && !got) || (s.descending && !got)) {
         const here = HOLDS[s.holdIndex];
         const target = lowerHold(here);

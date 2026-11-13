@@ -338,6 +338,27 @@ function makePuff(inner) {
 }
 const puffLit = makePuff("rgba(255,252,248,0.95)");
 const puffShade = makePuff("rgba(206,168,160,0.85)");
+const TEX = {
+  rock: new Image(),
+  cloud: new Image(),
+  night: new Image(),
+  moon: new Image(),
+};
+TEX.rock.src = "tex/rock.jpg";
+TEX.cloud.src = "tex/cloud.png";
+TEX.night.src = "tex/cloud-night.png";
+TEX.moon.src = "tex/moon.png";
+const flakeSprite = document.createElement("canvas");
+flakeSprite.width = flakeSprite.height = 32;
+{
+  const g = flakeSprite.getContext("2d");
+  const rad = g.createRadialGradient(16, 16, 1, 16, 16, 15);
+  rad.addColorStop(0, "rgba(255,252,248,0.95)");
+  rad.addColorStop(0.45, "rgba(255,252,248,0.35)");
+  rad.addColorStop(1, "rgba(255,252,248,0)");
+  g.fillStyle = rad;
+  g.fillRect(0, 0, 32, 32);
+}
 
 const LIP_Y = [];
 for (let i = 0; i < FX.HOLDS.length; i++) {
@@ -461,13 +482,22 @@ function drawSky() {
   g.addColorStop(1, css(sky.bot));
   ctx.fillStyle = g;
   ctx.fillRect(-30, -30, W + 60, H + 60);
-  const star = (1 - smooth(clamp((ALT - 8) / 36, 0, 1))) * (1 - storm * 0.55);
-  if (star > 0.04) {
-    ctx.fillStyle = "#f7f4ee";
-    for (let i = 0; i < 58; i++) {
-      ctx.globalAlpha = star * (0.3 + hash(i * 4.4) * 0.7);
-      const s = (hash(i * 1.7) > 0.9 ? 2.1 : 1.15) * PX;
-      ctx.fillRect(hash(i * 3.17) * W, hash(i * 8.91) * H * 0.75, s, s);
+  const star = (1 - smooth(clamp((ALT - 20) / 70, 0, 1))) * (0.35 + storm * 0.65);
+  if (star > 0.05) {
+    for (let i = 0; i < 140; i++) {
+      const tw = 0.45 + 0.55 * Math.sin(state.time * (0.8 + hash(i * 2.2) * 2.4) + i);
+      ctx.globalAlpha = star * tw * (0.25 + hash(i * 4.4) * 0.75);
+      const x = hash(i * 3.17) * W;
+      const y = hash(i * 8.91) * H * 0.72;
+      const bright = hash(i * 1.7) > 0.92;
+      const s = (bright ? 2.4 : 1.15) * PX;
+      ctx.fillStyle = "#f7f4ee";
+      ctx.fillRect(x, y, s, s);
+      if (bright) {
+        ctx.globalAlpha *= 0.45;
+        ctx.fillRect(x - 3.2 * PX, y + s * 0.35, 8 * PX, Math.max(1, PX * 0.7));
+        ctx.fillRect(x + s * 0.3, y - 3 * PX, Math.max(1, PX * 0.7), 8 * PX);
+      }
     }
     ctx.globalAlpha = 1;
   }
@@ -503,21 +533,36 @@ function drawSky() {
   ctx.fillStyle = "#fffaf2";
   ctx.fill();
   ctx.restore();
-  if (ALT < 48 && storm < 0.75) {
-    const mx = W * (portrait ? 0.28 : 0.22);
-    const my = H * (0.22 + smooth(clamp(ALT / 48, 0, 1)) * 0.18);
-    const mr = (portrait ? 11 : 16) * PX * (1 - storm * 0.35);
-    const mg = ctx.createRadialGradient(mx, my, mr * 0.2, mx, my, mr * 5);
-    mg.addColorStop(0, "rgba(232,236,246," + (0.45 * (1 - storm)) + ")");
-    mg.addColorStop(1, "rgba(232,236,246,0)");
-    ctx.fillStyle = mg;
+  const night = storm * (1 - smooth(clamp((ALT - 36) / 55, 0, 1)));
+  if (night > 0.08) {
+    const mx = W * (portrait ? 0.62 : 0.72);
+    const my = H * (0.16 + smooth(clamp(ALT / 80, 0, 1)) * 0.1);
+    const mr = (portrait ? 18 : 28) * PX * (0.85 + night * 0.25);
+    ctx.save();
+    ctx.globalAlpha = night;
+    const halo = ctx.createRadialGradient(mx, my, mr * 0.2, mx, my, mr * 7.5);
+    halo.addColorStop(0, "rgba(232, 226, 206, 0.55)");
+    halo.addColorStop(0.18, "rgba(186, 198, 220, 0.16)");
+    halo.addColorStop(0.45, "rgba(120, 140, 180, 0.05)");
+    halo.addColorStop(1, "rgba(120, 140, 180, 0)");
+    ctx.fillStyle = halo;
     ctx.beginPath();
-    ctx.arc(mx, my, mr * 5, 0, Math.PI * 2);
+    ctx.arc(mx, my, mr * 7.5, 0, Math.PI * 2);
     ctx.fill();
     ctx.beginPath();
-    ctx.arc(mx, my, mr, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(244,246,252," + (0.85 * (1 - storm * 0.4)) + ")";
-    ctx.fill();
+    ctx.arc(mx, my, mr * 1.85, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(232, 226, 210, 0.18)";
+    ctx.lineWidth = 1.2 * PX;
+    ctx.stroke();
+    if (TEX.moon.complete && TEX.moon.naturalWidth) {
+      ctx.drawImage(TEX.moon, mx - mr, my - mr, mr * 2, mr * 2);
+    } else {
+      ctx.beginPath();
+      ctx.arc(mx, my, mr, 0, Math.PI * 2);
+      ctx.fillStyle = "#f4f1e8";
+      ctx.fill();
+    }
+    ctx.restore();
   }
   if (storm < 0.42 && ALT < 58) {
     ctx.save();
@@ -544,8 +589,8 @@ function drawSky() {
     const rise2 = smooth(clamp((ALT - 8) / 96, 0, 1));
     const sx2 = W * (portrait ? 0.64 : 0.73);
     const sy2 = H * (0.5 - rise2 * 0.3);
-    for (let i = 0; i < 4; i++) {
-      ctx.globalAlpha = (0.035 + (1 - storm) * 0.05) * (0.6 + (i % 2) * 0.4);
+    for (let i = 0; i < 7; i++) {
+      ctx.globalAlpha = (0.05 + (1 - storm) * 0.09) * (0.55 + (i % 3) * 0.2);
       ctx.fillStyle = cssa(sky.sun, 1);
       ctx.beginPath();
       ctx.moveTo(sx2 - 8 * PX, sy2);
@@ -568,21 +613,23 @@ function drawSky() {
 }
 
 const RANGES = [
-  { p: 0.05, base: 0.6, amp: 0.17, cycles: 2.6, seed: 1.4, depth: 0.18 },
-  { p: 0.09, base: 0.67, amp: 0.2, cycles: 3.1, seed: 7.2, depth: 0.34 },
-  { p: 0.14, base: 0.74, amp: 0.2, cycles: 3.6, seed: 14.5, depth: 0.5 },
-  { p: 0.2, base: 0.81, amp: 0.17, cycles: 4.2, seed: 23.0, depth: 0.66 },
-  { p: 0.28, base: 0.88, amp: 0.14, cycles: 4.8, seed: 33.4, depth: 0.8 },
-  { p: 0.36, base: 0.95, amp: 0.11, cycles: 5.4, seed: 46.1, depth: 0.94 },
+  { p: 0.025, base: 0.40, amp: 0.055, cycles: 1.3, seed: 1.2, depth: 0.05 },
+  { p: 0.045, base: 0.48, amp: 0.07, cycles: 1.7, seed: 7.4, depth: 0.14 },
+  { p: 0.07, base: 0.56, amp: 0.09, cycles: 2.0, seed: 13.1, depth: 0.26 },
+  { p: 0.11, base: 0.64, amp: 0.11, cycles: 2.4, seed: 19.6, depth: 0.40 },
+  { p: 0.16, base: 0.72, amp: 0.12, cycles: 2.8, seed: 26.2, depth: 0.55 },
+  { p: 0.22, base: 0.80, amp: 0.10, cycles: 3.2, seed: 34.0, depth: 0.70 },
+  { p: 0.30, base: 0.88, amp: 0.085, cycles: 3.7, seed: 42.5, depth: 0.84 },
+  { p: 0.38, base: 0.96, amp: 0.06, cycles: 4.2, seed: 51.0, depth: 0.95 },
 ];
 function rockColor(depth) {
   const t = smooth(clamp((ALT - 8) / 78, 0, 1));
   const storm = state.stormVis == null ? 1 : state.stormVis;
-  let far = mixc([22, 30, 52], [176, 132, 118], t);
-  let near = mixc([8, 10, 18], [64, 36, 34], t);
-  far = mixc(far, [18, 22, 36], storm * 0.55);
-  near = mixc(near, [8, 10, 18], storm * 0.4);
-  return mixc(far, near, Math.pow(depth, 0.8));
+  const sky = mixc(SKYNOW.top, SKYNOW.bot, 0.5);
+  let near = mixc([62, 44, 40], [138, 86, 68], t);
+  near = mixc(near, [28, 36, 52], storm * 0.5);
+  const haze = Math.pow(1 - depth, 1.15);
+  return mixc(near, sky, haze * 0.9);
 }
 const birds = [];
 for (let i = 0; i < 6; i++) {
@@ -631,11 +678,24 @@ function drawRanges() {
     ctx.fillStyle = css(col);
     ctx.fill();
     ctx.beginPath();
-    ctx.moveTo(pts[0].x, pts[0].sy);
-    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].sy);
-    if (L.depth > 0.7) {
-      ctx.strokeStyle = cssa(mixc(col, [255, 236, 214], 0.22), 0.35);
-      ctx.lineWidth = 1.1 * PX;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i], b = pts[i + 1];
+      if (b.sy - a.sy < 1.5) continue;
+      const drop = (10 + L.depth * 26) * PX;
+      ctx.moveTo(a.x, a.sy);
+      ctx.lineTo(b.x, b.sy);
+      ctx.lineTo(b.x, b.sy + drop);
+      ctx.lineTo(a.x, a.sy + drop * 0.72);
+      ctx.closePath();
+    }
+    ctx.fillStyle = "rgba(20, 16, 22, " + (0.06 + L.depth * 0.2) + ")";
+    ctx.fill();
+    if (L.depth > 0.45) {
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].sy);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].sy);
+      ctx.strokeStyle = cssa(mixc(col, [255, 236, 214], 0.35), 0.18 + L.depth * 0.25);
+      ctx.lineWidth = (L.depth > 0.75 ? 1.4 : 1) * PX;
       ctx.stroke();
     }
     ctx.fillStyle = css(mixc([255, 252, 248], SKYNOW.top, (1 - L.depth) * 0.22));
@@ -672,33 +732,35 @@ function cloudScreen(parallax) {
 function drawClouds() {
   const day = smooth(clamp((ALT - 14) / 42, 0, 1));
   const storm = state.stormVis == null ? 1 : state.stormVis;
+  const sprite = storm > 0.45 ? TEX.night : TEX.cloud;
+  const ready = sprite.complete && sprite.naturalWidth;
   const bands = [
-    { p: 0.12, a: 0.28 + storm * 0.16, sc: 0.46, shade: true, n: 7, seed: 0.4 },
-    { p: 0.2, a: 0.4 + storm * 0.22, sc: 0.56, shade: true, n: 9, seed: 1.2 },
-    { p: 0.3, a: 0.55 + storm * 0.16, sc: 0.66, shade: true, n: 10, seed: 3.1 },
-    { p: 0.4, a: 0.62, sc: 0.74, shade: false, n: 11, seed: 5.5 },
-    { p: 0.52, a: 0.46 + (1 - storm) * 0.14, sc: 0.6, shade: false, n: 9, seed: 8.4 },
+    { p: 0.08, a: 0.35, sc: 0.34, n: coarse ? 4 : 5, seed: 0.4, lift: -0.04 },
+    { p: 0.16, a: 0.55, sc: 0.48, n: coarse ? 4 : 6, seed: 1.7, lift: 0 },
+    { p: 0.28, a: 0.72, sc: 0.62, n: coarse ? 5 : 7, seed: 3.3, lift: 0.02 },
+    { p: 0.4, a: 0.84, sc: 0.78, n: coarse ? 5 : 6, seed: 5.1, lift: 0.04 },
+    { p: 0.55, a: 0.9, sc: 0.9, n: coarse ? 4 : 5, seed: 8.8, lift: 0.07 },
   ];
   for (let bi = 0; bi < bands.length; bi++) {
     const b = bands[bi];
-    const base = cloudScreen(b.p);
-    if (base < -H * 0.55 || base > H * 1.4) continue;
-    ctx.globalAlpha = b.a * (0.72 + day * 0.4);
-    const sprite = b.shade ? puffShade : puffLit;
+    const base = cloudScreen(b.p) + H * b.lift;
+    if (base < -H * 0.8 || base > H * 1.35) continue;
     for (let i = 0; i < b.n; i++) {
-      const u = i / (b.n - 1);
-      const x = -W * 0.2 + u * W * 1.4 + Math.sin(state.time * 0.11 + i + b.seed) * 12 * PX;
-      const wob = Math.sin(u * 7.5 + b.seed) * 18 * PX + Math.sin(state.time * 0.22 + i * 1.3) * 6 * PX;
-      const w = W * b.sc * (0.72 + hash(i * 3 + bi) * 0.5);
-      const h = w * (0.16 + hash(i + bi * 5) * 0.07);
-      ctx.drawImage(sprite, x - w * 0.5, base + wob - h * 0.42, w, h);
+      const u = i / Math.max(1, b.n - 1);
+      const x = -W * 0.18 + u * W * 1.25 + Math.sin(state.time * 0.08 + i + b.seed) * 18 * PX;
+      const wob = Math.sin(u * 5.5 + b.seed) * 22 * PX + Math.sin(state.time * 0.18 + i) * 8 * PX;
+      const w = W * b.sc * (0.85 + hash(i * 3 + bi) * 0.45);
+      const h = w * 0.42;
+      ctx.globalAlpha = b.a * (0.55 + day * 0.45) * (storm > 0.45 ? 0.92 : 1);
+      if (ready) ctx.drawImage(sprite, x - w * 0.5, base + wob - h * 0.62, w, h);
+      else ctx.drawImage(bi < 2 ? puffShade : puffLit, x - w * 0.5, base + wob - h * 0.2, w, h * 0.35);
     }
   }
   ctx.globalAlpha = 1;
   const near = 1 - clamp(Math.abs(cam.y - CLOUD_Y) / 7.5, 0, 1);
-  if (near > 0.03) {
-    ctx.globalAlpha = near * 0.38;
-    ctx.fillStyle = css(mixc([255, 248, 242], SKYNOW.bot, 0.22));
+  if (near > 0.05) {
+    ctx.globalAlpha = near * 0.22;
+    ctx.fillStyle = css(mixc([255, 248, 242], SKYNOW.bot, storm * 0.35));
     ctx.fillRect(-20, -20, W + 40, H + 40);
     ctx.globalAlpha = 1;
   }
@@ -767,29 +829,61 @@ function drawWallSnow() {
 }
 function drawWall() {
   if (wallPts.length < 2) return;
-  wallPath();
   const storm = state.stormVis == null ? 0 : state.stormVis;
-  const g = ctx.createLinearGradient(0, 0, Math.max(48, anchorX), 0);
-  g.addColorStop(0, "#07080c");
-  g.addColorStop(0.72, storm > 0.5 ? "#12151c" : "#14120f");
-  g.addColorStop(1, "#1c1814");
-  ctx.fillStyle = g;
-  ctx.fill();
+  const rockReady = TEX.rock.complete && TEX.rock.naturalWidth;
   ctx.save();
   wallPath();
   ctx.clip();
-  drawCracks();
+  if (rockReady) {
+    const meters = 16;
+    const yTop = cam.y + H / ppm + meters;
+    const yBot = cam.y - H / ppm - meters;
+    for (let y = Math.floor(yBot / meters) * meters; y < yTop; y += meters) {
+      const top = toS(0, y + meters)[1];
+      const bot = toS(0, y)[1];
+      const y0 = Math.min(top, bot);
+      const hh = Math.max(1, Math.abs(bot - top));
+      ctx.drawImage(TEX.rock, -30, y0, Math.max(anchorX, W * 0.62) + 80, hh);
+    }
+  } else {
+    ctx.fillStyle = "#2a2422";
+    ctx.fillRect(-80, -80, W, H + 160);
+  }
+  const shade = ctx.createLinearGradient(0, 0, Math.max(120, anchorX + 30), 0);
+  shade.addColorStop(0, "rgba(0,0,0,0.45)");
+  shade.addColorStop(0.62, "rgba(0,0,0,0.12)");
+  shade.addColorStop(1, "rgba(255,236,214,0.05)");
+  ctx.fillStyle = shade;
+  ctx.fillRect(-40, -40, anchorX + 140, H + 80);
+  ctx.globalCompositeOperation = "soft-light";
+  ctx.fillStyle = storm > 0.4 ? "rgba(150, 170, 200, 0.45)" : "rgba(255, 196, 150, 0.28)";
+  ctx.fillRect(-40, -40, anchorX + 140, H + 80);
+  ctx.globalCompositeOperation = "source-over";
+  const yLo = cam.y - H / ppm - 1;
+  const yHi = cam.y + H / ppm + 1;
+  for (let y = yLo; y < yHi; y += 1.7) {
+    const e = edgeAt(y + 0.2);
+    const e2 = edgeAt(y + 1.45);
+    const n = hash(Math.floor(y * 1.7) + 3);
+    ctx.fillStyle = n > 0.55 ? "rgba(255,232,206,0.09)" : "rgba(0,0,0,0.18)";
+    ctx.beginPath();
+    ctx.moveTo(e.x - PX, e.sy);
+    ctx.lineTo(e.x - (22 + n * 64) * PX, e.sy + 7 * PX);
+    ctx.lineTo(e2.x - (8 + n * 20) * PX, e2.sy);
+    ctx.closePath();
+    ctx.fill();
+  }
   ctx.restore();
   drawWallSnow();
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
   traceEdge();
-  ctx.strokeStyle = cssa(rimCol, 0.18 + (1 - storm) * 0.08);
-  ctx.lineWidth = 7 * PX;
+  ctx.strokeStyle = cssa(rimCol, 0.28 + (1 - storm) * 0.2);
+  ctx.lineWidth = 11 * PX;
   ctx.stroke();
   traceEdge();
-  ctx.strokeStyle = cssa(SKYNOW.sun, 0.55 + (1 - storm) * 0.35);
-  ctx.lineWidth = 1.35 * PX;
+  ctx.strokeStyle = cssa(SKYNOW.sun, 0.75 + (1 - storm) * 0.25);
+  ctx.lineWidth = 2.1 * PX;
   ctx.stroke();
 }
 function drawShelves() {
@@ -851,14 +945,14 @@ function drawHolds() {
     ctx.quadraticCurveTo(up[0], up[1] - 2 * PX, tip[0], tip[1]);
     ctx.quadraticCurveTo(dn[0], dn[1], low[0], low[1]);
     ctx.closePath();
-    ctx.fillStyle = "#14181e";
+    ctx.fillStyle = "#4a433c";
     ctx.fill();
     ctx.beginPath();
     ctx.moveTo(root[0], root[1] - 2 * PX);
     ctx.quadraticCurveTo(up[0], up[1] - 3 * PX, tip[0] - 2 * PX, tip[1] - 1 * PX);
     ctx.lineTo(up[0], up[1] + 3 * PX);
     ctx.closePath();
-    ctx.fillStyle = "#f4f1ea";
+    ctx.fillStyle = "#d5c6b2";
     ctx.fill();
     ctx.beginPath();
     ctx.moveTo(root[0], root[1] - 2 * PX);
@@ -1121,81 +1215,147 @@ function leg(hip, knee, foot, toe, w0, w1) {
 }
 function drawClimber(dt) {
   const hold = FX.HOLDS[state.holdIndex] || FX.HOLDS[0];
-  const standing = state.mode === "ledge" || state.mode === "drop" || state.mode === "ending" || (state.crown && !state.holding);
+  const w01 = FX.weight01(state.mask);
+  const standing = state.mode === "ledge" || state.mode === "drop" || state.mode === "ending" || (state.crown && !state.holding) || state.mode === "recover";
+  const summitStand = (state.crown && !state.holding) || state.mode === "ending";
+  const air = !standing && !state.attached;
   let ang = 0;
   if (!standing && state.attached) ang = state.visAngle || 0;
-  else if (!standing) ang = clamp(Math.atan2(state.vz, Math.max(0.85, -state.vy)) * 0.38, -0.5, 0.5);
-  const downZ = Math.sin(ang), downY = -Math.cos(ang);
-  const outZ = Math.cos(ang), outY = Math.sin(ang);
-  let shZ, shY;
+  else if (air) ang = clamp(Math.atan2(state.vz, Math.max(0.2, state.vy)) * 0.55, -0.9, 0.9);
+  // face +1 looks toward +z (the door and the sky). face -1 looks into the wall.
+  const face = summitStand ? 1 : -1;
+  const breathe = 1 + Math.sin(state.time * 1.6) * 0.025;
+  const sag = w01 * 0.1;
+  let grip, shZ, shY;
   if (standing) {
-    shZ = hold.z + 0.04;
-    shY = hold.y + 1.04;
+    const footY = hold.y + 0.22;
+    shZ = hold.z + (face === 1 ? 0.02 : 0.16);
+    shY = footY + 1.18;
+    grip = [hold.z - 0.02, footY + (summitStand ? 1.42 : 1.28)];
   } else if (state.attached) {
-    const handZ = hold.z + 0.03;
-    const handY = hold.y + 0.06;
-    const sag = FX.weight01(state.mask) * 0.14;
-    shZ = handZ + Math.sin(ang) * (0.7 + sag);
-    shY = handY - Math.cos(ang) * (0.7 + sag);
+    grip = [hold.z + 0.02, hold.y + 0.06];
+    const reach = 0.58 + sag;
+    shZ = grip[0] + Math.sin(ang) * reach;
+    shY = grip[1] - Math.cos(ang) * reach;
   } else {
     shZ = state.z;
-    shY = state.y + 0.42;
+    shY = state.y + 0.28;
+    const nxt = FX.HOLDS[Math.min(FX.HOLDS.length - 1, (state.origin || state.holdIndex) + 1)];
+    const aimZ = nxt ? nxt.z : shZ - 0.2;
+    const aimY = nxt ? nxt.y : shY + 1.2;
+    grip = [shZ + clamp(aimZ - shZ, -0.55, 0.35), shY + clamp(aimY - shY, 0.35, 0.95)];
   }
+  const downZ = Math.sin(ang);
+  const downY = -Math.cos(ang);
+  const outSign = face === 1 ? -1 : 1;
+  const outZ = Math.cos(ang) * outSign;
+  const outY = Math.sin(ang) * outSign;
   function P(down, out) {
     return [shZ + downZ * down + outZ * out, shY + downY * down + outY * out];
   }
-  const fallK = clamp((-state.vy) / 14, 0, 1);
-  const air = !standing && !state.attached;
-  const breathe = 1 + Math.sin(state.time * 1.7) * 0.03;
-  const kick = Math.sin(state.time * 2.4) * (standing ? 0.03 : air ? 0.14 : 0.1);
-  const kick2 = Math.sin(state.time * 2.4 + 1.2) * (standing ? 0.025 : air ? 0.12 : 0.09);
-  const w01 = FX.weight01(state.mask);
-  const bulk = (0.12 + w01 * 0.28) * breathe;
-  leg(P(0.42, -0.03), P(0.7, 0.04 + kick), P(1.02, -0.04 + kick * 0.8), P(1.1, -0.08 + kick * 0.4), 0.09, 0.062);
-  leg(P(0.44, 0.07), P(0.72, 0.16 + kick2), P(1.04, 0.08 + kick2), P(1.12, 0.04 + kick2), 0.082, 0.055);
-  const chest = air ? 0.02 : 0;
+  const kick = Math.sin(state.time * (standing ? 1.4 : 2.6)) * (standing ? 0.03 : air ? 0.16 : 0.11);
+  const kick2 = Math.sin(state.time * 2.6 + 1.4) * (standing ? 0.025 : 0.09);
+  const hip = P(0.46, 0.0);
+  const kneeBend = standing ? 0.16 : 0.22 + Math.abs(ang) * 0.12;
+  function drawLeg(side, phase) {
+    const hx = hip[0] + outZ * side * 0.04 + downZ * 0.02;
+    const hy = hip[1] + outY * side * 0.04 + downY * 0.02;
+    const knee = [
+      hx + downZ * 0.34 + outZ * (kneeBend + phase),
+      hy + downY * 0.34 + outY * (kneeBend + phase),
+    ];
+    const foot = [
+      knee[0] + downZ * 0.36 - outZ * phase * 0.4,
+      knee[1] + downY * 0.36 - outY * phase * 0.4,
+    ];
+    const toe = [foot[0] + outZ * -0.08 * outSign, foot[1] + outY * -0.08 * outSign];
+    limb([hx, hy], knee, side < 0 ? 0.075 : 0.068, 0.055);
+    limb(knee, foot, 0.055, 0.042);
+    limb(foot, toe, 0.04, 0.034);
+  }
+  drawLeg(0.7, kick);
+  drawLeg(-0.35, kick2);
+  const bulk = 0.1 + w01 * 0.16;
   smoothClosed([
-    P(-0.36, 0.0),
-    P(-0.28, -0.1),
-    P(-0.16, -0.13),
-    P(-0.05, -0.05),
-    P(0.12 + chest, -0.08 * breathe),
-    P(0.34, -0.02),
-    P(0.42, 0.08),
-    P(0.52, 0.1 + bulk * 0.2),
-    P(0.46 + w01 * 0.08, 0.14 + bulk),
-    P(0.12, 0.12 + bulk * 0.92),
-    P(-0.06, 0.06 + bulk * 0.55),
-    P(-0.22, 0.11),
+    P(-0.34, 0.0),
+    P(-0.22, -0.07),
+    P(-0.08, -0.1),
+    P(0.08, -0.06),
+    P(0.28, -0.02),
+    P(0.48, 0.04),
+    P(0.5, 0.12 + bulk),
+    P(0.22, 0.16 + bulk),
+    P(0.02, 0.1 + bulk * 0.4),
+    P(-0.16, 0.08),
   ], INK);
+  const head = P(-0.28, face === 1 ? 0.03 : -0.03);
+  const hs = toS(head[0], head[1]);
+  ctx.beginPath();
+  ctx.arc(hs[0], hs[1], 0.13 * ppm * breathe, 0, Math.PI * 2);
+  ctx.fillStyle = INK;
+  ctx.fill();
+  const nose = [head[0] - outZ * 0.1, head[1] - outY * 0.02 + downY * -0.02];
+  limb(head, nose, 0.035, 0.02);
+  const look = FX.HOLDS[Math.min(FX.HOLDS.length - 1, state.holdIndex + (air ? 0 : 1))];
+  if (look && !summitStand) {
+    const eye = toS(head[0] - outZ * 0.05, head[1] + downY * -0.03);
+    ctx.beginPath();
+    ctx.arc(eye[0], eye[1], Math.max(1.1, 0.025 * ppm), 0, Math.PI * 2);
+    ctx.fillStyle = "#f4efe6";
+    ctx.fill();
+  }
+  const shoulder = P(0.02, -0.03);
+  arm(shoulder, grip, air ? 0.85 : -1);
+  const mit = toS(grip[0], grip[1]);
+  ctx.beginPath();
+  ctx.arc(mit[0], mit[1], 0.05 * ppm, 0, Math.PI * 2);
+  ctx.fillStyle = INK;
+  ctx.fill();
+  const free = P(0.34 + (air ? -0.15 : 0.08), 0.02);
+  arm(P(0.08, 0.04), free, 0.7);
+  const packBob = Math.sin(state.time * 2.8) * (0.02 + w01 * 0.03);
+  const pack = P(0.16 + packBob, 0.18 + bulk);
+  smoothClosed([
+    [pack[0], pack[1]],
+    [pack[0] + outZ * 0.16, pack[1] + outY * 0.16 + downY * 0.04],
+    [pack[0] + outZ * 0.18 + downZ * 0.28, pack[1] + outY * 0.18 + downY * 0.28],
+    [pack[0] + downZ * 0.32, pack[1] + downY * 0.32],
+  ], "#1a1e26");
   const kinds = [];
   if (state.mask & FX.ITEMS.trophy.bit) kinds.push("trophy");
   if (state.mask & FX.ITEMS.letter.bit) kinds.push("letter");
   if (state.mask & FX.ITEMS.ring.bit) kinds.push("ring");
   if (state.mask & FX.ITEMS.photo.bit) kinds.push("photo");
-  if (kinds.length) {
-    limb(P(0.16, 0.05 + bulk * 0.2), P(0.16, 0.12 + bulk * 0.95), 0.012, 0.012, "#b7a48c", false);
-    limb(P(0.34, 0.08 + bulk * 0.15), P(0.34, 0.13 + bulk), 0.012, 0.012, "#b7a48c", false);
-    const slot = (0.28 + w01 * 0.16) / kinds.length;
-    for (let i = 0; i < kinds.length; i++) {
-      drawItem(kinds[i], 0.14 + i * slot, 0.1 + bulk * 0.55, Math.min(0.1, 0.07 + bulk * 0.1), P);
-    }
+  for (let i = 0; i < kinds.length; i++) {
+    const dang = Math.sin(state.time * 3.2 + i) * 0.035;
+    const anchor = [pack[0] + downZ * (0.08 + i * 0.06) + outZ * 0.12, pack[1] + downY * (0.08 + i * 0.06) + outY * 0.12];
+    const tip = [anchor[0] + downZ * (0.12 + dang) + outZ * dang, anchor[1] + downY * (0.12 + dang)];
+    limb(anchor, tip, 0.012, 0.01, "#b7a48c", false);
+    drawItem(kinds[i], 0, 0, 0.07, function (d, o) {
+      return [tip[0] + downZ * d + outZ * o, tip[1] + downY * d + outY * o];
+    });
   }
-  let nearHand;
-  if (standing) nearHand = P(0.46, -0.14);
-  else if (air) nearHand = P(-0.48, -0.02 - fallK * 0.08);
-  else nearHand = [hold.z + 0.02, hold.y + 0.04];
-  arm(P(0.04, -0.02), nearHand, air ? 0.8 : -1.05);
-  const mit = toS(nearHand[0], nearHand[1]);
-  ctx.beginPath();
-  ctx.arc(mit[0], mit[1], 0.055 * ppm, 0, Math.PI * 2);
-  ctx.fillStyle = INK;
-  ctx.fill();
-  const neck = P(-0.04, 0.03);
+  const neck = P(-0.08, 0.02);
   stepScarf(dt || 0.016, neck[0], neck[1]);
-  drawRibbon(scarf, 3.1 * PX, 0.35 * PX, "#d94338");
+  drawRibbon(scarf, 2.6 * PX, 0.4 * PX, "#d94338");
 }
 
+function drawEdgeCue() {
+  if (!state.crown) return;
+  const hold = FX.HOLDS[state.holdIndex];
+  if (!hold) return;
+  const pulse = 0.45 + 0.35 * Math.sin(state.time * 2.4);
+  const lip = toS(FX.faceZ(hold.y - 0.05) + 0.08, hold.y - 0.02);
+  ctx.save();
+  ctx.globalAlpha = 0.35 + pulse * 0.4;
+  ctx.strokeStyle = "#f3e2c8";
+  ctx.lineWidth = 1.4 * PX;
+  ctx.beginPath();
+  ctx.moveTo(lip[0] - 16 * PX, lip[1]);
+  ctx.quadraticCurveTo(lip[0], lip[1] + 8 * PX, lip[0] + 18 * PX, lip[1] + 2 * PX);
+  ctx.stroke();
+  ctx.restore();
+}
 function drawGate() {
   const g = FX.GATE;
   if (!g || Math.abs(g.y - cam.y) > H / ppm + 4) return;
@@ -1228,7 +1388,7 @@ function drawLost() {
     const it = lost[i];
     if (Math.abs(it.y - cam.y) > H / ppm + 2) continue;
     const p = toS(it.z, it.y);
-    const glow = ctx.createRadialGradient(p[0], p[1], 1, p[0], p[1], 22 * PX);
+    const glow = ctx.createRadialGradient(p[0], p[1], 1, p[0], p[1], 34 * PX);
     glow.addColorStop(0, "rgba(255,214,150,0.55)");
     glow.addColorStop(1, "rgba(255,214,150,0)");
     ctx.fillStyle = glow;
@@ -1369,6 +1529,33 @@ function drawGrade() {
     ctx.fillStyle = "rgba(150,186,214,0.08)";
     ctx.fillRect(0, 0, W, H);
   }
+  if (viewScale >= 0.55) {
+    const bw = 160;
+    const bh = Math.max(12, Math.round(bw * H / Math.max(1, W)));
+    if (!drawGrade.bloom || drawGrade.bloom.width !== bw || drawGrade.bloom.height !== bh) {
+      drawGrade.bloom = document.createElement("canvas");
+      drawGrade.bloom.width = bw;
+      drawGrade.bloom.height = bh;
+      drawGrade.bctx = drawGrade.bloom.getContext("2d", { willReadFrequently: true });
+    }
+    const bctx = drawGrade.bctx;
+    bctx.clearRect(0, 0, bw, bh);
+    bctx.drawImage(canvas, 0, 0, bw, bh);
+    const im = bctx.getImageData(0, 0, bw, bh);
+    const d = im.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const lum = d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11;
+      const k = lum < 168 ? 0 : Math.min(1, (lum - 168) / 55);
+      d[i] *= k; d[i + 1] *= k; d[i + 2] *= k;
+    }
+    bctx.putImageData(im, 0, 0);
+    ctx.save();
+    ctx.globalCompositeOperation = "screen";
+    ctx.filter = "blur(16px)";
+    ctx.globalAlpha = 0.8;
+    ctx.drawImage(drawGrade.bloom, 0, 0, W, H);
+    ctx.restore();
+  }
   const v = ctx.createRadialGradient(W * 0.48, H * 0.42, H * 0.2, W * 0.5, H * 0.5, H * 0.78);
   v.addColorStop(0, "rgba(0,0,0,0)");
   v.addColorStop(1, "rgba(0,0,0,0.46)");
@@ -1395,6 +1582,7 @@ function render(dt) {
   const widePpm = (portrait ? 12.6 : 14.6) * PX;
   const tIntro = smooth(1 - state.intro);
   let lead = portrait ? 0.55 : 0.85;
+  if (state.crown) lead = portrait ? -1.05 : -0.65;
   if (state.mode === "ending") lead = portrait ? 1.15 : 1.45;
   else lead = mix(lead, 0.15, fall);
   const anchorY = state.attached ? FX.HOLDS[state.holdIndex].y : state.y;
@@ -1431,6 +1619,7 @@ function render(dt) {
   drawShelves();
   drawHolds();
   drawLost();
+  drawEdgeCue();
   drawGate();
   drawArc();
   drawClimber(dtS);
@@ -1643,6 +1832,20 @@ function syncUI() {
 
 let wantKeep = false;
 let wantDrop = "";
+let wantChoice = "";
+let pressStamp = 0;
+let pressX = 0;
+let pressY = 0;
+function summitChoice(cx, cy) {
+  if (!state.crown) return "";
+  const rect = canvas.getBoundingClientRect();
+  const x = (cx - rect.left) * (canvas.width / rect.width);
+  const y = (cy - rect.top) * (canvas.height / rect.height);
+  const doorZ = Math.max(FX.GATE.z, FX.faceZ(FX.GATE.y) + 0.72);
+  const door = toS(doorZ, FX.GATE.y);
+  if (Math.hypot(x - door[0], y - door[1]) < 220 * PX) return "door";
+  return "";
+}
 let acc = 0, last = 0, frames = 0, readySent = false;
 let readyResolve;
 const ready = new Promise((r) => { readyResolve = r; });
@@ -1660,12 +1863,13 @@ function frame(now) {
       else if (avg < 0.012 && viewScale < 1) viewScale = Math.min(1, viewScale * 1.04);
     }
     const focus = state.mode === "ledge" || state.mode === "drop";
-    acc += raw * (focus ? 0.46 : 1);
+    if (shotName !== "flight") acc += raw * (focus ? 0.46 : 1);
     const sounds = [];
-    const input = { holding, restart: restartPulse, skipIntro: rush || reduce, keep: wantKeep, dropKind: wantDrop };
+    const input = { holding, restart: restartPulse, skipIntro: rush || reduce, keep: wantKeep, dropKind: wantDrop, choice: wantChoice };
     restartPulse = false;
     wantKeep = false;
     wantDrop = "";
+    wantChoice = "";
     let n = 0;
     while (acc >= 1 / 120 && n < 8) {
       FX.step(state, 1 / 120, input);
@@ -1699,11 +1903,19 @@ function unlock() {
 }
 document.addEventListener("pointerdown", (e) => {
   unlock();
+  pressStamp = performance.now();
+  pressX = e.clientX;
+  pressY = e.clientY;
   if (e.target.closest && e.target.closest("button")) return;
   if (state.mode === "ledge" || state.mode === "drop") return;
   holding = true; rush = true;
 }, { passive: false });
-document.addEventListener("pointerup", () => { holding = false; });
+document.addEventListener("pointerup", (e) => {
+  holding = false;
+  if ((state.crown || state.descending) && performance.now() - pressStamp < 520) {
+    wantChoice = summitChoice(e.clientX || pressX, e.clientY || pressY);
+  }
+});
 document.addEventListener("pointercancel", () => { holding = false; });
 document.addEventListener("touchmove", (e) => e.preventDefault(), { passive: false });
 document.addEventListener("contextmenu", (e) => e.preventDefault());
@@ -1760,6 +1972,44 @@ function applyShot(name) {
     state.intro = 0;
     const home = FX.HOLDS[4];
     state.lost = [{ kind: "trophy", bit: 4, y: home.y + 0.22, z: Math.max(home.z + 0.35, FX.faceZ(home.y) + 0.4), hold: 4 }];
+  } else if (name === "hang") {
+    window.__fx.teleport(8);
+    state.mask = 15;
+    state.stormVis = 0.35;
+    state.intro = 0;
+    state.visAngle = 0.35;
+    state.angle = 0.35;
+  } else if (name === "flight") {
+    window.__fx.teleport(10);
+    state.attached = false;
+    state.mask = 15;
+    state.stormVis = 0.25;
+    state.vy = 9;
+    state.vz = 1.4;
+    state.y = FX.HOLDS[10].y + 1.15;
+    state.z = FX.HOLDS[10].z + 0.85;
+    state.origin = 8;
+    state.flightT = 0.4;
+    state.angle = 0.5;
+    state.visAngle = 0.5;
+    state.intro = 0;
+  } else if (name === "hard") {
+    window.__fx.teleport(11);
+    state.mask = 15;
+    state.stormVis = 0.55;
+    state.intro = 0;
+    state.visAngle = 0.55;
+    state.angle = 0.55;
+  } else if (name === "summit") {
+    window.__fx.teleport(FX.HOLDS.length - 1);
+    state.crown = true;
+    state.mask = 11;
+    state.stormVis = 0.04;
+    state.intro = 0;
+    const h = FX.HOLDS[state.holdIndex];
+    state.y = h.y + 0.22;
+    const below = FX.HOLDS[state.holdIndex - 2];
+    state.lost = [{ kind: "trophy", bit: 4, y: below.y + 0.2, z: Math.max(below.z + 0.3, FX.faceZ(below.y) + 0.45), hold: below.i }];
   } else if (name === "ends") {
     found = 0x5a3d;
     paintMarks();
@@ -1776,7 +2026,22 @@ window.__fx = {
     return {
       mode: state.mode, y: state.y, z: state.z, mask: state.mask, hold: state.holdIndex,
       catches: state.catches, falls: state.falls, intro: state.intro, attached: state.attached,
-      endingT: state.endingT, time: state.time,
+      endingT: state.endingT, time: state.time, crown: !!state.crown, descending: !!state.descending,
+      checkpoint: state.checkpoint || 0, armed: !!state.armed, holdT: state.holdT || 0,
+      reclaimed: state.reclaimed || 0, lost: (state.lost || []).length,
+    };
+  },
+  points() {
+    const rect = canvas.getBoundingClientRect();
+    const hold = FX.HOLDS[state.holdIndex];
+    const doorZ = Math.max(FX.GATE.z, FX.faceZ(FX.GATE.y) + 0.72);
+    const door = toS(doorZ, FX.GATE.y);
+    const edge = toS(FX.faceZ(hold.y - 1.5) + 0.35, hold.y - 1.7);
+    const sx = (px) => rect.left + (px / canvas.width) * rect.width;
+    const sy = (py) => rect.top + (py / canvas.height) * rect.height;
+    return {
+      door: { x: sx(door[0]), y: sy(door[1]) },
+      edge: { x: sx(edge[0]), y: sy(edge[1]) },
     };
   },
   teleport(i) {
