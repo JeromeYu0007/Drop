@@ -136,7 +136,26 @@
     text-shadow: 0 2px 18px rgba(0,0,0,0.6);
   }
   @media (max-aspect-ratio: 4/5) {
-    #title h1 { font-size: clamp(84px, 12vh, 132px); }
+    #title::before {
+      content: "";
+      position: absolute;
+      left: 50%; top: 44%;
+      width: 86vw; height: 28vh;
+      transform: translate(-50%, -50%);
+      background: radial-gradient(ellipse at center, rgba(5, 7, 12, 0.78) 0%, rgba(5, 7, 12, 0.35) 46%, rgba(5, 7, 12, 0) 72%);
+      pointer-events: none;
+    }
+    #title h1, #title #sub { position: relative; }
+    #title h1 {
+      font-size: clamp(84px, 12vh, 132px);
+      color: #fffaf3;
+      text-shadow:
+        0 1px 0 #05060a,
+        0 2px 0 #05060a,
+        1px 0 0 #05060a,
+        -1px 0 0 #05060a,
+        0 6px 14px rgba(0, 0, 0, 0.85);
+    }
     #meter { right: calc(10px + env(safe-area-inset-right)); top: 13vh; bottom: 16vh; }
     #hint { font-size: 13px; letter-spacing: 0.08em; }
     #pack { width: min(78vw, 420px); padding: 14px 14px 12px; }
@@ -388,9 +407,20 @@ flakeSprite.width = flakeSprite.height = 32;
   g.fillRect(0, 0, 32, 32);
 }
 
+function wrapDelta(u, center) {
+  let d = u - center;
+  d -= Math.round(d);
+  return d;
+}
+function ridgePeak(u, center, widthLeft, widthRight, amp) {
+  const d = wrapDelta(u, center);
+  const width = d < 0 ? widthLeft : widthRight;
+  const t = Math.max(0, 1 - Math.abs(d) / width);
+  return Math.pow(t, d < 0 ? 1.85 : 1.45) * amp;
+}
 function bakeRidge(seed, snowAt, near) {
   near = near == null ? 0.55 : near;
-  const TW = 1600, TH = 280;
+  const TW = 1600, TH = 320;
   const c = document.createElement("canvas");
   c.width = TW;
   c.height = TH;
@@ -398,75 +428,82 @@ function bakeRidge(seed, snowAt, near) {
   const img = g.createImageData(TW, TH);
   const d = img.data;
   const hgt = new Float32Array(TW);
-  // Two broad peaks across the tile. Detail is added only at the skyline.
+  const snow = new Float32Array(TW);
+  const shift = ((seed % 1) + 1) % 1 * 0.16;
+  // Two big mountains per tile. The right slope is the long lit face.
+  const peaks = near < 0.4
+    ? [{ c: (0.3 + shift) % 1, wL: 0.14, wR: 0.26, h: 1 }]
+    : [
+        { c: (0.2 + shift) % 1, wL: 0.11, wR: 0.22, h: 1 },
+        { c: (0.72 + shift * 0.35) % 1, wL: 0.09, wR: 0.16, h: 0.66 },
+      ];
   for (let x = 0; x < TW; x++) {
     const u = x / TW;
-    const ang = (u + seed) * Math.PI * 2;
-    const ang2 = (u * 2 + seed * 0.37) * Math.PI * 2;
-    const big = noise2(Math.cos(ang) * 1.15 + seed, Math.sin(ang) * 1.15);
-    const mid = noise2(Math.cos(ang2) * 1.4, Math.sin(ang2) * 1.4 + 2.2);
-    hgt[x] = big * 0.78 + mid * 0.22;
+    let h = 0;
+    let snowAmt = 0;
+    for (let p = 0; p < peaks.length; p++) {
+      const pk = peaks[p];
+      const dlt = wrapDelta(u, pk.c);
+      const contrib = ridgePeak(u, pk.c, pk.wL, pk.wR, pk.h);
+      if (contrib > h) h = contrib;
+      const width = dlt < 0 ? pk.wL : pk.wR;
+      const t = Math.max(0, 1 - Math.abs(dlt) / width);
+      if (dlt < 0 && t > 0.46 && contrib > 0.28 * pk.h) snowAmt = Math.max(snowAmt, t);
+    }
+    const crest = (noise2(u * 3.2 + seed, 4.2) - 0.5) * 0.035;
+    hgt[x] = clamp(h + crest, 0, 1);
+    snow[x] = snowAmt;
   }
-  let mn = 9, mx = -9;
-  for (let x = 0; x < TW; x++) {
-    if (hgt[x] < mn) mn = hgt[x];
-    if (hgt[x] > mx) mx = hgt[x];
-  }
-  const spanH = mx - mn || 1;
-  for (let x = 0; x < TW; x++) hgt[x] = (hgt[x] - mn) / spanH;
   const light = new Float32Array(TW);
   for (let x = 0; x < TW; x++) {
-    const slope = hgt[Math.min(TW - 1, x + 10)] - hgt[Math.max(0, x - 10)];
-    light[x] = clamp(0.35 + -slope * 1.15, 0.18, 0.85);
+    const slope = hgt[(x + 14) % TW] - hgt[(x - 14 + TW) % TW];
+    light[x] = clamp(0.42 + slope * 1.35, 0.16, 0.92);
   }
-  // Blur the light so a peak cannot paint a hard vertical bar.
   const soft = new Float32Array(TW);
   for (let x = 0; x < TW; x++) {
-    let s = 0, n = 0;
-    for (let k = -18; k <= 18; k++) {
-      s += light[(x + k + TW) % TW];
-      n++;
-    }
-    soft[x] = s / n;
+    let s = 0;
+    for (let k = -10; k <= 10; k++) s += light[(x + k + TW) % TW];
+    soft[x] = s / 21;
   }
   for (let x = 0; x < TW; x++) {
     const h = hgt[x];
-    const ridge = (0.08 + (1 - h) * 0.55) * TH;
+    const ridge = (0.02 + (1 - h) * 0.5) * TH;
     const lit = soft[x];
     for (let y = 0; y < TH; y++) {
       const i = (y * TW + x) * 4;
-      if (y + 1 < ridge) { d[i + 3] = 0; continue; }
-      const depth = (y - ridge) / TH;
-      const edge = clamp(1 - depth * 7.5, 0, 1);
-      const detail = edge * (noise2(x * 0.035, seed * 3 + y * 0.02) - 0.5) * 0.22;
-      const shade = clamp(lit + detail, 0.12, 0.9);
-      const snow = h > snowAt && edge > 0.72 && soft[x] > 0.4;
-      const haze = clamp(depth * 1.8, 0, 1);
-      // Far ranges are a pale blue haze. Near ranges keep a darker, steeper rock.
-      const lift = 150 * (1 - near);
-      const gain = 8 + near * 72;
-      let r = 16 + lift * 0.55 + (shade - 0.45) * gain + near * (shade - 0.35) * 22;
-      let gc = 22 + lift * 0.68 + (shade - 0.45) * gain * 0.82;
-      let b = 48 + lift * 0.95 + (shade - 0.45) * gain * 0.45;
-      if (snow) {
-        const snowC = 150 + (1 - near) * 70 + shade * 20;
-        r = snowC * (0.55 + near * 0.45);
-        gc = snowC * (0.6 + near * 0.4);
-        b = snowC * (0.75 + (1 - near) * 0.2);
+      const skyGap = ridge - y;
+      if (skyGap > 1.5) { d[i + 3] = 0; continue; }
+      const depth = Math.max(0, (y - ridge) / TH);
+      const edge = clamp(1 - depth * 5.5, 0, 1);
+      const shade = clamp(lit + edge * 0.08, 0.12, 0.95);
+      const rockLift = (1 - near) * 90;
+      const gain = 36 + near * 28;
+      let r = 22 + rockLift * 0.5 + (shade - 0.35) * gain;
+      let gc = 28 + rockLift * 0.55 + (shade - 0.35) * gain * 0.92;
+      let b = 46 + rockLift * 0.7 + (shade - 0.35) * gain * 0.6;
+      const snowBand = snow[x] > 0.55 ? clamp(1 - depth * 4.8, 0, 1) : 0;
+      if (snowBand > 0.25 && lit > 0.45) {
+        const sn = snowBand * 0.9;
+        const white = 198 + shade * 48;
+        r = r * (1 - sn) + white * sn;
+        gc = gc * (1 - sn) + (white + 4) * sn;
+        b = b * (1 - sn) + (white + 10) * sn;
       }
-      const skyR = 70 + (1 - near) * 50;
-      const skyG = 88 + (1 - near) * 40;
-      const skyB = 120 + (1 - near) * 30;
-      const air = (1 - near) * 0.72 + haze * (0.15 + (1 - near) * 0.2);
-      r = r * (1 - air) + skyR * air;
-      gc = gc * (1 - air) + skyG * air;
-      b = b * (1 - air) + skyB * air;
-      if (edge > 0.92) { r += 18; gc += 20; b += 26; }
-      const a = clamp(1 - Math.max(0, depth - 0.22) * 2.4, 0, 1);
-      d[i] = r;
-      d[i + 1] = gc;
-      d[i + 2] = b;
-      d[i + 3] = a * 255;
+      const haze = clamp(depth * 1.15, 0, 1) * (0.28 + (1 - near) * 0.35);
+      const skyR = 48 + (1 - near) * 36;
+      const skyG = 62 + (1 - near) * 28;
+      const skyB = 92 + (1 - near) * 24;
+      r = r * (1 - haze) + skyR * haze;
+      gc = gc * (1 - haze) + skyG * haze;
+      b = b * (1 - haze) + skyB * haze;
+      if (edge > 0.9 && lit > 0.5) { r += 10; gc += 12; b += 14; }
+      const down = y / TH;
+      const fade = down < 0.7 ? 1 : clamp(1 - (down - 0.7) / 0.3, 0, 1);
+      const aa = skyGap > 0 ? clamp(1.5 - skyGap, 0, 1) : 1;
+      d[i] = clamp(r, 0, 255);
+      d[i + 1] = clamp(gc, 0, 255);
+      d[i + 2] = clamp(b, 0, 255);
+      d[i + 3] = fade * aa * 255;
     }
   }
   g.putImageData(img, 0, 0);
@@ -500,22 +537,20 @@ function bakeRock() {
   const llen = Math.hypot(lx, ly, lz);
   for (let y = 0; y < TH; y++) {
     for (let x = 0; x < TW; x++) {
-      const warp = fbm2(x * 0.012, y * 0.009, 2);
-      const region = fbm2((x + warp * 28) * 0.0075, (y + warp * 36) * 0.0055, 2);
+      const warp = fbm2(x * 0.008, y * 0.006, 2);
+      const region = fbm2((x + warp * 36) * 0.0062, (y + warp * 48) * 0.0046, 2);
       const id = Math.min(4, Math.max(0, Math.floor(region * 5)));
       const sl = SLOPE[id];
-      const grain = fbm2(x * 0.062, y * 0.051, 2);
-      const gdx = fbm2((x + 2) * 0.062, y * 0.051, 2) - fbm2((x - 2) * 0.062, y * 0.051, 2);
-      const gdy = fbm2(x * 0.062, (y + 2) * 0.051, 2) - fbm2(x * 0.062, (y - 2) * 0.051, 2);
-      let nx = sl.x * 0.9 + gdx * 5.5;
-      let ny = sl.y * 0.9 + gdy * 5.5;
-      let nz = 1.05;
+      const broad = fbm2(x * 0.01, y * 0.008, 2);
+      let nx = sl.x + (broad - 0.5) * 0.08;
+      let ny = sl.y;
+      let nz = 0.72;
       const len = Math.hypot(nx, ny, nz) || 1;
       nx /= len; ny /= len; nz /= len;
       const lambert = clamp((nx * lx + ny * ly + nz * lz) / llen, 0, 1);
-      const fx = fbm2(x * 0.028, y * 0.006 + 8, 2);
-      const fracture = Math.exp(-Math.pow((fx - 0.46) * 8.5, 2));
-      const lit = clamp(0.22 + lambert * 0.78 * (1 - fracture * 0.5) + (grain - 0.5) * 0.1, 0, 1);
+      const fx = fbm2(x * 0.015, y * 0.0035 + 8, 2);
+      const fracture = Math.exp(-Math.pow((fx - 0.5) * 11, 2));
+      const lit = clamp(0.08 + lambert * 0.92 * (1 - fracture * 0.78), 0, 1);
       const snow = ny < -0.28 && lambert > 0.42 ? clamp((-ny - 0.28) * 1.6, 0, 0.55) : 0;
       const rockR = 14 + lit * 62;
       const rockG = 18 + lit * 64;
@@ -885,14 +920,12 @@ function drawBirds() {
   }
 }
 const RANGE_LAYERS = [
-  { img: 0, y: 0.62, h: 0.18, parallax: 0.04, alpha: 0.78, drift: 4 },
-  { img: 1, y: 0.72, h: 0.2, parallax: 0.09, alpha: 0.84, drift: 7 },
-  { img: 2, y: 0.82, h: 0.24, parallax: 0.15, alpha: 0.9, drift: 10 },
-  { img: 4, y: 0.9, h: 0.28, parallax: 0.22, alpha: 0.98, drift: 14 },
+  { img: 0, y: 0.46, h: 0.34, parallax: 0.04, alpha: 0.7, drift: 4 },
+  { img: 1, y: 0.54, h: 0.38, parallax: 0.09, alpha: 0.82, drift: 7 },
+  { img: 2, y: 0.62, h: 0.42, parallax: 0.15, alpha: 0.9, drift: 10 },
+  { img: 4, y: 0.68, h: 0.48, parallax: 0.22, alpha: 0.98, drift: 14 },
 ];
 function drawRanges(from, to) {
-  const storm = state.stormVis == null ? 1 : state.stormVis;
-  const rise = smooth(clamp((ALT - 18) / 70, 0, 1));
   const climb = (cam.y - 12) * 0.35;
   const a0 = from || 0;
   const a1 = to == null ? RANGE_LAYERS.length : to;
@@ -907,12 +940,14 @@ function drawRanges(from, to) {
     ctx.globalAlpha = L.alpha;
     ctx.drawImage(img, -scroll, y, w, h);
     ctx.drawImage(img, -scroll + w, y, w, h);
-    if (rise > 0.15 && storm < 0.6) {
-      ctx.globalCompositeOperation = "soft-light";
-      ctx.globalAlpha = rise * (1 - storm) * 0.22 * L.alpha;
-      ctx.fillStyle = "#e7b48a";
-      ctx.fillRect(-20, y, W + 40, h);
-    }
+    ctx.globalCompositeOperation = "destination-in";
+    ctx.globalAlpha = 1;
+    const veil = ctx.createLinearGradient(0, y, 0, y + h);
+    veil.addColorStop(0, "rgba(0,0,0,1)");
+    veil.addColorStop(0.78, "rgba(0,0,0,1)");
+    veil.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = veil;
+    ctx.fillRect(-scroll - 4, y, w * 2 + 8, h);
     ctx.restore();
   }
 }
@@ -1089,7 +1124,7 @@ function drawWall() {
   ctx.fillStyle = shade;
   ctx.fillRect(-40, -40, anchorX + 120, H + 80);
   ctx.globalCompositeOperation = "soft-light";
-  ctx.fillStyle = storm > 0.5 ? "rgba(28,40,64,0.55)" : "rgba(255,196,150," + (0.08 + rise * 0.22) + ")";
+  ctx.fillStyle = storm > 0.5 ? "rgba(28,40,64,0.2)" : "rgba(255,196,150," + (0.06 + rise * 0.16) + ")";
   ctx.fillRect(-40, -40, anchorX + 120, H + 80);
   if (state.descending) {
     ctx.globalCompositeOperation = "source-over";
@@ -1166,22 +1201,21 @@ function drawHolds() {
     const hot = i === hotI;
     const zf = FX.faceZ(h.y);
     const icy = !!state.descending || h.k === "ice";
-    const reach = 0.26 + (hot ? 0.04 : 0);
-    const tipZ = zf + Math.max(0.18, (h.z - zf) * 0.35 + reach);
-    const wallHi = toS(zf, h.y + 0.1);
-    const wallLo = toS(zf, h.y - 0.2);
-    const lip = toS(tipZ - 0.02, h.y + 0.12);
-    const nose = toS(tipZ, h.y - 0.02);
-    const keel = toS(zf + (tipZ - zf) * 0.62, h.y - 0.16);
+    const reach = 0.5 + (hot ? 0.08 : 0);
+    const tipZ = zf + Math.max(0.36, (h.z - zf) * 0.42 + reach);
+    const wallHi = toS(zf, h.y + 0.16);
+    const wallLo = toS(zf, h.y - 0.4);
+    const lip = toS(tipZ - 0.05, h.y + 0.24);
+    const nose = toS(tipZ, h.y + 0.02);
+    const keel = toS(zf + (tipZ - zf) * 0.58, h.y - 0.28);
     ctx.beginPath();
-    ctx.moveTo(wallLo[0], wallLo[1] + 2 * PX);
-    ctx.lineTo(keel[0], keel[1] + 7 * PX);
-    ctx.lineTo(nose[0], nose[1] + 6 * PX);
-    ctx.lineTo(wallLo[0] + 2 * PX, wallLo[1] + 8 * PX);
+    ctx.moveTo(wallLo[0], wallLo[1] + 3 * PX);
+    ctx.lineTo(keel[0], keel[1] + 10 * PX);
+    ctx.lineTo(nose[0], nose[1] + 8 * PX);
+    ctx.lineTo(wallLo[0] + 3 * PX, wallLo[1] + 12 * PX);
     ctx.closePath();
-    ctx.fillStyle = "rgba(0,0,0,0.5)";
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
     ctx.fill();
-    ctx.save();
     ctx.beginPath();
     ctx.moveTo(wallHi[0], wallHi[1]);
     ctx.lineTo(lip[0], lip[1]);
@@ -1189,38 +1223,49 @@ function drawHolds() {
     ctx.lineTo(keel[0], keel[1]);
     ctx.lineTo(wallLo[0], wallLo[1]);
     ctx.closePath();
+    ctx.fillStyle = icy ? "#4a5c6c" : "#6e7c8a";
+    ctx.fill();
+    ctx.save();
     ctx.clip();
     const srcY = Math.max(0, Math.floor((((h.y % 18) + 18) % 18) / 18 * (ROCK.height - 40)));
-    const srcX = 24 + ((h.i * 37) % 90);
-    const boxL = Math.min(wallHi[0], lip[0], nose[0], keel[0]) - 2;
-    const boxT = Math.min(wallHi[1], lip[1], nose[1]) - 2;
-    const boxW = Math.max(12, Math.abs(nose[0] - wallHi[0]) + 14);
-    const boxH = Math.max(10, Math.abs(wallLo[1] - wallHi[1]) + 8);
-    ctx.drawImage(ROCK, srcX, srcY, 64, 32, boxL, boxT, boxW, boxH);
+    const srcX = 20 + ((h.i * 37) % 100);
+    ctx.globalAlpha = 0.28;
+    ctx.drawImage(ROCK, srcX, srcY, 72, 36, wallHi[0] - 6, lip[1] - 4, Math.max(18, nose[0] - wallHi[0] + 16), Math.max(16, wallLo[1] - lip[1] + 12));
     ctx.restore();
     ctx.beginPath();
     ctx.moveTo(wallHi[0], wallHi[1]);
     ctx.lineTo(lip[0], lip[1]);
     ctx.lineTo(nose[0], nose[1]);
-    ctx.lineTo(wallHi[0], wallHi[1] + Math.max(4 * PX, ppm * 0.05));
+    ctx.lineTo(wallHi[0], wallHi[1] + Math.max(7 * PX, ppm * 0.09));
     ctx.closePath();
-    ctx.fillStyle = icy ? "rgba(186, 214, 232, 0.22)" : "rgba(232, 224, 210, 0.1)";
+    ctx.fillStyle = hot ? (icy ? "#f4fbff" : "#fff1dc") : (icy ? "#e7f1f8" : "#d5dee8");
     ctx.fill();
     ctx.beginPath();
     ctx.moveTo(lip[0], lip[1]);
     ctx.lineTo(nose[0], nose[1]);
     ctx.lineTo(keel[0], keel[1]);
     ctx.closePath();
-    ctx.fillStyle = icy ? "rgba(8, 14, 20, 0.28)" : "rgba(6, 5, 4, 0.34)";
+    ctx.fillStyle = icy ? "#24303a" : "#2c343c";
     ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(wallHi[0], wallHi[1]);
+    ctx.lineTo(lip[0], lip[1]);
+    ctx.lineTo(nose[0], nose[1]);
+    ctx.strokeStyle = icy ? "rgba(236,246,252,0.7)" : "rgba(244,248,252,0.55)";
+    ctx.lineWidth = 1.3 * PX;
+    ctx.stroke();
     if (hot) {
+      ctx.save();
+      ctx.shadowColor = "rgba(255, 206, 150, 0.95)";
+      ctx.shadowBlur = 16 * PX;
       ctx.beginPath();
       ctx.moveTo(wallHi[0], wallHi[1]);
       ctx.lineTo(lip[0], lip[1]);
       ctx.lineTo(nose[0], nose[1]);
-      ctx.strokeStyle = "rgba(255,214,170,0.9)";
-      ctx.lineWidth = 1.6 * PX;
+      ctx.strokeStyle = "rgba(255, 228, 196, 0.98)";
+      ctx.lineWidth = 3.2 * PX;
       ctx.stroke();
+      ctx.restore();
     }
   }
 }
