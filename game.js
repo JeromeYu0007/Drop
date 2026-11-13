@@ -922,10 +922,6 @@
       for (let i = 0; i < HOLDS.length; i++) {
         if (i === s.origin && s.flightT < 0.34) continue;
         const hd = HOLDS[i];
-        // Skipping a hold, or falling back onto one you already passed, is not a catch.
-        // Otherwise a long swing is saved by the hold after the one you meant.
-        if (i > s.origin + 1) continue;
-        if (hd.y > origin.y + 0.3 && s.vy < -1) continue;
         // Still rising: the hold you came from, and anything below it, is not a catch.
         if (s.vy > 0.6 && hd.y < origin.y - 0.25) continue;
         let r = reach;

@@ -1727,14 +1727,33 @@ function drawBackHint() {
   const t = backHintT;
   const fade = t < 0.4 ? t / 0.4 : t > 2.5 ? Math.max(0, 1 - (t - 2.5) / 0.9) : 1;
   if (fade <= 0.02) return;
-  const p = toS(state.z + 0.48, state.y + 0.95);
+  const hold = FX.HOLDS[state.holdIndex];
+  if (!hold) return;
+  const text = lang === "en" ? "Hold, to turn back" : "长按，可以回头";
+  // The door stands on the open side. Keep the line on the rock, beside the chest.
+  const chest = toS(hold.z - 0.02, hold.y + 1.02);
   ctx.save();
-  ctx.globalAlpha = 0.38 * fade;
-  ctx.fillStyle = "#f6f1e8";
   ctx.font = (13 * PX) + "px Palatino, Songti SC, STSong, serif";
-  ctx.textAlign = "left";
   ctx.textBaseline = "middle";
-  ctx.fillText(lang === "en" ? "Hold, to turn back" : "长按，可以回头", p[0], p[1]);
+  const w = ctx.measureText(text).width;
+  const pad = 8 * PX;
+  let right = chest[0] - 64 * PX;
+  if (right - w < pad) right = w + pad;
+  const left = right - w;
+  const y = chest[1];
+  const wash = ctx.createRadialGradient(left + w * 0.45, y, 2 * PX, left + w * 0.45, y, w * 0.72);
+  wash.addColorStop(0, "rgba(14, 11, 10, 0.78)");
+  wash.addColorStop(0.55, "rgba(14, 11, 10, 0.42)");
+  wash.addColorStop(1, "rgba(14, 11, 10, 0)");
+  ctx.globalAlpha = fade;
+  ctx.fillStyle = wash;
+  ctx.beginPath();
+  ctx.ellipse(left + w * 0.45, y, w * 0.62 + pad, 15 * PX, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 0.75 * fade;
+  ctx.fillStyle = "#f6f1e8";
+  ctx.textAlign = "left";
+  ctx.fillText(text, left, y);
   ctx.restore();
 }
 function drawLost() {
