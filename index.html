@@ -41,7 +41,8 @@
   body.shot #title, body.shot #pack, body.shot #ending, body.shot #marks, body.shot #whisper { transition: none !important; }
   #title h1 {
     margin: 0; font-weight: 400; font-size: clamp(92px, 15vh, 168px);
-    letter-spacing: 0; line-height: 1; text-shadow: 0 2px 2px rgba(0,0,0,0.28), 0 14px 40px rgba(0,0,0,0.5);
+    letter-spacing: 0; line-height: 1; color: #f7f3ea;
+    text-shadow: 0 1px 0 rgba(0,0,0,0.65), 0 0 24px rgba(0,0,0,0.9), 0 16px 36px rgba(0,0,0,0.8);
   }
   #title h1 span { display: inline-block; margin-left: 0.22em; }
   #sub {
@@ -388,7 +389,7 @@ flakeSprite.width = flakeSprite.height = 32;
 }
 
 function bakeRidge(seed, snowAt) {
-  const TW = 1400, TH = 360;
+  const TW = 1600, TH = 280;
   const c = document.createElement("canvas");
   c.width = TW;
   c.height = TH;
@@ -396,52 +397,66 @@ function bakeRidge(seed, snowAt) {
   const img = g.createImageData(TW, TH);
   const d = img.data;
   const hgt = new Float32Array(TW);
-  let mn = 9, mx = -9;
+  // Two broad peaks across the tile. Detail is added only at the skyline.
   for (let x = 0; x < TW; x++) {
     const u = x / TW;
-    let h = 0, a = 0.62, f = 1;
-    for (let o = 0; o < 5; o++) {
-      const ang = (u * f + seed) * Math.PI * 2;
-      const n = noise2(Math.cos(ang) * (1.2 + o * 0.15) + seed, Math.sin(ang) * (1.2 + o * 0.15));
-      h += n * a;
-      a *= 0.5;
-      f *= 2;
-    }
-    const ang = (u * 3 + seed) * Math.PI * 2;
-    const n = noise2(Math.cos(ang) * 2.2, Math.sin(ang) * 2.2 + 4);
-    h += (1 - Math.abs(n * 2 - 1)) * 0.16;
-    hgt[x] = h;
-    if (h < mn) mn = h;
-    if (h > mx) mx = h;
+    const ang = (u + seed) * Math.PI * 2;
+    const ang2 = (u * 2 + seed * 0.37) * Math.PI * 2;
+    const big = noise2(Math.cos(ang) * 1.15 + seed, Math.sin(ang) * 1.15);
+    const mid = noise2(Math.cos(ang2) * 1.4, Math.sin(ang2) * 1.4 + 2.2);
+    hgt[x] = big * 0.78 + mid * 0.22;
   }
-  const span = mx - mn || 1;
-  for (let x = 0; x < TW; x++) hgt[x] = (hgt[x] - mn) / span;
+  let mn = 9, mx = -9;
+  for (let x = 0; x < TW; x++) {
+    if (hgt[x] < mn) mn = hgt[x];
+    if (hgt[x] > mx) mx = hgt[x];
+  }
+  const spanH = mx - mn || 1;
+  for (let x = 0; x < TW; x++) hgt[x] = (hgt[x] - mn) / spanH;
+  const light = new Float32Array(TW);
+  for (let x = 0; x < TW; x++) {
+    const slope = hgt[Math.min(TW - 1, x + 10)] - hgt[Math.max(0, x - 10)];
+    light[x] = clamp(0.35 + -slope * 1.15, 0.18, 0.85);
+  }
+  // Blur the light so a peak cannot paint a hard vertical bar.
+  const soft = new Float32Array(TW);
+  for (let x = 0; x < TW; x++) {
+    let s = 0, n = 0;
+    for (let k = -18; k <= 18; k++) {
+      s += light[(x + k + TW) % TW];
+      n++;
+    }
+    soft[x] = s / n;
+  }
   for (let x = 0; x < TW; x++) {
     const h = hgt[x];
-    const slope = hgt[Math.min(TW - 1, x + 4)] - hgt[Math.max(0, x - 4)];
-    const light = clamp(0.22 + -slope * 2.8, 0.08, 1);
-    const ridge = (1 - (0.12 + h * 0.78)) * TH;
+    const ridge = (0.08 + (1 - h) * 0.55) * TH;
+    const lit = soft[x];
     for (let y = 0; y < TH; y++) {
       const i = (y * TW + x) * 4;
-      if (y < ridge) { d[i + 3] = 0; continue; }
+      if (y + 1 < ridge) { d[i + 3] = 0; continue; }
       const depth = (y - ridge) / TH;
-      const snow = h > snowAt && depth < 0.22 && slope < 0.08;
-      const shade = light * (0.55 + (1 - Math.min(1, depth * 1.6)) * 0.45);
-      let r, gc, b;
-      if (snow) {
-        r = 214 + shade * 40;
-        gc = 220 + shade * 34;
-        b = 228 + shade * 24;
-      } else {
-        r = 38 + shade * 92;
-        gc = 44 + shade * 96;
-        b = 54 + shade * 102;
-      }
-      if (depth < 0.02) { r += 28; gc += 30; b += 34; }
+      const edge = clamp(1 - depth * 7.5, 0, 1);
+      const detail = edge * (noise2(x * 0.035, seed * 3 + y * 0.02) - 0.5) * 0.22;
+      const shade = clamp(lit + detail, 0.12, 0.9);
+      const snow = h > snowAt && edge > 0.72 && soft[x] > 0.4;
+      const haze = clamp(depth * 1.8, 0, 1);
+      const rockR = 28 + shade * 70;
+      const rockG = 34 + shade * 74;
+      const rockB = 48 + shade * 78;
+      const snowC = 186 + shade * 48;
+      let r = snow ? snowC : rockR;
+      let gc = snow ? snowC + 4 : rockG;
+      let b = snow ? snowC + 10 : rockB;
+      r = r * (1 - haze) + 18 * haze;
+      gc = gc * (1 - haze) + 24 * haze;
+      b = b * (1 - haze) + 38 * haze;
+      if (edge > 0.92) { r += 18; gc += 20; b += 26; }
+      const a = clamp(1 - Math.max(0, depth - 0.22) * 2.4, 0, 1);
       d[i] = r;
       d[i + 1] = gc;
       d[i + 2] = b;
-      d[i + 3] = 255;
+      d[i + 3] = a * 255;
     }
   }
   g.putImageData(img, 0, 0);
@@ -466,10 +481,15 @@ function bakeRock() {
   const field = new Float32Array(TW * TH);
   for (let y = 0; y < TH; y++) {
     for (let x = 0; x < TW; x++) {
-      const strata = Math.sin(y * 0.055 + Math.sin(x * 0.01) * 0.6) * 0.55 + Math.sin(y * 0.014 + 1.4) * 0.28;
-      const n = fbm2(x * 0.012, y * 0.007, 4);
-      const crack = voronoi(x, y, 64).crack < 1.35 ? -1.1 : 0;
-      field[y * TW + x] = n * 0.42 + strata + crack * 0.22;
+      const warp = fbm2(x * 0.006, y * 0.004, 3);
+      const big = fbm2(x * 0.0035 + warp * 1.4, y * 0.0028, 3);
+      const mid = fbm2(x * 0.014 + 4.2, y * 0.011, 3);
+      const grain = fbm2(x * 0.05, y * 0.04, 2);
+      const fx = fbm2(x * 0.02, y * 0.0015 + 8, 2);
+      const fracture = Math.exp(-Math.pow((fx - 0.5) * 7.5, 2));
+      const ledgeN = fbm2(y * 0.007 + warp, x * 0.004, 2);
+      const ledge = Math.exp(-Math.pow((ledgeN - 0.62) * 10, 2));
+      field[y * TW + x] = big * 0.9 + mid * 0.28 + grain * 0.08 - fracture * 0.85 - ledge * 0.42;
     }
   }
   const lx = 0.45, ly = -0.55, lz = 0.7;
@@ -486,14 +506,22 @@ function bakeRock() {
       const snow = ny < -0.25 && lambert > 0.35 ? clamp((-ny - 0.25) * 2.2, 0, 1) : 0;
       const crack = field[i] < -0.35 ? 0.35 : 1;
       const lit = lambert * ao * crack;
-      const rockR = 78 + lit * 130;
-      const rockG = 74 + lit * 122;
-      const rockB = 78 + lit * 116;
+      const rockR = 22 + lit * 46;
+      const rockG = 26 + lit * 50;
+      const rockB = 36 + lit * 58;
       const p = i * 4;
-      d[p] = rockR * (1 - snow) + (230 + lit * 20) * snow;
-      d[p + 1] = rockG * (1 - snow) + (236 + lit * 16) * snow;
-      d[p + 2] = rockB * (1 - snow) + (242 + lit * 10) * snow;
+      d[p] = rockR * (1 - snow) + (150 + lit * 40) * snow;
+      d[p + 1] = rockG * (1 - snow) + (158 + lit * 36) * snow;
+      d[p + 2] = rockB * (1 - snow) + (170 + lit * 30) * snow;
       d[p + 3] = 255;
+    }
+  }
+  for (let x = 0; x < TW; x++) {
+    const a = (1 * TW + x) * 4;
+    const b = ((TH - 2) * TW + x) * 4;
+    for (let k = 0; k < 4; k++) {
+      d[x * 4 + k] = d[a + k];
+      d[((TH - 1) * TW + x) * 4 + k] = d[b + k];
     }
   }
   g.putImageData(img, 0, 0);
@@ -846,11 +874,10 @@ function drawBirds() {
   }
 }
 const RANGE_LAYERS = [
-  { img: 0, y: 0.34, h: 0.42, parallax: 0.04, alpha: 0.42, drift: 6 },
-  { img: 1, y: 0.42, h: 0.46, parallax: 0.08, alpha: 0.58, drift: 9 },
-  { img: 2, y: 0.5, h: 0.5, parallax: 0.14, alpha: 0.74, drift: 12 },
-  { img: 3, y: 0.58, h: 0.52, parallax: 0.2, alpha: 0.86, drift: 16 },
-  { img: 4, y: 0.66, h: 0.56, parallax: 0.28, alpha: 0.95, drift: 20 },
+  { img: 0, y: 0.62, h: 0.18, parallax: 0.04, alpha: 0.34, drift: 4 },
+  { img: 1, y: 0.72, h: 0.2, parallax: 0.09, alpha: 0.52, drift: 7 },
+  { img: 2, y: 0.82, h: 0.24, parallax: 0.15, alpha: 0.74, drift: 10 },
+  { img: 4, y: 0.9, h: 0.28, parallax: 0.22, alpha: 0.94, drift: 14 },
 ];
 function drawRanges(from, to) {
   const storm = state.stormVis == null ? 1 : state.stormVis;
@@ -869,10 +896,12 @@ function drawRanges(from, to) {
     ctx.globalAlpha = L.alpha;
     ctx.drawImage(img, -scroll, y, w, h);
     ctx.drawImage(img, -scroll + w, y, w, h);
-    ctx.globalCompositeOperation = "soft-light";
-    ctx.globalAlpha = storm * 0.45 * L.alpha + rise * (1 - storm) * 0.28 * L.alpha;
-    ctx.fillStyle = storm > 0.45 ? "#243048" : "#f0c49a";
-    ctx.fillRect(-20, y, W + 40, h);
+    if (rise > 0.15 && storm < 0.6) {
+      ctx.globalCompositeOperation = "soft-light";
+      ctx.globalAlpha = rise * (1 - storm) * 0.22 * L.alpha;
+      ctx.fillStyle = "#e7b48a";
+      ctx.fillRect(-20, y, W + 40, h);
+    }
     ctx.restore();
   }
 }
@@ -1074,16 +1103,16 @@ function drawWall() {
     ctx.lineTo(p.x + jut * 0.45, p.sy + 8 * PX);
     ctx.lineTo(p.x - 4 * PX, p.sy + 5 * PX);
     ctx.closePath();
-    ctx.fillStyle = n > 0.88 ? "#d5dbe4" : "#3a404c";
+    ctx.fillStyle = n > 0.88 ? "#6a7380" : "#2a3038";
     ctx.fill();
   }
   traceEdge();
-  ctx.strokeStyle = state.descending ? "rgba(120,150,170,0.55)" : "rgba(12,14,18,0.55)";
-  ctx.lineWidth = 10 * PX;
+  ctx.strokeStyle = "rgba(8,10,14,0.65)";
+  ctx.lineWidth = 7 * PX;
   ctx.stroke();
   traceEdge();
-  ctx.strokeStyle = state.descending ? "rgba(232,246,255,0.9)" : cssa(rimCol, 0.85);
-  ctx.lineWidth = 2.4 * PX;
+  ctx.strokeStyle = state.descending ? "rgba(190,214,230,0.55)" : "rgba(168,186,206,0.45)";
+  ctx.lineWidth = 1.4 * PX;
   ctx.stroke();
 }
 function drawShelves() {
@@ -1125,62 +1154,53 @@ function drawHolds() {
     if (h.y < cam.y - H / ppm - 1.8 || h.y > cam.y + H / ppm + 1.8) continue;
     const hot = i === hotI;
     const zf = FX.faceZ(h.y);
-    const tipZ = h.z + 0.34;
-    const rootTop = toS(zf, h.y + 0.16);
-    const rootBot = toS(zf, h.y - 0.18);
-    const top = toS(tipZ - 0.06, h.y + 0.32);
-    const nose = toS(tipZ + 0.08, h.y + 0.04);
-    const belly = toS(tipZ - 0.02, h.y - 0.28);
-    const neck = toS(zf + (tipZ - zf) * 0.55, h.y);
     const icy = !!state.descending || h.k === "ice";
+    const reach = 0.26 + (hot ? 0.04 : 0);
+    const tipZ = zf + Math.max(0.18, (h.z - zf) * 0.35 + reach);
+    const wallHi = toS(zf, h.y + 0.1);
+    const wallLo = toS(zf, h.y - 0.2);
+    const lip = toS(tipZ - 0.02, h.y + 0.12);
+    const nose = toS(tipZ, h.y - 0.02);
+    const keel = toS(zf + (tipZ - zf) * 0.62, h.y - 0.16);
     ctx.beginPath();
-    ctx.ellipse(neck[0], belly[1] + 3 * PX, Math.max(10 * PX, ppm * 0.22), Math.max(4 * PX, ppm * 0.08), 0, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(0,0,0,0.45)";
-    ctx.fill();
-    if (hot) {
-      const grd = ctx.createRadialGradient(nose[0], nose[1], 2 * PX, nose[0], nose[1], 28 * PX);
-      grd.addColorStop(0, "rgba(255,214,160,0.55)");
-      grd.addColorStop(1, "rgba(255,214,160,0)");
-      ctx.fillStyle = grd;
-      ctx.beginPath();
-      ctx.arc(nose[0], nose[1], 28 * PX, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.beginPath();
-    ctx.moveTo(rootBot[0], rootBot[1]);
-    ctx.quadraticCurveTo(belly[0], belly[1] + 6 * PX, nose[0], nose[1] + 3 * PX);
-    ctx.quadraticCurveTo(neck[0], neck[1] + 4 * PX, rootTop[0], rootTop[1]);
+    ctx.moveTo(wallLo[0], wallLo[1] + 2 * PX);
+    ctx.lineTo(keel[0], keel[1] + 7 * PX);
+    ctx.lineTo(nose[0], nose[1] + 6 * PX);
+    ctx.lineTo(wallLo[0] + 2 * PX, wallLo[1] + 8 * PX);
     ctx.closePath();
-    ctx.fillStyle = "#100e0c";
+    ctx.fillStyle = "rgba(0,0,0,0.5)";
     ctx.fill();
-    const body = ctx.createLinearGradient(rootTop[0], top[1], nose[0], belly[1]);
-    body.addColorStop(0, icy ? "#e7eef4" : "#d8cbb8");
-    body.addColorStop(0.38, icy ? "#5e6c78" : "#5c5148");
-    body.addColorStop(1, icy ? "#1c242c" : "#241c16");
     ctx.beginPath();
-    ctx.moveTo(rootTop[0], rootTop[1]);
-    ctx.quadraticCurveTo(top[0], top[1], nose[0], nose[1]);
-    ctx.quadraticCurveTo(belly[0], belly[1], rootBot[0], rootBot[1]);
+    ctx.moveTo(wallHi[0], wallHi[1]);
+    ctx.lineTo(lip[0], lip[1]);
+    ctx.lineTo(nose[0], nose[1]);
+    ctx.lineTo(keel[0], keel[1]);
+    ctx.lineTo(wallLo[0], wallLo[1]);
     ctx.closePath();
-    ctx.fillStyle = body;
+    ctx.fillStyle = icy ? "#2c3844" : "#2a241e";
     ctx.fill();
     ctx.beginPath();
-    ctx.moveTo(rootTop[0], rootTop[1]);
-    ctx.quadraticCurveTo(top[0] - 3 * PX, top[1] - 4 * PX, nose[0] - 4 * PX, nose[1] - 2 * PX);
-    ctx.quadraticCurveTo(neck[0], neck[1] - 2 * PX, rootTop[0], rootTop[1] + 5 * PX);
+    ctx.moveTo(wallHi[0], wallHi[1]);
+    ctx.lineTo(lip[0], lip[1]);
+    ctx.lineTo(nose[0], nose[1]);
+    ctx.lineTo(wallHi[0], wallHi[1] + Math.max(4 * PX, ppm * 0.05));
     ctx.closePath();
-    ctx.fillStyle = icy ? "#f4f7fb" : "#f3efe8";
+    ctx.fillStyle = icy ? "#6d7c8a" : "#5c6570";
     ctx.fill();
     ctx.beginPath();
-    ctx.ellipse(top[0], top[1] + 2 * PX, Math.max(3 * PX, ppm * 0.06), Math.max(2 * PX, ppm * 0.035), -0.4, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.moveTo(lip[0], lip[1]);
+    ctx.lineTo(nose[0], nose[1]);
+    ctx.lineTo(keel[0], keel[1]);
+    ctx.closePath();
+    ctx.fillStyle = icy ? "#1a222a" : "#16120e";
     ctx.fill();
     if (hot) {
       ctx.beginPath();
-      ctx.moveTo(rootTop[0], rootTop[1]);
-      ctx.quadraticCurveTo(top[0], top[1], nose[0], nose[1]);
-      ctx.strokeStyle = "rgba(255,220,180,0.95)";
-      ctx.lineWidth = 1.8 * PX;
+      ctx.moveTo(wallHi[0], wallHi[1]);
+      ctx.lineTo(lip[0], lip[1]);
+      ctx.lineTo(nose[0], nose[1]);
+      ctx.strokeStyle = "rgba(255,214,170,0.9)";
+      ctx.lineWidth = 1.6 * PX;
       ctx.stroke();
     }
   }
@@ -1840,7 +1860,7 @@ function render(dt) {
   drawSky();
   drawRanges(0, 3);
   drawClouds();
-  drawRanges(3, 5);
+  drawRanges(3, RANGE_LAYERS.length);
   drawBirds();
   buildWall();
   drawWall();

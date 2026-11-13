@@ -25,24 +25,31 @@ function lowerIndex(i) {
 
 function grade(h, next) {
   if (!next) return "hard";
-  if (h.k === "ice" || next.k === "ice") return "hard";
   const y = h.y;
+  // Named hard beats. A window outside 0.20–0.35 fails, long or short.
   if (y >= 20.4 && y <= 22.4) return "hard";
   if (y >= 31.0 && y <= 33.6) return "hard";
-  if (y >= 41.4 && y <= 49.2) return "hard";
-  if (y >= 56.4 && y <= 60.6) return "hard";
+  if (y >= 43.2 && y <= 48.6) return "hard";
+  if (y >= 55.8 && y <= 60.2) return "hard";
+  if (h.k === "ice") return "hard";
   if (y < 20) return "easy";
-  if (y >= 23 && y < 31) return "easy";
-  if (y >= 34 && y < 41.4) return "easy";
-  if (y >= 50 && y < 56.4) return "easy";
-  if (y >= 61 && y < 65 && next.k !== "ice") return "easy";
+  if (y >= 25.2 && y < 31) return "easy";
+  if (y >= 22.5 && y < 25.2) return "normal";
+  if (y >= 34 && y < 41.5) return "easy";
+  if (y >= 49 && y < 55.8) return "easy";
+  if (y >= 60.3 && y < 65 && h.k !== "ice") return "easy";
+  if (next.k === "summit") return "normal";
   return "normal";
 }
 
+function limitsFor(g) {
+  if (g === "easy") return { min: 0.6, max: 9 };
+  if (g === "normal") return { min: 0.3, max: 0.6 };
+  return { min: 0.2, max: 0.35 };
+}
+
 function targetFor(g) {
-  if (g === "easy") return 0.35;
-  if (g === "normal") return 0.25;
-  return 0.18;
+  return limitsFor(g).min;
 }
 
 function releaseAt(mask, i, t, phase, down, want) {
@@ -143,7 +150,8 @@ function measure() {
     const upTo = i + 1 < FX.HOLDS.length ? i + 1 : -1;
     const downTo = lowerIndex(i);
     const g = upTo >= 0 ? grade(h, FX.HOLDS[upTo]) : "hard";
-    const needUp = upTo >= 0 ? targetFor(g) : 0;
+    const band = upTo >= 0 ? limitsFor(g) : { min: 0, max: 9 };
+    const needUp = band.min;
     const cell = {
       i: i,
       y: h.y,
@@ -151,6 +159,7 @@ function measure() {
       k: h.k,
       grade: upTo >= 0 ? g : "—",
       needUp: needUp,
+      maxUp: band.max,
       up: {},
       down: {},
     };
@@ -174,7 +183,7 @@ function measure() {
     }
     cell.upMin = upTo >= 0 ? upMin : null;
     cell.downMin = downMin;
-    cell.upOk = upTo < 0 || upMin + 1e-6 >= needUp;
+    cell.upOk = upTo < 0 || (upMin + 1e-6 >= band.min && upMin - 1e-6 <= band.max);
     cell.downOk = downTo < 0 || downMin + 1e-6 >= 0.18;
     if (!cell.upOk || !cell.downOk) failed++;
     rows.push(cell);
@@ -219,4 +228,4 @@ function main() {
 }
 
 if (require.main === module) main();
-module.exports = { measure, grade, targetFor, caught, lowerIndex, PHASES, DT };
+module.exports = { measure, grade, targetFor, limitsFor, caught, lowerIndex, PHASES, DT };
