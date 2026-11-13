@@ -1,0 +1,1428 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#07080c">
+<meta name="description" content="放下 Let Go — 一键攀岩。按住，再松开。">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>放下 · Let Go</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect fill='%2307080c' width='32' height='32'/%3E%3Cpath d='M7 27 L16 5 L25 27' fill='none' stroke='%23f3efe6' stroke-width='1.2'/%3E%3Ccircle cx='16' cy='18' r='1.5' fill='%23c44536'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --paper: #f4efe6;
+    --dim: rgba(244, 239, 230, 0.66);
+    --cin: #c44536;
+    --ink: #090a0e;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; background: var(--ink); color: var(--paper);
+    overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none;
+    -webkit-touch-callout: none;
+    font-family: "Iowan Old Style", Palatino, "Palatino Linotype", "Songti SC", "STSong", "Noto Serif CJK SC", "Source Han Serif SC", "PMingLiU", "SimSun", "WenQuanYi Micro Hei", serif;
+  }
+  #c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  #ui { position: fixed; inset: 0; pointer-events: none; }
+  button {
+    pointer-events: auto; background: none; border: 0; color: var(--paper);
+    font: inherit; letter-spacing: 0.18em; font-size: 13px; opacity: 0.72;
+    padding: 12px 10px; cursor: pointer;
+  }
+  button:hover, button:focus-visible { opacity: 1; }
+  button.off { opacity: 0.32; text-decoration: line-through; }
+  #bar {
+    position: absolute; top: 0; left: 0; right: 0;
+    display: flex; justify-content: space-between; align-items: flex-start;
+    padding: calc(6px + env(safe-area-inset-top)) calc(8px + env(safe-area-inset-right)) 0 calc(8px + env(safe-area-inset-left));
+  }
+  #bar .left, #bar .right { display: flex; gap: 2px; }
+  #title {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center;
+    transition: opacity 0.8s ease;
+  }
+  #title h1 {
+    margin: 0; font-weight: 400; font-size: clamp(92px, 15vh, 168px);
+    letter-spacing: 0; line-height: 1; text-shadow: 0 10px 40px rgba(0,0,0,0.35);
+  }
+  #title h1 span { display: inline-block; margin-left: 0.22em; }
+  #sub {
+    margin: 0.55em 0 0; font-family: "Gill Sans", "Avenir Next", "Trebuchet MS", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif;
+    letter-spacing: 0.62em; text-indent: 0.62em; font-size: 12px; opacity: 0.72;
+  }
+  #hint {
+    position: absolute; left: 50%; bottom: calc(7vh + env(safe-area-inset-bottom));
+    transform: translateX(-50%); width: min(92vw, 440px); text-align: center;
+    font-size: 14px; letter-spacing: 0.12em; color: var(--paper);
+    text-shadow: 0 2px 12px rgba(0,0,0,0.65); opacity: 0; transition: opacity 0.6s ease;
+  }
+  #meter {
+    position: absolute; right: calc(18px + env(safe-area-inset-right));
+    top: 16vh; bottom: 14vh; width: 72px; pointer-events: none;
+  }
+  #meter .track {
+    position: absolute; right: 8px; top: 0; bottom: 0; width: 1px;
+    background: linear-gradient(to top, rgba(244,239,230,0.18), rgba(196,69,54,0.85));
+  }
+  #bestMark {
+    position: absolute; right: 4px; width: 9px; height: 1px; background: #e6c27a;
+    transform: translateY(50%); opacity: 0.85;
+  }
+  #nowMark {
+    position: absolute; right: 3px; width: 11px; height: 11px; border-radius: 50%;
+    border: 1px solid var(--paper); background: var(--cin);
+    transform: translateY(50%); box-shadow: 0 0 12px rgba(196,69,54,0.65);
+  }
+  #alt {
+    position: absolute; right: 20px; top: 50%; transform: translateY(-50%);
+    font-size: 12px; letter-spacing: 0.08em; white-space: nowrap;
+    font-variant-numeric: tabular-nums; text-shadow: 0 1px 6px rgba(0,0,0,0.7);
+  }
+  #card, #ending {
+    position: absolute; left: 50%; transform: translateX(-50%);
+    opacity: 0; transition: opacity 0.45s ease; text-align: center;
+  }
+  #card {
+    bottom: calc(11vh + env(safe-area-inset-bottom));
+    width: min(86vw, 300px); padding: 18px 18px 14px;
+    background: rgba(10, 10, 12, 0.46);
+    border: 1px solid rgba(244, 239, 230, 0.16);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  }
+  #card.show, #ending.show { opacity: 1; }
+  #ending.show { pointer-events: auto; }
+  #ring {
+    width: 62px; height: 62px; margin: 0 auto 8px; border-radius: 50%;
+    background: conic-gradient(var(--cin) calc(var(--p, 0) * 1%), rgba(244,239,230,0.2) 0);
+    -webkit-mask: radial-gradient(circle, transparent 57%, #000 59%);
+    mask: radial-gradient(circle, transparent 57%, #000 59%);
+  }
+  #card h2 { margin: 0; font-size: 22px; font-weight: 400; letter-spacing: 0.14em; }
+  #cardLine { margin: 0.55em 0 0.7em; font-size: 14px; letter-spacing: 0.06em; color: var(--dim); }
+  #card .how { margin: 0; font-size: 12px; letter-spacing: 0.16em; line-height: 1.9; }
+  #ending {
+    bottom: calc(8vh + env(safe-area-inset-bottom)); width: min(92vw, 440px);
+    text-shadow: 0 2px 16px rgba(0,0,0,0.55);
+  }
+  #ending p { margin: 0.28em 0; font-size: clamp(16px, 2.1vh, 20px); letter-spacing: 0.08em; line-height: 1.75; }
+  #again {
+    margin-top: 1.15em; border-bottom: 1px solid rgba(244,239,230,0.45);
+    letter-spacing: 0.24em; font-size: 14px; padding: 8px 2px 4px;
+  }
+  #err {
+    position: absolute; left: 12px; right: 12px; bottom: 12px; color: #ffb4a8;
+    font-family: ui-monospace, monospace; font-size: 12px; white-space: pre-wrap;
+    pointer-events: none; display: none;
+  }
+  @media (max-aspect-ratio: 4/5) {
+    #title h1 { font-size: clamp(84px, 12vh, 132px); }
+    #meter { right: calc(10px + env(safe-area-inset-right)); top: 13vh; bottom: 16vh; }
+    #hint { font-size: 13px; letter-spacing: 0.08em; }
+  }
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="放下。按住蓄力，松开飞出。"></canvas>
+<div id="ui">
+  <div id="bar">
+    <div class="left">
+      <button id="mute" type="button" aria-label="声音">声</button>
+      <button id="lang" type="button">EN</button>
+    </div>
+    <div class="right">
+      <button id="restart" type="button">重来</button>
+    </div>
+  </div>
+  <header id="title"><h1>放<span>下</span></h1><p id="sub">LET GO</p></header>
+  <p id="hint"></p>
+  <div id="meter" aria-hidden="true">
+    <div class="track"></div>
+    <div id="bestMark"></div>
+    <div id="nowMark"><b id="alt"></b></div>
+  </div>
+  <section id="card">
+    <div id="ring"></div>
+    <h2 id="cardName"></h2>
+    <p id="cardLine"></p>
+    <p class="how"><span id="howHold"></span><br><span id="howTap"></span></p>
+  </section>
+  <section id="ending">
+    <p id="e1"></p>
+    <p id="e2"></p>
+    <p id="e3"></p>
+    <button id="again" type="button">再爬一次</button>
+  </section>
+  <div id="err"></div>
+</div>
+<script src="game.js"></script>
+<script>
+"use strict";
+const FX = window.Fangxia;
+const canvas = document.getElementById("c");
+const ui = {
+  title: document.getElementById("title"),
+  sub: document.getElementById("sub"),
+  hint: document.getElementById("hint"),
+  mute: document.getElementById("mute"),
+  lang: document.getElementById("lang"),
+  restart: document.getElementById("restart"),
+  card: document.getElementById("card"),
+  ring: document.getElementById("ring"),
+  cardName: document.getElementById("cardName"),
+  cardLine: document.getElementById("cardLine"),
+  howHold: document.getElementById("howHold"),
+  howTap: document.getElementById("howTap"),
+  ending: document.getElementById("ending"),
+  e1: document.getElementById("e1"),
+  e2: document.getElementById("e2"),
+  e3: document.getElementById("e3"),
+  again: document.getElementById("again"),
+  alt: document.getElementById("alt"),
+  now: document.getElementById("nowMark"),
+  best: document.getElementById("bestMark"),
+  err: document.getElementById("err"),
+};
+
+const shot = new URLSearchParams(location.search).has("shot");
+const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const coarse = matchMedia("(pointer: coarse)").matches;
+
+const SAVE_KEY = "fangxia-v1";
+function loadSave() {
+  try { return JSON.parse(localStorage.getItem(SAVE_KEY)) || {}; }
+  catch (e) { return {}; }
+}
+function writeSave(data) {
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); }
+  catch (e) {}
+}
+const saved = loadSave();
+let lang = saved.lang === "en" ? "en" : "zh";
+let muted = !!saved.mute;
+let bestSaved = saved.best | 0;
+
+const state = FX.createState();
+let holding = false;
+let restartPulse = false;
+let rush = false;
+let snap = false;
+let q = shot ? 2 : coarse ? 1 : 2;
+let scale = shot ? 1 : coarse ? 0.68 : 0.88;
+const frameMs = [];
+let prevGrip = null;
+let blur = [0, 0];
+
+const cam = {
+  pos: [-30, 4, 6],
+  look: [-4, 46, 0],
+  fov: 0.7,
+};
+
+function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+function mix(a, b, t) { return a + (b - a) * t; }
+function smooth(t) { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); }
+function sub(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
+function add(a, b) { return [a[0] + b[0], a[1] + b[1], a[2] + b[2]]; }
+function mul(a, s) { return [a[0] * s, a[1] * s, a[2] * s]; }
+function dot(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+function cross(a, b) {
+  return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+}
+function vlen(a) { return Math.hypot(a[0], a[1], a[2]); }
+function norm(a) { const l = vlen(a) || 1; return mul(a, 1 / l); }
+function damp(a, b, dt, k) {
+  const t = 1 - Math.exp(-k * dt);
+  return [mix(a[0], b[0], t), mix(a[1], b[1], t), mix(a[2], b[2], t)];
+}
+
+const VS = `#version 300 es
+void main() {
+  vec2 p = vec2(gl_VertexID == 1 ? 3.0 : -1.0, gl_VertexID == 2 ? 3.0 : -1.0);
+  gl_Position = vec4(p, 0.0, 1.0);
+}`;
+
+const FS = `#version 300 es
+precision highp float;
+out vec4 fragColor;
+uniform vec2 uRes;
+uniform float uTime, uFov, uDay, uQ, uRope, uPose, uWeight, uArmed, uDotN, uBurst, uFade, uSway;
+uniform vec3 uCam, uFwd, uRight, uUp, uSun, uGrip, uHang, uPiton;
+uniform vec2 uVel;
+uniform vec4 uItems;
+uniform vec4 uHolds[8];
+uniform vec3 uDots[12];
+uniform vec2 uLedge[5];
+uniform vec4 uDrop;
+
+float hash21(vec2 p) {
+  p = fract(p * vec2(123.34, 345.45));
+  p += dot(p, p + 34.345);
+  return fract(p.x * p.y);
+}
+float noise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float a = hash21(i);
+  float b = hash21(i + vec2(1.0, 0.0));
+  float c = hash21(i + vec2(0.0, 1.0));
+  float d = hash21(i + vec2(1.0, 1.0));
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+float fbm(vec2 p) {
+  float v = 0.0, a = 0.5;
+  for (int i = 0; i < 3; i++) {
+    v += a * noise(p);
+    p = p * 2.03 + vec2(1.7, 9.2);
+    a *= 0.5;
+  }
+  return v;
+}
+float fbm2(vec2 p) {
+  return noise(p) * 0.65 + noise(p * 2.1 + 3.0) * 0.35;
+}
+void radii(float y, out float rx, out float rz) {
+  float k = clamp(y / 110.0, 0.0, 1.0);
+  rx = mix(7.2, 3.4, k) + sin(y * 0.07 + 0.6) * 0.28;
+  rz = mix(16.0, 8.0, k) + sin(y * 0.05) * 1.1;
+}
+float faceX(float y, float z) {
+  float rx, rz;
+  radii(y, rx, rz);
+  float zz = clamp(z / rz, -0.96, 0.96);
+  return -rx * sqrt(max(0.0, 1.0 - zz * zz));
+}
+float hitEllipse(vec3 ro, vec3 rd, vec3 c, float rx, float rz, float y0, float y1, out vec3 n) {
+  vec3 o = ro - c;
+  float invx = 1.0 / (rx * rx);
+  float invz = 1.0 / (rz * rz);
+  float A = rd.x * rd.x * invx + rd.z * rd.z * invz;
+  float B = 2.0 * (o.x * rd.x * invx + o.z * rd.z * invz);
+  float C = o.x * o.x * invx + o.z * o.z * invz - 1.0;
+  float disc = B * B - 4.0 * A * C;
+  n = vec3(0.0, 1.0, 0.0);
+  if (disc < 0.0 || A < 1e-6) return -1.0;
+  float s = sqrt(disc);
+  float t1 = (-B - s) / (2.0 * A);
+  float t2 = (-B + s) / (2.0 * A);
+  float ts[2] = float[2](t1, t2);
+  for (int i = 0; i < 2; i++) {
+    float t = ts[i];
+    if (t < 0.03) continue;
+    vec3 p = ro + rd * t;
+    if (p.y <= y1 && p.y >= y0) {
+      n = normalize(vec3((p.x - c.x) * invx, 0.0, (p.z - c.z) * invz));
+      return t;
+    }
+  }
+  if (abs(rd.y) > 1e-4) {
+    for (int k = 0; k < 2; k++) {
+      float yc = k == 0 ? y1 : y0;
+      float tc = (yc - ro.y) / rd.y;
+      if (tc < 0.03) continue;
+      vec3 p = ro + rd * tc;
+      vec3 d = p - c;
+      if (d.x * d.x * invx + d.z * d.z * invz < 1.0) {
+        n = vec3(0.0, k == 0 ? 1.0 : -1.0, 0.0);
+        return tc;
+      }
+    }
+  }
+  return -1.0;
+}
+float hitCliff(vec3 ro, vec3 rd, out vec3 n) {
+  float best = 1e9;
+  n = vec3(0.0, 1.0, 0.0);
+  float seed = 8.0;
+  for (int s = 0; s < 3; s++) {
+    float t = seed;
+    seed += 14.0;
+    vec3 nn = vec3(0.0, 1.0, 0.0);
+    bool ok = true;
+    for (int i = 0; i < 2; i++) {
+      float y = clamp(ro.y + rd.y * t, -20.0, 106.0);
+      float rx, rz;
+      radii(y, rx, rz);
+      float ht = hitEllipse(ro, rd, vec3(0.0), rx, rz, -40.0, 107.2, nn);
+      if (ht < 0.0) { ok = false; break; }
+      t = ht;
+    }
+    if (ok && t > 0.03 && t < best) { best = t; n = nn; }
+  }
+  return best < 1e8 ? best : -1.0;
+}
+float hitBox(vec3 ro, vec3 rd, vec3 bmin, vec3 bmax, out vec3 n) {
+  vec3 inv = sign(rd) / max(abs(rd), vec3(1e-5));
+  vec3 t0s = (bmin - ro) * inv;
+  vec3 t1s = (bmax - ro) * inv;
+  vec3 tsm = min(t0s, t1s);
+  vec3 tbg = max(t0s, t1s);
+  float t0 = max(max(tsm.x, tsm.y), tsm.z);
+  float t1 = min(min(tbg.x, tbg.y), tbg.z);
+  n = vec3(0.0, 1.0, 0.0);
+  if (t1 < max(t0, 0.02)) return -1.0;
+  float t = t0 > 0.02 ? t0 : t1;
+  vec3 p = ro + rd * t;
+  vec3 c = (bmin + bmax) * 0.5;
+  vec3 e = max((bmax - bmin) * 0.5, vec3(0.001));
+  vec3 q = abs(p - c) / e;
+  if (q.y >= q.x && q.y >= q.z) n = vec3(0.0, sign(p.y - c.y), 0.0);
+  else if (q.x >= q.z) n = vec3(sign(p.x - c.x), 0.0, 0.0);
+  else n = vec3(0.0, 0.0, sign(p.z - c.z));
+  return t;
+}
+vec3 sunCol() {
+  return mix(vec3(0.85, 0.88, 0.95), vec3(1.05, 0.72, 0.42), smoothstep(0.25, 0.95, uDay));
+}
+vec3 sky(vec3 rd) {
+  float h = rd.y;
+  float day = clamp(uDay, 0.0, 1.0);
+  vec3 zen = mix(vec3(0.025, 0.04, 0.09), vec3(0.18, 0.42, 0.78), day);
+  vec3 hor = mix(vec3(0.22, 0.24, 0.34), vec3(1.02, 0.55, 0.30), pow(day, 0.72));
+  vec3 down = mix(vec3(0.05, 0.055, 0.07), vec3(0.55, 0.48, 0.46), day);
+  vec3 col = mix(hor, zen, smoothstep(-0.02, 0.62, h));
+  col = mix(down, col, smoothstep(-0.28, 0.06, h));
+  float sd = max(dot(rd, normalize(uSun)), 0.0);
+  vec3 sc = sunCol();
+  col += sc * pow(sd, 3.0) * 0.55;
+  col += sc * pow(sd, 14.0) * 0.7;
+  col += sc * pow(sd, 220.0) * 4.0;
+  vec2 sp = rd.xz / (abs(rd.y) + 0.45) * 28.0;
+  vec2 sid = floor(sp);
+  vec2 sf = fract(sp) - 0.5;
+  float sn = hash21(sid);
+  float star = smoothstep(0.045, 0.0, length(sf)) * step(0.965, sn);
+  col += star * (1.0 - smoothstep(0.45, 0.8, day)) * smoothstep(0.05, 0.35, h) * 0.85;
+  float cir = fbm(rd.xz / (abs(rd.y) + 0.35) * 1.4 + vec2(uTime * 0.008, 0.2));
+  col = mix(col, vec3(1.0, 0.96, 0.92), smoothstep(0.58, 0.86, cir) * smoothstep(0.0, 0.4, h) * 0.16 * day);
+  return col;
+}
+float cloudDen(vec3 p, vec3 ro) {
+  float h = clamp((p.y - 50.0) / 48.0, 0.0, 1.0);
+  float profile = smoothstep(0.0, 0.18, h) * smoothstep(1.0, 0.42, h);
+  float summit = smoothstep(96.0, 112.0, p.y) * smoothstep(130.0, 108.0, p.y);
+  float n = fbm2(p.xz * 0.05 + vec2(p.y * 0.015, uTime * 0.012));
+  float d = smoothstep(0.48, 0.78, n) * profile + summit * smoothstep(0.55, 0.8, n) * 0.45;
+  float dist = length(p - ro);
+  d *= smoothstep(5.5, 14.0, dist);
+  return d;
+}
+vec3 shadeRock(vec3 p, vec3 n, vec3 rd) {
+  vec2 uv = vec2(p.y * 0.21, p.z * 0.21);
+  float h = fbm(uv);
+  float groove = noise(vec2(p.y * 0.35, p.z * 1.7));
+  float crack = noise(vec2(p.y * 1.3, p.z * 3.2));
+  vec3 n2 = normalize(n + vec3((crack - 0.5) * 0.1, (h - 0.5) * 0.05, (groove - 0.5) * 0.12));
+  float snow = smoothstep(0.05, 0.55, n2.y + (groove - 0.35) * 0.45);
+  float alt = smoothstep(42.0, 100.0, p.y);
+  snow = clamp(max(snow, alt * smoothstep(-0.2, 0.45, n2.y) * 0.85), 0.0, 1.0);
+  vec3 rock = mix(vec3(0.16, 0.18, 0.24), vec3(0.38, 0.4, 0.44), h);
+  rock = mix(rock, vec3(0.22, 0.16, 0.14), smoothstep(0.62, 0.9, crack) * 0.55);
+  rock *= 0.88 + 0.12 * groove;
+  vec3 sn = vec3(0.86, 0.9, 0.95);
+  vec3 albedo = mix(rock, sn, snow);
+  float band = 0.0;
+  for (int i = 0; i < 5; i++) {
+    float dy = abs(p.y - uLedge[i].x);
+    float dz = abs(p.z - uLedge[i].y);
+    band = max(band, (1.0 - smoothstep(0.08, 0.42, dy)) * (1.0 - smoothstep(0.2, 1.35, dz)));
+  }
+  albedo = mix(albedo, vec3(0.92, 0.94, 0.97), band);
+  vec3 sc = sunCol();
+  vec3 skyA = mix(vec3(0.25, 0.32, 0.48), vec3(0.5, 0.64, 0.82), uDay);
+  float ndl = dot(n2, normalize(uSun));
+  float diff = clamp(ndl, 0.0, 1.0);
+  float wrap = clamp(ndl * 0.5 + 0.5, 0.0, 1.0);
+  float ao = clamp(0.42 + 0.58 * groove, 0.3, 1.0);
+  ao *= 0.6 + 0.4 * smoothstep(-0.45, 0.7, n2.y);
+  vec3 col = albedo * (skyA * (0.38 + wrap * 0.4) + sc * diff * 1.25) * ao;
+  col += band * sc * 0.45;
+  float rim = pow(1.0 - max(dot(n2, -rd), 0.0), 2.6);
+  col += rim * mix(vec3(0.45, 0.55, 0.75), sc, uDay) * 0.35;
+  float edge = pow(1.0 - max(dot(normalize(n), -rd), 0.0), 2.2);
+  col += edge * sc * 0.18;
+  float spec = pow(max(dot(reflect(-normalize(uSun), n2), -rd), 0.0), 48.0) * snow;
+  col += spec * sc * 0.65;
+  float glint = pow(noise(p.yz * 5.0 + uTime * 0.02), 28.0) * snow * diff;
+  col += glint * sc * 0.12;
+  vec2 sd = p.yz - uGrip.yz;
+  float sh = exp(-dot(sd, sd) * 0.22);
+  col *= 1.0 - sh * 0.34;
+  if (uBurst > 0.01) {
+    float ring = exp(-abs(length(sd) - (1.0 - uBurst) * 1.6) * 6.0);
+    col += vec3(0.85, 0.9, 1.0) * ring * uBurst * 0.55;
+  }
+  return col;
+}
+float rSphere(vec3 ro, vec3 rd, vec3 c, float r, out vec3 n) {
+  vec3 oc = ro - c;
+  float b = dot(oc, rd);
+  float h = b * b - dot(oc, oc) + r * r;
+  if (h < 0.0) return -1.0;
+  float t = -b - sqrt(h);
+  if (t < 0.002) return -1.0;
+  n = normalize(oc + rd * t);
+  return t;
+}
+float rEllipsoid(vec3 ro, vec3 rd, vec3 c, vec3 r, out vec3 n) {
+  vec3 oc = (ro - c) / r;
+  vec3 d = rd / r;
+  float A = dot(d, d);
+  float B = 2.0 * dot(oc, d);
+  float C = dot(oc, oc) - 1.0;
+  float h = B * B - 4.0 * A * C;
+  if (h < 0.0) return -1.0;
+  float t = (-B - sqrt(h)) / (2.0 * A);
+  if (t < 0.002) return -1.0;
+  vec3 p = ro + rd * t;
+  n = normalize((p - c) / (r * r));
+  return t;
+}
+vec3 segHit(vec3 ro, vec3 rd, vec3 a, vec3 b) {
+  vec3 v = b - a;
+  vec3 w = ro - a;
+  float A = dot(rd, rd);
+  float B = dot(rd, v);
+  float C = dot(v, v);
+  float D = dot(rd, w);
+  float E = dot(v, w);
+  float den = A * C - B * B;
+  float sc, tc;
+  if (den < 1e-5) { sc = 0.0; tc = clamp(E / C, 0.0, 1.0); }
+  else {
+    sc = (B * E - C * D) / den;
+    tc = (A * E - B * D) / den;
+    if (tc < 0.0) { tc = 0.0; sc = clamp(-D / A, 0.0, 1e4); }
+    else if (tc > 1.0) { tc = 1.0; sc = clamp((B - D) / A, 0.0, 1e4); }
+  }
+  sc = max(sc, 0.0);
+  vec3 cp = ro + rd * sc;
+  vec3 cq = a + v * tc;
+  return vec3(sc, tc, length(cp - cq));
+}
+bool take(float t, vec3 n, vec3 alb, float em, inout float bt, inout vec3 bn, inout vec3 ba, inout float be) {
+  if (t > 0.002 && t < bt) { bt = t; bn = n; ba = alb; be = em; return true; }
+  return false;
+}
+void character(vec3 ro, vec3 rd, inout float bt, inout vec3 bn, inout vec3 ba, inout float be) {
+  vec3 bound = uGrip + vec3(-0.25, 0.15, 0.0);
+  vec3 oc = ro - bound;
+  float bb = dot(oc, rd);
+  if (bb * bb - dot(oc, oc) + 6.8 < 0.0) return;
+  vec3 hang = normalize(uHang);
+  vec3 side = normalize(cross(hang, vec3(1.0, 0.05, 0.0)));
+  float packS = mix(0.62, 1.18, clamp(uWeight, 0.0, 1.0));
+  vec3 hand, head, chest, hip;
+  if (uPose > 0.5) {
+    hand = uGrip + vec3(0.0, 1.45, 0.0);
+    head = uGrip + vec3(-0.02, 1.38, 0.0);
+    chest = uGrip + vec3(0.0, 0.92, 0.0);
+    hip = uGrip + vec3(0.0, 0.48, 0.0);
+    hang = vec3(0.0, -1.0, 0.0);
+    side = vec3(0.0, 0.0, 1.0);
+  } else {
+    hand = uGrip;
+    head = hand + hang * 0.26 + vec3(-0.04, 0.0, 0.0);
+    chest = hand + hang * 0.62;
+    hip = hand + hang * 1.02;
+  }
+  vec3 pack = chest + hang * 0.08 + vec3(-0.22, 0.0, 0.0) * packS + side * uSway * 0.12;
+  vec3 n;
+  float t;
+  // hood, clearly above the pack
+  t = rSphere(ro, rd, head + vec3(-0.06, 0.0, 0.0), 0.15, n);
+  take(t, n, vec3(0.09, 0.1, 0.13), 0.0, bt, bn, ba, be);
+  // torso
+  vec3 hs = segHit(ro, rd, head, hip);
+  if (hs.z < 0.11) take(hs.x, normalize(ro + rd * hs.x - mix(head, hip, hs.y)), vec3(0.08, 0.09, 0.12), 0.0, bt, bn, ba, be);
+  // backpack sits on the back, under the hood
+  t = rEllipsoid(ro, rd, pack, vec3(0.22, 0.28, 0.2) * packS, n);
+  take(t, n, vec3(0.32, 0.11, 0.09), 0.02, bt, bn, ba, be);
+  float kick = sin(uTime * 2.0) * 0.06;
+  vec3 k1 = hip + hang * 0.38 + side * (0.07 + kick);
+  vec3 f1 = k1 + hang * 0.36;
+  vec3 k2 = hip + hang * 0.38 - side * (0.07 + kick);
+  vec3 f2 = k2 + hang * 0.36;
+  hs = segHit(ro, rd, hip, k1);
+  if (hs.z < 0.05) take(hs.x, normalize(ro + rd * hs.x - mix(hip, k1, hs.y)), vec3(0.07, 0.08, 0.1), 0.0, bt, bn, ba, be);
+  hs = segHit(ro, rd, k1, f1);
+  if (hs.z < 0.04) take(hs.x, normalize(ro + rd * hs.x - mix(k1, f1, hs.y)), vec3(0.06, 0.07, 0.09), 0.0, bt, bn, ba, be);
+  hs = segHit(ro, rd, hip, k2);
+  if (hs.z < 0.05) take(hs.x, normalize(ro + rd * hs.x - mix(hip, k2, hs.y)), vec3(0.07, 0.08, 0.1), 0.0, bt, bn, ba, be);
+  hs = segHit(ro, rd, k2, f2);
+  if (hs.z < 0.04) take(hs.x, normalize(ro + rd * hs.x - mix(k2, f2, hs.y)), vec3(0.06, 0.07, 0.09), 0.0, bt, bn, ba, be);
+  vec3 shoulder = mix(head, chest, 0.55) + side * 0.08;
+  hs = segHit(ro, rd, shoulder, hand);
+  if (hs.z < 0.045) take(hs.x, normalize(ro + rd * hs.x - mix(shoulder, hand, hs.y)), vec3(0.1, 0.11, 0.14), 0.0, bt, bn, ba, be);
+  // scarf blows sideways, a strip of red
+  vec3 neck = mix(head, chest, 0.35);
+  vec3 scarf = normalize(side * 0.85 + vec3(-0.35, 0.05, 0.0) + vec3(0.0, -uVel.y, -uVel.x) * 0.03);
+  vec3 s1 = neck + scarf * 0.42 + vec3(0.0, sin(uTime * 3.0) * 0.04, 0.0);
+  vec3 s2 = s1 + scarf * 0.38 + hang * 0.12;
+  hs = segHit(ro, rd, neck, s1);
+  if (hs.z < 0.04) take(hs.x, normalize(ro + rd * hs.x - mix(neck, s1, hs.y)), vec3(0.78, 0.14, 0.1), 0.65, bt, bn, ba, be);
+  hs = segHit(ro, rd, s1, s2);
+  if (hs.z < 0.03) take(hs.x, normalize(ro + rd * hs.x - mix(s1, s2, hs.y)), vec3(0.82, 0.16, 0.11), 0.8, bt, bn, ba, be);
+  if (uItems.z > 0.5) {
+    t = rSphere(ro, rd, pack - hang * 0.22 * packS + vec3(-0.08, 0.0, 0.0), 0.055, n);
+    take(t, n, vec3(0.86, 0.7, 0.28), 0.25, bt, bn, ba, be);
+  }
+}
+void ribbon(vec3 ro, vec3 rd, vec3 a, vec3 b, float rad, vec3 col, float em, inout float bt, inout vec3 bn, inout vec3 ba, inout float be) {
+  vec3 hs = segHit(ro, rd, a, b);
+  if (hs.z < rad) {
+    vec3 p = ro + rd * hs.x;
+    vec3 q = mix(a, b, hs.y);
+    take(hs.x, normalize(p - q + 1e-4), col, em, bt, bn, ba, be);
+  }
+}
+void main() {
+  vec2 uv = (gl_FragCoord.xy / uRes) * 2.0 - 1.0;
+  float aspect = uRes.x / uRes.y;
+  float ty = tan(uFov * 0.5);
+  vec3 rd = normalize(uFwd + uRight * (uv.x * aspect * ty) + uUp * (uv.y * ty));
+  vec3 ro = uCam;
+  vec3 nCliff;
+  float t = hitCliff(ro, rd, nCliff);
+  vec3 spN;
+  float ts = hitEllipse(ro, rd, vec3(3.0, 0.0, -27.0), 4.2, 3.1, -10.0, 132.0, spN);
+  if (ts > 0.0 && (t < 0.0 || ts < t)) { t = ts; nCliff = spN; }
+  float tr = hitEllipse(ro, rd, vec3(1.0, 0.0, 24.0), 3.4, 2.6, 10.0, 118.0, spN);
+  if (tr > 0.0 && (t < 0.0 || tr < t)) { t = tr; nCliff = spN; }
+  vec3 col;
+  float depth = 1.0;
+  vec3 sc = sunCol();
+  float farT = 90.0;
+  if (t > 0.0 && t < farT) {
+    vec3 p = ro + rd * t;
+    col = shadeRock(p, nCliff, rd);
+    depth = clamp(t / 80.0, 0.0, 1.0);
+  } else {
+    col = sky(rd);
+    t = farT;
+    depth = 1.0;
+  }
+  float tCloud0 = 0.0;
+  float tCloud1 = min(t, 78.0);
+  float y0 = 48.0, y1 = 120.0;
+  if (abs(rd.y) > 1e-3) {
+    float ta = (y0 - ro.y) / rd.y;
+    float tb = (y1 - ro.y) / rd.y;
+    float a = max(min(ta, tb), 0.0);
+    float b = min(max(ta, tb), tCloud1);
+    if (b > a) { tCloud0 = a; tCloud1 = b; }
+  } else if (ro.y > y0 && ro.y < y1) {
+    tCloud0 = 0.0; tCloud1 = min(t, 40.0);
+  } else tCloud1 = 0.0;
+  if (tCloud1 > tCloud0 + 0.5) {
+    int cs = uQ < 0.5 ? 3 : 5;
+    float dt = (tCloud1 - tCloud0) / float(cs);
+    float tt = tCloud0 + dt * 0.5;
+    float trans = 1.0;
+    vec3 acc = vec3(0.0);
+    float sunUp = clamp(normalize(uSun).y * 0.7 + 0.35, 0.2, 1.0);
+    for (int i = 0; i < 5; i++) {
+      if (i >= cs || trans < 0.04) break;
+      vec3 p = ro + rd * tt;
+      float den = cloudDen(p, ro);
+      if (den > 0.02) {
+        float light = sunUp * (0.55 + 0.45 * clamp((p.y - 50.0) / 40.0, 0.0, 1.0));
+        vec3 cc = mix(vec3(0.45, 0.5, 0.62), sc, light);
+        cc = mix(cc, vec3(1.0, 0.9, 0.8), clamp(uDay, 0.0, 1.0) * light * 0.35);
+        float alpha = 1.0 - exp(-den * dt * 0.42);
+        acc += trans * alpha * cc * light;
+        trans *= 1.0 - alpha;
+      }
+      tt += dt;
+    }
+    col = col * trans + acc;
+  }
+  vec3 fogCol = mix(vec3(0.55, 0.62, 0.74), vec3(0.95, 0.72, 0.52), clamp(uDay, 0.0, 1.0));
+  float hitY = ro.y + rd.y * min(t, 40.0);
+  float low = smoothstep(8.0, -18.0, hitY);
+  float fog = 1.0 - exp(-min(t, 90.0) * 0.0075);
+  fog = clamp(fog * 0.85 + low * 0.55 * smoothstep(4.0, 24.0, t), 0.0, 0.78);
+  col = mix(col, fogCol, fog);
+
+  float bt = t;
+  vec3 bn, ba; float be = 0.0;
+  character(ro, rd, bt, bn, ba, be);
+  if (uRope > 0.5) {
+    ribbon(ro, rd, uPiton, uGrip, 0.025, vec3(0.12, 0.08, 0.07), 0.0, bt, bn, ba, be);
+    vec3 mid = mix(uPiton, uGrip, 0.15);
+    ribbon(ro, rd, uPiton, mid + vec3(-0.05, -0.08, 0.05), 0.03, vec3(0.72, 0.12, 0.09), 0.45, bt, bn, ba, be);
+  }
+  for (int i = 0; i < 8; i++) {
+    vec4 h = uHolds[i];
+    if (h.y < -50.0) continue;
+    float x = faceX(h.y, h.z);
+    vec3 pinC = vec3(x, h.y, h.z);
+    float tp = dot(pinC - ro, rd);
+    if (tp < 0.0 || length((ro + rd * tp) - pinC) > 1.6) continue;
+    vec3 pin = vec3(x + 0.02, h.y, h.z);
+    float flutter = sin(uTime * 2.2 + h.y * 0.7) * 0.16;
+    float reach = h.w > 1.5 ? 0.42 : 0.28;
+    vec3 tip = pin + vec3(-0.25, -reach, flutter);
+    float em = h.w > 1.5 ? 0.7 : 0.28;
+    if (uArmed > 0.5 && h.w > 1.5) em = 1.05;
+    ribbon(ro, rd, pin, pin + vec3(0.05, -0.05, 0.0), 0.03, vec3(0.45, 0.42, 0.4), 0.05, bt, bn, ba, be);
+    ribbon(ro, rd, pin + vec3(-0.02, -0.02, 0.0), tip, 0.028, vec3(0.75, 0.16, 0.12), em, bt, bn, ba, be);
+  }
+  if (uDotN > 0.5) {
+    for (int i = 0; i < 12; i++) {
+      if (float(i) >= uDotN) break;
+      vec3 d = uDots[i];
+      if (d.y < -50.0) continue;
+      vec3 n;
+      float rad = 0.055 + (uArmed > 0.5 ? 0.02 : 0.0);
+      float ts = rSphere(ro, rd, d, rad, n);
+      float em = mix(0.25, 1.1, float(i) / max(uDotN, 1.0));
+      if (uArmed > 0.5) em += 0.4;
+      take(ts, n, vec3(1.0, 0.78, 0.45), em, bt, bn, ba, be);
+    }
+  }
+  if (uDrop.w > 0.5) {
+    vec3 n;
+    vec3 c = uDrop.xyz + vec3(sin(uTime * 6.0) * 0.1, 0.0, cos(uTime * 5.0) * 0.1);
+    vec3 alb = vec3(0.8);
+    float em = 0.2;
+    if (uDrop.w < 1.5) alb = vec3(0.75, 0.78, 0.84);
+    else if (uDrop.w < 2.5) { alb = vec3(0.9, 0.75, 0.35); em = 0.6; }
+    else if (uDrop.w < 3.5) { alb = vec3(0.85, 0.68, 0.25); em = 0.45; }
+    else alb = vec3(0.86, 0.84, 0.76);
+    float ts = rSphere(ro, rd, c, 0.12, n);
+    take(ts, n, alb, em, bt, bn, ba, be);
+  }
+  if (bt < t - 0.001) {
+    vec3 p = ro + rd * bt;
+    vec3 scn = sunCol();
+    float ndl = clamp(dot(bn, normalize(uSun)) * 0.6 + 0.4, 0.0, 1.0);
+    float rim = pow(1.0 - max(dot(bn, -rd), 0.0), 2.0);
+    vec3 lit = ba * (ndl * scn * 1.15 + vec3(0.18, 0.22, 0.32)) + rim * mix(vec3(0.4, 0.5, 0.7), scn, uDay) * 0.55;
+    lit += ba * be;
+    float cf = clamp(1.0 - exp(-bt * 0.02), 0.0, 0.55);
+    col = mix(lit, fogCol, cf);
+    depth = clamp(bt / 80.0, 0.0, 1.0);
+  }
+  col *= uFade;
+  col = max(col, 0.0);
+  vec3 enc = col / (vec3(1.0) + col);
+  fragColor = vec4(enc, depth);
+}`;
+
+const CS = `#version 300 es
+precision highp float;
+out vec4 fragColor;
+uniform sampler2D uTex;
+uniform vec2 uRes, uBlur;
+uniform float uTime, uFall, uDay, uFade, uFlash;
+float hash21(vec2 p) {
+  p = fract(p * vec2(123.34, 345.45));
+  p += dot(p, p + 34.345);
+  return fract(p.x * p.y);
+}
+vec3 aces(vec3 x) {
+  const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
+  return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+}
+vec3 restore(vec3 e) { return e / max(vec3(1.0) - e, vec3(0.004)); }
+void main() {
+  vec2 uv = gl_FragCoord.xy / uRes;
+  vec2 px = 1.0 / uRes;
+  vec3 c0 = restore(texture(uTex, uv).rgb);
+  float depth = texture(uTex, uv).a;
+  vec3 blurC = c0;
+  float bs = clamp(uFall * 0.8, 0.0, 0.85);
+  if (bs > 0.02) {
+    vec2 dir = (length(uBlur) > 1e-4 ? normalize(uBlur) : vec2(0.0, -1.0));
+    blurC = vec3(0.0);
+    float wsum = 0.0;
+    for (int i = -3; i <= 3; i++) {
+      float w = 1.0 - abs(float(i)) / 4.0;
+      blurC += restore(texture(uTex, uv + dir * px * float(i) * 5.0 * bs).rgb) * w;
+      wsum += w;
+    }
+    blurC /= wsum;
+    c0 = mix(c0, blurC, bs * 0.75);
+  }
+  float dof = smoothstep(0.35, 0.95, depth) * (uQSafe());
+  vec3 wide = vec3(0.0);
+  vec2 o[8];
+  o[0] = vec2(1.0, 0.0); o[1] = vec2(-1.0, 0.0); o[2] = vec2(0.0, 1.0); o[3] = vec2(0.0, -1.0);
+  o[4] = vec2(0.7, 0.7); o[5] = vec2(-0.7, 0.7); o[6] = vec2(0.7, -0.7); o[7] = vec2(-0.7, -0.7);
+  for (int i = 0; i < 8; i++) wide += restore(texture(uTex, uv + o[i] * px * (2.0 + depth * 4.0)).rgb);
+  wide /= 8.0;
+  c0 = mix(c0, wide, smoothstep(0.72, 1.0, depth) * 0.08);
+
+  vec3 bloom = vec3(0.0);
+  for (int i = 1; i <= 5; i++) {
+    float fi = float(i);
+    vec2 s = px * fi * 4.0;
+    vec3 a = restore(texture(uTex, uv + vec2(s.x, 0.0)).rgb);
+    vec3 b = restore(texture(uTex, uv - vec2(s.x, 0.0)).rgb);
+    vec3 c = restore(texture(uTex, uv + vec2(0.0, s.y)).rgb);
+    vec3 d = restore(texture(uTex, uv - vec2(0.0, s.y)).rgb);
+    bloom += (a + b + c + d) * (0.22 / fi);
+  }
+  c0 += max(bloom - vec3(1.35), 0.0) * 0.12;
+
+  float l = dot(c0, vec3(0.2126, 0.7152, 0.0722));
+  vec3 sh = vec3(0.86, 0.9, 1.04);
+  vec3 hi = mix(vec3(1.02, 0.98, 0.94), vec3(1.06, 0.94, 0.84), clamp(uDay, 0.0, 1.0));
+  c0 *= mix(sh, hi, smoothstep(0.08, 0.7, l));
+  c0 = mix(c0, c0 * vec3(0.9, 0.93, 1.02), uFall * 0.2);
+  c0 = aces(c0 * 1.05);
+  float l2 = dot(c0, vec3(0.2126, 0.7152, 0.0722));
+  c0 = mix(vec3(l2), c0, 1.06);
+  vec2 centered = uv * 2.0 - 1.0;
+  float vig = smoothstep(1.25, 0.25, length(centered * vec2(0.85, 1.0)));
+  c0 *= mix(0.72, 1.0, vig);
+  float ca = 0.0012 + uFall * 0.004;
+  c0.r = mix(c0.r, restore(texture(uTex, uv + vec2(ca, 0.0)).rgb).r, 0.35);
+  c0.b = mix(c0.b, restore(texture(uTex, uv - vec2(ca, 0.0)).rgb).b, 0.35);
+  float sn = 0.0;
+  for (int i = 0; i < 2; i++) {
+    float fi = float(i);
+    float sc = 22.0 + fi * 17.0;
+    vec2 q = uv * vec2(sc * 0.72, sc);
+    q.y += uTime * (0.035 + fi * 0.03) * (1.0 + uFall * 5.0);
+    q.x += uTime * 0.01 + sin(q.y * 1.5) * 0.02;
+    vec2 id = floor(q);
+    vec2 f = fract(q) - 0.5;
+    float n = hash21(id + fi * 9.0);
+    f += (vec2(n, hash21(id + 2.0)) - 0.5) * 0.45;
+    f.y *= mix(1.0, 0.45, uFall);
+    float d = length(f);
+    sn += smoothstep(0.045, 0.0, d) * step(0.72, n);
+  }
+  c0 += sn * mix(0.22, 0.5, uFall);
+  float g = hash21(gl_FragCoord.xy + fract(uTime * 13.0));
+  c0 += (g - 0.5) * 0.028;
+  c0 = mix(c0, vec3(0.9, 0.94, 1.0), clamp(uFlash, 0.0, 1.0));
+  c0 *= uFade;
+  fragColor = vec4(clamp(c0, 0.0, 1.0), 1.0);
+}
+float uQSafe() { return 1.0; }
+`;
+
+// The composite shader above calls uQSafe which is defined after main in GLSL — illegal.
+// Rebuild CS without that call. (Kept as a string replace below.)
+
+function compile(type, src) {
+  const sh = gl.createShader(type);
+  gl.shaderSource(sh, src);
+  gl.compileShader(sh);
+  if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+    const log = gl.getShaderInfoLog(sh) || "shader";
+    throw new Error(log);
+  }
+  return sh;
+}
+function program(vs, fs) {
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, vs));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p) || "link");
+  return p;
+}
+
+const CS_SRC = CS.replace("  float dof = smoothstep(0.35, 0.95, depth) * (uQSafe());\n", "").replace(/\nfloat uQSafe\(\) \{ return 1\.0; \}\n$/, "\n");
+
+const gl = canvas.getContext("webgl2", {
+  alpha: false,
+  antialias: false,
+  depth: false,
+  stencil: false,
+  powerPreference: "high-performance",
+  preserveDrawingBuffer: shot,
+});
+if (!gl) {
+  ui.err.style.display = "block";
+  ui.err.textContent = "需要 WebGL2。";
+  throw new Error("no webgl2");
+}
+let sceneProg, compProg, SU, CU;
+try {
+  sceneProg = program(VS, FS);
+  compProg = program(VS, CS_SRC);
+} catch (err) {
+  ui.err.style.display = "block";
+  ui.err.textContent = String(err.message || err);
+  console.error(err);
+  throw err;
+}
+function locs(prog, names) {
+  const o = {};
+  for (const n of names) o[n] = gl.getUniformLocation(prog, n);
+  return o;
+}
+SU = locs(sceneProg, ["uRes","uTime","uFov","uDay","uQ","uRope","uPose","uWeight","uArmed","uDotN","uBurst","uFade","uSway","uCam","uFwd","uRight","uUp","uSun","uGrip","uHang","uPiton","uVel","uItems","uHolds[0]","uDots[0]","uLedge[0]","uDrop"]);
+CU = locs(compProg, ["uTex","uRes","uBlur","uTime","uFall","uDay","uFade","uFlash"]);
+
+const tex = gl.createTexture();
+const fbo = gl.createFramebuffer();
+gl.bindTexture(gl.TEXTURE_2D, tex);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 4, 4, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+
+let bw = 4, bh = 4;
+function resize() {
+  const dprCap = coarse ? 1.4 : 1.8;
+  const dpr = Math.min(window.devicePixelRatio || 1, dprCap);
+  let w = Math.max(2, canvas.clientWidth * dpr * scale);
+  let h = Math.max(2, canvas.clientHeight * dpr * scale);
+  const cap = q <= 0 ? 860 : q === 1 ? 1280 : 1680;
+  const m = Math.max(w, h);
+  if (m > cap) { w = w * cap / m; h = h * cap / m; }
+  w = Math.round(w); h = Math.round(h);
+  if (w === bw && h === bh) return;
+  bw = w; bh = h;
+  canvas.width = w; canvas.height = h;
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+}
+window.addEventListener("resize", resize);
+resize();
+
+const audio = { ctx: null, master: null, wind: null, drone: null, filter: null, nextNote: 0 };
+function audioStart() {
+  if (audio.ctx) return;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  const ctx = new AC();
+  audio.ctx = ctx;
+  const master = ctx.createGain();
+  master.gain.value = muted ? 0 : 0.85;
+  master.connect(ctx.destination);
+  audio.master = master;
+  const seconds = 2;
+  const buf = ctx.createBuffer(1, ctx.sampleRate * seconds, ctx.sampleRate);
+  const data = buf.getChannelData(0);
+  let b = 0;
+  for (let i = 0; i < data.length; i++) {
+    const w = Math.random() * 2 - 1;
+    b = b * 0.985 + w * 0.015;
+    data[i] = b * 6.5;
+  }
+  const src = ctx.createBufferSource();
+  src.buffer = buf; src.loop = true;
+  const filter = ctx.createBiquadFilter();
+  filter.type = "lowpass"; filter.frequency.value = 620; filter.Q.value = 0.4;
+  const wind = ctx.createGain(); wind.gain.value = 0;
+  src.connect(filter).connect(wind).connect(master);
+  src.start();
+  audio.wind = wind; audio.filter = filter;
+  const o1 = ctx.createOscillator();
+  const o2 = ctx.createOscillator();
+  const g = ctx.createGain();
+  o1.type = "sine"; o2.type = "sine";
+  o1.frequency.value = 98; o2.frequency.value = 146.8;
+  g.gain.value = 0.0;
+  o1.connect(g); o2.connect(g); g.connect(master);
+  o1.start(); o2.start();
+  audio.drone = { o1, o2, g };
+}
+function setMuted(v) {
+  muted = v;
+  if (audio.master) audio.master.gain.value = muted ? 0 : 0.85;
+  writeSave({ best: bestSaved, mute: muted, lang });
+  ui.mute.classList.toggle("off", muted);
+}
+function tone(freq, dur, type, vol, slide) {
+  if (!audio.ctx || muted) return;
+  const t = audio.ctx.currentTime;
+  const o = audio.ctx.createOscillator();
+  const g = audio.ctx.createGain();
+  o.type = type || "sine";
+  o.frequency.setValueAtTime(freq, t);
+  if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(40, slide), t + dur);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(Math.max(0.0002, vol), t + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g).connect(audio.master);
+  o.start(t); o.stop(t + dur + 0.03);
+}
+function noiseBurst(dur, vol, from, to) {
+  if (!audio.ctx || muted) return;
+  const ctx = audio.ctx;
+  const n = Math.floor(ctx.sampleRate * dur);
+  const buf = ctx.createBuffer(1, n, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  let b = 0;
+  for (let i = 0; i < n; i++) { b = b * 0.6 + (Math.random() * 2 - 1) * 0.4; d[i] = b; }
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  const f = ctx.createBiquadFilter();
+  f.type = "bandpass";
+  const t = ctx.currentTime;
+  f.frequency.setValueAtTime(from, t);
+  f.frequency.exponentialRampToValueAtTime(to, t + dur);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  src.connect(f).connect(g).connect(audio.master);
+  src.start(t); src.stop(t + dur + 0.02);
+}
+const SCALE = [196, 220, 247, 294, 330, 392, 440, 494];
+function playSfx(list) {
+  for (const s of list) {
+    if (s === "release") noiseBurst(0.28, 0.08, 900, 220);
+    else if (s === "catch") { tone(174.6, 0.22, "sine", 0.05); tone(349.2, 0.4, "triangle", 0.035); }
+    else if (s === "arm") tone(740, 0.05, "sine", 0.02);
+    else if (s === "near") tone(880, 0.35, "sine", 0.03, 420);
+    else if (s === "drop") { tone(523.25, 1.4, "sine", 0.06); tone(784, 1.6, "triangle", 0.03); }
+    else if (s === "summit") { tone(392, 1.2, "sine", 0.05); tone(494, 1.5, "sine", 0.04, 0); tone(587, 1.8, "triangle", 0.035); }
+    else if (s === "impact") noiseBurst(0.4, 0.12, 180, 60);
+    else if (s === "ledge") tone(311, 0.4, "sine", 0.03);
+  }
+}
+function music(dt, alt, mode) {
+  if (!audio.ctx || muted || !audio.drone) return;
+  const sp = Math.hypot(state.vz, state.vy);
+  const target = clamp(0.035 + sp * 0.004 + (mode === "impact" ? 0.08 : 0) + Math.max(0, -state.vy) * 0.002, 0, 0.2);
+  audio.wind.gain.setTargetAtTime(target, audio.ctx.currentTime, 0.15);
+  audio.filter.frequency.setTargetAtTime(420 + sp * 18 + Math.max(0, -state.vy) * 12, audio.ctx.currentTime, 0.2);
+  const climb = clamp((alt - 6) / 100, 0, 1);
+  audio.drone.o1.frequency.setTargetAtTime(mix(82, 130.8, climb), audio.ctx.currentTime, 0.4);
+  audio.drone.g.gain.setTargetAtTime(mode === "ending" ? 0.03 : 0.012, audio.ctx.currentTime, 0.5);
+  if (state.time > audio.nextNote && mode === "play") {
+    const idx = (Math.floor(alt / 9) + Math.floor(state.time * 0.2)) % SCALE.length;
+    tone(SCALE[idx], 1.6, "triangle", 0.02);
+    audio.nextNote = state.time + 2.6 + (Math.sin(state.time * 0.3) * 0.5 + 0.5) * 1.8;
+  }
+}
+
+function desiredCam(aspect) {
+  const standing = state.mode === "ledge" || state.mode === "drop" || state.mode === "ending";
+  const y = standing ? state.y : state.y;
+  const z = state.z;
+  const fx = FX.faceX(y, z);
+  const portrait = aspect < 0.92;
+  const fall = clamp((-state.vy - 5) / 16, 0, 1);
+  let close;
+  if (state.mode === "ending") {
+    const dist = portrait ? 7.6 : 10.5;
+    close = {
+      pos: [fx - dist, y + 2.4 + Math.sin(state.endingT * 0.18) * 0.25, z + (portrait ? 1.1 : 3.2)],
+      look: [fx - 0.15, y + 1.25, z],
+      fov: (portrait ? 46 : 30) * Math.PI / 180,
+    };
+  } else {
+    const dist = portrait ? 7.4 : 10.2;
+    const side = portrait ? 0.2 : 0.85;
+    close = {
+      pos: [fx - dist, y + (portrait ? 0.15 : 0.35) + fall * 2.0, z + side],
+      look: [fx + 0.5, y + mix(portrait ? 0.55 : 0.35, -1.8, fall), z],
+      fov: (portrait ? 48 : 34) * Math.PI / 180,
+    };
+  }
+const wide = {
+      pos: [FX.faceX(22, 0) - 26, 18, 8],
+      look: [FX.faceX(40, 0) + 1.2, 46, -1],
+      fov: 0.62,
+    };
+  const t = smooth(1 - state.intro);
+  return {
+    pos: [
+      mix(wide.pos[0], close.pos[0], t),
+      mix(wide.pos[1], close.pos[1], t),
+      mix(wide.pos[2], close.pos[2], t),
+    ],
+    look: [
+      mix(wide.look[0], close.look[0], t),
+      mix(wide.look[1], close.look[1], t),
+      mix(wide.look[2], close.look[2], t),
+    ],
+    fov: mix(wide.fov, close.fov, t),
+  };
+}
+
+function gripOf() {
+  const standing = state.mode === "ledge" || state.mode === "drop" || state.mode === "ending";
+  if (standing) {
+    return [FX.faceX(state.y, state.z) - 0.95, state.y, state.z];
+  }
+  return [FX.faceX(state.y, state.z) - 0.5, state.y, state.z];
+}
+
+const holdBuf = new Float32Array(8 * 4);
+const dotBuf = new Float32Array(12 * 3);
+const ledgeBuf = new Float32Array(5 * 2);
+(function fillLedges() {
+  const keys = ["trophy", "letter", "ring", "photo", "summit"];
+  keys.forEach((k, i) => {
+    const h = FX.HOLDS.find((x) => x.k === k);
+    ledgeBuf[i * 2] = h.y;
+    ledgeBuf[i * 2 + 1] = h.z;
+  });
+})();
+
+function render(dt) {
+  resize();
+  const aspect = bw / Math.max(1, bh);
+  const want = desiredCam(aspect);
+  if (snap || state.time < 0.05) {
+    cam.pos = want.pos.slice();
+    cam.look = want.look.slice();
+    cam.fov = want.fov;
+    snap = false;
+  } else {
+    const fall = clamp((-state.vy - 4) / 14, 0, 1);
+    const ks = reduce ? 8 : mix(3.4, 1.35, fall);
+    cam.pos = damp(cam.pos, want.pos, dt, ks);
+    cam.look = damp(cam.look, want.look, dt, reduce ? 8 : 4.2);
+    cam.fov = mix(cam.fov, want.fov, 1 - Math.exp(-dt * 4));
+  }
+  let basisPos = cam.pos.slice();
+  if (!reduce && state.shake > 0.001) {
+    basisPos[0] += Math.sin(state.time * 53) * state.shake * 0.18;
+    basisPos[1] += Math.cos(state.time * 47) * state.shake * 0.14;
+    basisPos[2] += Math.sin(state.time * 41) * state.shake * 0.12;
+  }
+  let basis = (function () {
+    const fwd = norm(sub(cam.look, basisPos));
+    let right = cross(fwd, [0, 1, 0]);
+    if (vlen(right) < 1e-4) right = [0, 0, 1];
+    right = norm(right);
+    let up = norm(cross(right, fwd));
+    const roll = reduce ? 0 : state.shake * 0.15 + clamp(-state.vy, 0, 20) * 0.0008 * Math.sin(state.time * 2.2);
+    const c = Math.cos(roll), sn = Math.sin(roll);
+    const rr = add(mul(right, c), mul(up, sn));
+    const uu = add(mul(up, c), mul(right, -sn));
+    return { fwd, right: rr, up: uu };
+  })();
+
+  const grip = gripOf();
+  const g2 = [grip[0], grip[1], grip[2]];
+  const rel = sub(g2, basisPos);
+  const zc = Math.max(0.2, dot(rel, basis.fwd));
+  const speed = Math.hypot(state.vy, state.vz);
+  if (speed > 4 && zc > 0.2) {
+    const ty = Math.tan(cam.fov * 0.5);
+    const vx = dot([0, state.vy, state.vz], basis.right);
+    const vy = dot([0, state.vy, state.vz], basis.up);
+    blur[0] = (vx / zc) / (ty * aspect) * 0.02;
+    blur[1] = (vy / zc) / ty * 0.02;
+  } else {
+    blur[0] *= 0.8;
+    blur[1] *= 0.8;
+  }
+  prevGrip = null;
+
+  const standing = state.mode === "ledge" || state.mode === "drop" || state.mode === "ending";
+  const hang = standing ? [0, -1, 0] : [0, -Math.cos(state.visAngle), Math.sin(state.visAngle)];
+  const hold = FX.HOLDS[state.holdIndex];
+  const piton = [FX.faceX(hold.y, hold.z) + 0.05, hold.y, hold.z];
+  const climb = clamp((Math.max(state.y, hold.y) - 6) / 100, 0, 1);
+  const day = 0.42 + 0.58 * Math.pow(climb, 0.9);
+  const elev = 0.1 + day * 0.62;
+  const sun = norm([-0.4, elev, 0.52]);
+  const w01 = FX.weight01(state.mask);
+  const items = FX.ITEMS;
+  const item4 = [
+    state.mask & items.photo.bit ? 1 : 0,
+    state.mask & items.ring.bit ? 1 : 0,
+    state.mask & items.trophy.bit ? 1 : 0,
+    state.mask & items.letter.bit ? 1 : 0,
+  ];
+
+  const ranked = FX.HOLDS.map((h, i) => ({ h, d: Math.abs(h.y - state.y) + Math.abs(h.z - state.z) * 0.4, i }))
+    .sort((a, b) => a.d - b.d)
+    .slice(0, 8);
+  holdBuf.fill(0);
+  for (let i = 0; i < 8; i++) {
+    const r = ranked[i];
+    const o = i * 4;
+    if (!r || r.d > 24) { holdBuf[o + 1] = -999; continue; }
+    holdBuf[o] = 0;
+    holdBuf[o + 1] = r.h.y;
+    holdBuf[o + 2] = r.h.z;
+    let flag = 1;
+    if (r.h.k === "summit") flag = 4;
+    else if (r.h.k !== "hold" && r.h.k !== "start") flag = 3;
+    if (r.i === state.holdIndex + 1) flag = Math.max(flag, 2);
+    holdBuf[o + 3] = flag;
+  }
+  dotBuf.fill(0);
+  const dots = state.attached && state.holding && state.mode === "play" ? state.dots : [];
+  const dn = Math.min(12, dots.length);
+  for (let i = 0; i < 12; i++) {
+    if (i < dn) {
+      dotBuf[i * 3] = dots[i].x;
+      dotBuf[i * 3 + 1] = dots[i].y;
+      dotBuf[i * 3 + 2] = dots[i].z;
+    } else dotBuf[i * 3 + 1] = -999;
+  }
+  let drop = [0, -999, 0, 0];
+  if (state.dropT >= 0) {
+    const kind = state.dropKind === "photo" ? 1 : state.dropKind === "ring" ? 2 : state.dropKind === "trophy" ? 3 : 4;
+    drop = [state.dropX, state.dropY, state.dropZ, kind];
+  }
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.viewport(0, 0, bw, bh);
+  gl.useProgram(sceneProg);
+  gl.uniform2f(SU.uRes, bw, bh);
+  gl.uniform1f(SU.uTime, state.time);
+  gl.uniform1f(SU.uFov, cam.fov);
+  gl.uniform1f(SU.uDay, day);
+  gl.uniform1f(SU.uQ, q);
+  gl.uniform1f(SU.uRope, state.attached && !standing ? 1 : 0);
+  gl.uniform1f(SU.uPose, standing ? 1 : 0);
+  gl.uniform1f(SU.uWeight, w01);
+  gl.uniform1f(SU.uArmed, state.armed ? 1 : 0);
+  gl.uniform1f(SU.uDotN, dn);
+  gl.uniform1f(SU.uBurst, state.burst);
+  gl.uniform1f(SU.uFade, 1);
+  gl.uniform1f(SU.uSway, state.angle - state.sway);
+  gl.uniform3f(SU.uCam, basisPos[0], basisPos[1], basisPos[2]);
+  gl.uniform3f(SU.uFwd, basis.fwd[0], basis.fwd[1], basis.fwd[2]);
+  gl.uniform3f(SU.uRight, basis.right[0], basis.right[1], basis.right[2]);
+  gl.uniform3f(SU.uUp, basis.up[0], basis.up[1], basis.up[2]);
+  gl.uniform3f(SU.uSun, sun[0], sun[1], sun[2]);
+  gl.uniform3f(SU.uGrip, grip[0], grip[1], grip[2]);
+  gl.uniform3f(SU.uHang, hang[0], hang[1], hang[2]);
+  gl.uniform3f(SU.uPiton, piton[0], piton[1], piton[2]);
+  gl.uniform2f(SU.uVel, state.vz, state.vy);
+  gl.uniform4f(SU.uItems, item4[0], item4[1], item4[2], item4[3]);
+  gl.uniform4fv(SU["uHolds[0]"], holdBuf);
+  gl.uniform3fv(SU["uDots[0]"], dotBuf);
+  gl.uniform2fv(SU["uLedge[0]"], ledgeBuf);
+  gl.uniform4f(SU.uDrop, drop[0], drop[1], drop[2], drop[3]);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  const fade = smooth(clamp(state.time / 1.25, 0, 1));
+  const flash = state.mode === "impact" ? clamp(1 - state.impactT / 0.28, 0, 1) : state.resetFade * 0.65;
+  const fallAmt = clamp((-state.vy - 6) / 22, 0, 1);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, bw, bh);
+  gl.useProgram(compProg);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.uniform1i(CU.uTex, 0);
+  gl.uniform2f(CU.uRes, bw, bh);
+  gl.uniform2f(CU.uBlur, reduce ? 0 : blur[0], reduce ? 0 : blur[1]);
+  gl.uniform1f(CU.uTime, state.time);
+  gl.uniform1f(CU.uFall, fallAmt);
+  gl.uniform1f(CU.uDay, day);
+  gl.uniform1f(CU.uFade, fade);
+  gl.uniform1f(CU.uFlash, flash);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  return { day, climb };
+}
+
+function ttext(zh, en) { return lang === "en" ? en : zh; }
+function syncUI() {
+  const U = FX.UI;
+  ui.lang.textContent = lang === "en" ? "中" : "EN";
+  ui.restart.textContent = ttext(U.restartZh, U.restartEn);
+  ui.again.textContent = ttext(U.againZh, U.againEn);
+  ui.mute.classList.toggle("off", muted);
+  ui.sub.textContent = "LET GO";
+  const titleA = smooth(clamp((state.time - 0.45) / 0.8, 0, 1)) * smooth(clamp((state.intro - 0.08) / 0.5, 0, 1));
+  ui.title.style.opacity = String(state.mode === "ending" ? 0 : titleA);
+  const early = state.catches < 4 && state.mode === "play";
+  const hintText = state.failedOnce && !state.airCatch ? ttext(U.hintFallZh, U.hintFallEn) : ttext(U.hintZh, U.hintEn);
+  ui.hint.textContent = hintText;
+  ui.hint.style.opacity = early && titleA < 0.85 ? String(smooth(clamp((state.time - 1.5) / 0.5, 0, 1)) * (1 - titleA * 0.25)) : "0";
+  if (state.mode !== "play") ui.hint.style.opacity = "0";
+
+  const alt = state.attached ? FX.HOLDS[state.holdIndex].y : state.y;
+  const pct = clamp(alt / FX.SUMMIT_Y, 0, 1);
+  ui.now.style.bottom = pct * 100 + "%";
+  ui.alt.textContent = Math.max(0, Math.round(alt)) + (lang === "zh" ? "米" : "m");
+  const bp = clamp(bestSaved / FX.SUMMIT_Y, 0, 1);
+  ui.best.style.bottom = bp * 100 + "%";
+  ui.best.style.opacity = bestSaved > 8 ? "0.9" : "0";
+
+  const showCard = state.mode === "ledge" || state.mode === "drop";
+  ui.card.classList.toggle("show", showCard);
+  if (showCard) {
+    const h = FX.HOLDS[state.holdIndex];
+    const spec = FX.ITEMS[h.k];
+    if (spec) {
+      ui.cardName.textContent = ttext(spec.zh, spec.en);
+      ui.cardLine.textContent = ttext(spec.lineZh, spec.lineEn);
+    }
+    ui.howHold.textContent = ttext(U.holdZh, U.holdEn);
+    ui.howTap.textContent = ttext(U.tapZh, U.tapEn);
+    const p = state.mode === "ledge" ? clamp(state.pressT / 0.62, 0, 1) : 1;
+    ui.ring.style.setProperty("--p", String(p * 100));
+  }
+  const showEnd = state.mode === "ending" && state.endingT > 0.8;
+  ui.ending.classList.toggle("show", showEnd);
+  if (state.mode === "ending") {
+    const lines = (FX.ENDINGS[state.mask] || FX.ENDINGS[15])[lang === "en" ? "en" : "zh"];
+    ui.e1.textContent = lines[0];
+    ui.e2.textContent = lines[1];
+    ui.e3.textContent = lines[2];
+  }
+  ui.restart.style.visibility = state.mode === "ending" ? "hidden" : "visible";
+}
+
+let acc = 0;
+let last = 0;
+let frames = 0;
+let readyResolve;
+const ready = new Promise((r) => { readyResolve = r; });
+let readySent = false;
+
+function frame(now) {
+  try {
+  if (!last) last = now;
+  const raw = Math.min(0.05, Math.max(0.0, (now - last) / 1000));
+  last = now;
+  frameMs.push(raw);
+  if (frameMs.length > 40) frameMs.shift();
+  frames++;
+  if (!shot && frames % 50 === 0 && frameMs.length > 20) {
+    const avg = frameMs.reduce((a, b) => a + b, 0) / frameMs.length;
+    if (avg > 0.022) {
+      if (scale > 0.45) scale = Math.max(0.45, scale * 0.88);
+      else if (q > 0) q -= 1;
+    } else if (avg < 0.014 && scale < (coarse ? 0.85 : 1)) {
+      scale = Math.min(coarse ? 0.85 : 1, scale * 1.05);
+    }
+  }
+  acc += raw;
+  const sounds = [];
+  const input = { holding, restart: restartPulse, skipIntro: rush || reduce, freezeIntro: false };
+  restartPulse = false;
+  let n = 0;
+  while (acc >= 1 / 120 && n < 6) {
+    FX.step(state, 1 / 120, input);
+    if (state.sfx && state.sfx.length) sounds.push.apply(sounds, state.sfx);
+    acc -= 1 / 120;
+    n++;
+    input.restart = false;
+    input.skipIntro = rush || reduce;
+  }
+  const peak = Math.round(state.bestRun);
+  if (peak > bestSaved) {
+    bestSaved = peak;
+    writeSave({ best: bestSaved, mute: muted, lang });
+    tone(587, 0.35, "sine", 0.03);
+  }
+  playSfx(sounds);
+  const alt = state.attached ? FX.HOLDS[state.holdIndex].y : state.y;
+  music(raw, alt, state.mode);
+  render(raw);
+  syncUI();
+  if (!readySent && state.time > 0.05) {
+    readySent = true;
+    readyResolve(true);
+  }
+  } catch (err) {
+    console.error("frame", err && err.stack || err);
+    if (!readySent) { readySent = true; readyResolve(false); }
+  }
+  requestAnimationFrame(frame);
+}
+
+function unlock() {
+  audioStart();
+  if (audio.ctx && audio.ctx.state === "suspended") audio.ctx.resume();
+}
+document.addEventListener("pointerdown", (e) => {
+  unlock();
+  if (e.target.closest("button")) return;
+  holding = true;
+  rush = true;
+}, { passive: false });
+document.addEventListener("pointerup", () => { holding = false; });
+document.addEventListener("pointercancel", () => { holding = false; });
+document.addEventListener("touchmove", (e) => e.preventDefault(), { passive: false });
+document.addEventListener("contextmenu", (e) => e.preventDefault());
+document.addEventListener("keydown", (e) => {
+  if (e.code === "Space") { e.preventDefault(); if (!e.repeat) { holding = true; rush = true; unlock(); } }
+  else if (e.code === "KeyR") { restartPulse = true; }
+  else if (e.code === "KeyM") setMuted(!muted);
+  else if (e.code === "KeyL") toggleLang();
+});
+document.addEventListener("keyup", (e) => { if (e.code === "Space") holding = false; });
+ui.mute.addEventListener("click", () => setMuted(!muted));
+function toggleLang() {
+  lang = lang === "zh" ? "en" : "zh";
+  writeSave({ best: bestSaved, mute: muted, lang });
+  syncUI();
+}
+ui.lang.addEventListener("click", toggleLang);
+function fullRestart() { restartPulse = true; rush = true; unlock(); }
+ui.restart.addEventListener("click", fullRestart);
+ui.again.addEventListener("click", fullRestart);
+setMuted(muted);
+syncUI();
+requestAnimationFrame(frame);
+
+window.__fx = {
+  ready,
+  get q() { return q; },
+  get scale() { return scale; },
+  state() {
+    return {
+      mode: state.mode, y: state.y, z: state.z, mask: state.mask, hold: state.holdIndex,
+      catches: state.catches, falls: state.falls, intro: state.intro, attached: state.attached,
+      endingT: state.endingT, time: state.time,
+    };
+  },
+  teleport(i) {
+    const h = FX.HOLDS[i];
+    state.holdIndex = i;
+    state.attached = true;
+    state.mode = "play";
+    state.settle = 1;
+    state.holdT = 0;
+    state.intro = 0;
+    state.vy = 0;
+    state.vz = 0;
+    state.angle = 0;
+    state.visAngle = 0;
+    state.y = h.y - FX.L;
+    state.z = h.z;
+    state.origin = i;
+    state.flightT = 0;
+    state.dots = [];
+    state.catches = 6;
+    state.launches = 4;
+    snap = true;
+  },
+  mask(m) { state.mask = m; },
+  fallFrom(i) {
+    this.teleport(i);
+    const h = FX.HOLDS[i];
+    state.attached = false;
+    state.mode = "play";
+    state.vy = -18;
+    state.vz = 1.2;
+    state.y = h.y - 4.2;
+    state.z = h.z + 1.6;
+    state.flightT = 0.55;
+    state.origin = i;
+    state.angle = Math.atan2(-state.vz, state.vy);
+    state.visAngle = state.angle;
+    snap = true;
+  },
+  ending(mask) {
+    this.teleport(FX.HOLDS.length - 1);
+    state.mask = mask;
+    state.mode = "ending";
+    state.endingT = 2.2;
+    const h = FX.HOLDS[state.holdIndex];
+    state.y = h.y + 0.22;
+    state.z = h.z;
+    snap = true;
+  },
+  errors() { return ui.err.textContent; },
+};
+</script>
+</body>
+</html>
