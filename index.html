@@ -120,12 +120,13 @@
   }
   #marks.show { opacity: 0.88; }
   #marks.over { bottom: auto; top: calc(18vh + env(safe-area-inset-top)); }
-  #marks i {
-    width: 8px; height: 12px; display: block;
-    border: 1px solid rgba(244, 239, 230, 0.42);
+  #marks span {
+    width: 8px; height: 8px; display: block;
     background: transparent;
+    box-shadow: inset 0 0 0 1px rgba(244, 239, 230, 0.55);
+    transform: rotate(45deg);
   }
-  #marks i.on { background: #f4efe6; border-color: transparent; box-shadow: 0 0 8px rgba(244,239,230,0.35); }
+  #marks span.on { background: #f4efe6; box-shadow: 0 0 8px rgba(244,239,230,0.35); }
   #whisper {
     position: absolute; left: 50%; top: 16vh; transform: translateX(-50%);
     width: min(88vw, 460px); text-align: center; margin: 0;
@@ -218,7 +219,7 @@ function persist() { writeSave({ best: bestSaved, mute: muted, lang, endings: fo
 function paintMarks() {
   ui.marks.innerHTML = "";
   for (let i = 0; i < 16; i++) {
-    const mark = document.createElement("i");
+    const mark = document.createElement("span");
     if (found & (1 << i)) mark.className = "on";
     ui.marks.appendChild(mark);
   }
@@ -269,12 +270,12 @@ function mtn(u) {
 }
 
 const SKY = [
-  { h: 0, top: [5, 8, 20], bot: [28, 44, 86], sun: [214, 224, 236] },
-  { h: 18, top: [18, 16, 52], bot: [96, 52, 86], sun: [255, 186, 154] },
-  { h: 36, top: [36, 46, 102], bot: [206, 98, 84], sun: [255, 206, 162] },
-  { h: 58, top: [64, 110, 172], bot: [244, 156, 102], sun: [255, 226, 186] },
-  { h: 82, top: [126, 174, 208], bot: [255, 198, 146], sun: [255, 242, 218] },
-  { h: 108, top: [190, 216, 230], bot: [255, 226, 190], sun: [255, 250, 242] },
+  { h: 0, top: [6, 10, 22], bot: [18, 28, 48], sun: [210, 220, 232] },
+  { h: 18, top: [12, 18, 40], bot: [32, 44, 72], sun: [226, 216, 200] },
+  { h: 36, top: [28, 42, 78], bot: [62, 74, 102], sun: [255, 214, 176] },
+  { h: 58, top: [86, 122, 168], bot: [150, 158, 168], sun: [255, 220, 180] },
+  { h: 82, top: [148, 182, 206], bot: [214, 196, 170], sun: [255, 236, 208] },
+  { h: 108, top: [198, 218, 230], bot: [236, 214, 188], sun: [255, 248, 236] },
 ];
 function skyAt(h) {
   let i = 0;
@@ -337,17 +338,7 @@ function makePuff(inner) {
   return c;
 }
 const puffLit = makePuff("rgba(255,252,248,0.95)");
-const puffShade = makePuff("rgba(206,168,160,0.85)");
-const TEX = {
-  rock: new Image(),
-  cloud: new Image(),
-  night: new Image(),
-  moon: new Image(),
-};
-TEX.rock.src = "tex/rock.jpg";
-TEX.cloud.src = "tex/cloud.png";
-TEX.night.src = "tex/cloud-night.png";
-TEX.moon.src = "tex/moon.png";
+const puffShade = makePuff("rgba(186,196,214,0.8)");
 const flakeSprite = document.createElement("canvas");
 flakeSprite.width = flakeSprite.height = 32;
 {
@@ -505,8 +496,9 @@ function drawSky() {
   const sx = W * (portrait ? 0.64 : 0.73);
   const sy = H * (0.5 - rise * 0.3);
   const sunR = mix(portrait ? 15 : 20, portrait ? 34 : 52, rise) * PX;
+  const showSun = storm < 0.55;
   ctx.save();
-  ctx.globalAlpha = 1 - storm * 0.78;
+  ctx.globalAlpha = showSun ? 1 - storm * 0.35 : 0;
   let glow = ctx.createRadialGradient(sx, sy, sunR * 0.15, sx, sy, sunR * 7);
   glow.addColorStop(0, cssa(sky.sun, 0.5));
   glow.addColorStop(0.16, cssa(sky.sun, 0.2));
@@ -533,36 +525,26 @@ function drawSky() {
   ctx.fillStyle = "#fffaf2";
   ctx.fill();
   ctx.restore();
-  const night = storm * (1 - smooth(clamp((ALT - 36) / 55, 0, 1)));
-  if (night > 0.08) {
-    const mx = W * (portrait ? 0.62 : 0.72);
-    const my = H * (0.16 + smooth(clamp(ALT / 80, 0, 1)) * 0.1);
-    const mr = (portrait ? 18 : 28) * PX * (0.85 + night * 0.25);
-    ctx.save();
-    ctx.globalAlpha = night;
-    const halo = ctx.createRadialGradient(mx, my, mr * 0.2, mx, my, mr * 7.5);
-    halo.addColorStop(0, "rgba(232, 226, 206, 0.55)");
-    halo.addColorStop(0.18, "rgba(186, 198, 220, 0.16)");
-    halo.addColorStop(0.45, "rgba(120, 140, 180, 0.05)");
-    halo.addColorStop(1, "rgba(120, 140, 180, 0)");
+  if (!showSun && storm > 0.45) {
+    const mx = W * (portrait ? 0.7 : 0.74);
+    const my = H * 0.18;
+    const mr = (portrait ? 16 : 26) * PX;
+    const halo = ctx.createRadialGradient(mx, my, mr * 0.2, mx, my, mr * 6);
+    halo.addColorStop(0, "rgba(226, 230, 240, 0.35)");
+    halo.addColorStop(0.2, "rgba(170, 186, 214, 0.12)");
+    halo.addColorStop(1, "rgba(170, 186, 214, 0)");
     ctx.fillStyle = halo;
     ctx.beginPath();
-    ctx.arc(mx, my, mr * 7.5, 0, Math.PI * 2);
+    ctx.arc(mx, my, mr * 6, 0, Math.PI * 2);
     ctx.fill();
+    const disc = ctx.createRadialGradient(mx - mr * 0.25, my - mr * 0.3, mr * 0.1, mx, my, mr);
+    disc.addColorStop(0, "#f7f4ee");
+    disc.addColorStop(0.55, "#d5d8e0");
+    disc.addColorStop(1, "#b7bec8");
     ctx.beginPath();
-    ctx.arc(mx, my, mr * 1.85, 0, Math.PI * 2);
-    ctx.strokeStyle = "rgba(232, 226, 210, 0.18)";
-    ctx.lineWidth = 1.2 * PX;
-    ctx.stroke();
-    if (TEX.moon.complete && TEX.moon.naturalWidth) {
-      ctx.drawImage(TEX.moon, mx - mr, my - mr, mr * 2, mr * 2);
-    } else {
-      ctx.beginPath();
-      ctx.arc(mx, my, mr, 0, Math.PI * 2);
-      ctx.fillStyle = "#f4f1e8";
-      ctx.fill();
-    }
-    ctx.restore();
+    ctx.arc(mx, my, mr, 0, Math.PI * 2);
+    ctx.fillStyle = disc;
+    ctx.fill();
   }
   if (storm < 0.42 && ALT < 58) {
     ctx.save();
@@ -625,11 +607,11 @@ const RANGES = [
 function rockColor(depth) {
   const t = smooth(clamp((ALT - 8) / 78, 0, 1));
   const storm = state.stormVis == null ? 1 : state.stormVis;
-  const sky = mixc(SKYNOW.top, SKYNOW.bot, 0.5);
-  let near = mixc([62, 44, 40], [138, 86, 68], t);
-  near = mixc(near, [28, 36, 52], storm * 0.5);
-  const haze = Math.pow(1 - depth, 1.15);
-  return mixc(near, sky, haze * 0.9);
+  const far = mixc([48, 58, 74], [156, 164, 172], t * 0.5);
+  const near = mixc([28, 34, 44], [86, 90, 96], t);
+  let col = mixc(near, far, Math.pow(1 - depth, 1.35));
+  col = mixc(col, [14, 20, 32], storm * (1 - depth) * 0.28);
+  return col;
 }
 const birds = [];
 for (let i = 0; i < 6; i++) {
@@ -680,15 +662,15 @@ function drawRanges() {
     ctx.beginPath();
     for (let i = 0; i < pts.length - 1; i++) {
       const a = pts[i], b = pts[i + 1];
-      if (b.sy - a.sy < 1.5) continue;
-      const drop = (10 + L.depth * 26) * PX;
+      if (b.sy - a.sy < 2) continue;
+      const drop = (3 + L.depth * 7) * PX;
       ctx.moveTo(a.x, a.sy);
       ctx.lineTo(b.x, b.sy);
       ctx.lineTo(b.x, b.sy + drop);
-      ctx.lineTo(a.x, a.sy + drop * 0.72);
+      ctx.lineTo(a.x, a.sy + drop * 0.55);
       ctx.closePath();
     }
-    ctx.fillStyle = "rgba(20, 16, 22, " + (0.06 + L.depth * 0.2) + ")";
+    ctx.fillStyle = "rgba(12, 16, 24, " + (0.08 + L.depth * 0.12) + ")";
     ctx.fill();
     if (L.depth > 0.45) {
       ctx.beginPath();
@@ -729,41 +711,71 @@ function cloudScreen(parallax) {
   }
   return raw;
 }
+const CLOUD_LOBE = [
+  [0.02, -0.22, 0.34, 0.28, 1],
+  [-0.28, -0.08, 0.3, 0.26, 0.9],
+  [0.3, -0.06, 0.28, 0.24, 0.88],
+  [-0.08, 0.08, 0.42, 0.3, 0.75],
+  [0.22, 0.12, 0.36, 0.26, 0.7],
+  [-0.36, 0.16, 0.28, 0.22, 0.62],
+  [0.4, 0.14, 0.26, 0.2, 0.58],
+  [0.0, 0.22, 0.46, 0.24, 0.5],
+];
+function drawCloudMass(x, y, w, h, storm, alpha, seed) {
+  ctx.save();
+  ctx.globalAlpha = alpha * 0.45;
+  const shade = ctx.createRadialGradient(x, y + h * 0.35, h * 0.1, x, y + h * 0.15, w * 0.7);
+  shade.addColorStop(0, storm > 0.5 ? "rgba(18,24,36,0.55)" : "rgba(90,78,70,0.28)");
+  shade.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = shade;
+  ctx.beginPath();
+  ctx.ellipse(x, y + h * 0.28, w * 0.72, h * 0.42, 0, 0, Math.PI * 2);
+  ctx.fill();
+  for (let i = 0; i < CLOUD_LOBE.length; i++) {
+    const L = CLOUD_LOBE[i];
+    const jx = (hash(seed * 3.1 + i) - 0.5) * w * 0.12;
+    const jy = (hash(seed * 5.7 + i) - 0.5) * h * 0.1;
+    const cx = x + L[0] * w + jx;
+    const cy = y + L[1] * h + jy;
+    const rw = L[2] * w;
+    const rh = L[3] * h;
+    const lit = storm > 0.55 ? "214,222,232" : "255,248,240";
+    const deep = storm > 0.55 ? "86,98,118" : "186,170,156";
+    const g = ctx.createRadialGradient(cx - rw * 0.25, cy - rh * 0.35, rh * 0.08, cx, cy + rh * 0.1, Math.max(rw, rh));
+    g.addColorStop(0, "rgba(" + lit + "," + (0.55 + (1 - storm) * 0.35) * L[4] + ")");
+    g.addColorStop(0.45, "rgba(" + lit + "," + 0.28 * L[4] + ")");
+    g.addColorStop(0.78, "rgba(" + deep + "," + (0.16 + storm * 0.12) * L[4] + ")");
+    g.addColorStop(1, "rgba(" + deep + ",0)");
+    ctx.globalAlpha = alpha * (0.55 + L[4] * 0.45);
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rw, rh, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
 function drawClouds() {
-  const day = smooth(clamp((ALT - 14) / 42, 0, 1));
   const storm = state.stormVis == null ? 1 : state.stormVis;
-  const sprite = storm > 0.45 ? TEX.night : TEX.cloud;
-  const ready = sprite.complete && sprite.naturalWidth;
   const bands = [
-    { p: 0.08, a: 0.35, sc: 0.34, n: coarse ? 4 : 5, seed: 0.4, lift: -0.04 },
-    { p: 0.16, a: 0.55, sc: 0.48, n: coarse ? 4 : 6, seed: 1.7, lift: 0 },
-    { p: 0.28, a: 0.72, sc: 0.62, n: coarse ? 5 : 7, seed: 3.3, lift: 0.02 },
-    { p: 0.4, a: 0.84, sc: 0.78, n: coarse ? 5 : 6, seed: 5.1, lift: 0.04 },
-    { p: 0.55, a: 0.9, sc: 0.9, n: coarse ? 4 : 5, seed: 8.8, lift: 0.07 },
+    { p: 0.12, a: 0.42, n: coarse ? 3 : 3, seed: 2, sc: 1.05 },
+    { p: 0.28, a: 0.58, n: coarse ? 3 : 4, seed: 8, sc: 1.25 },
+    { p: 0.46, a: 0.7, n: coarse ? 2 : 3, seed: 15, sc: 1.4 },
   ];
   for (let bi = 0; bi < bands.length; bi++) {
     const b = bands[bi];
-    const base = cloudScreen(b.p) + H * b.lift;
-    if (base < -H * 0.8 || base > H * 1.35) continue;
+    const base = cloudScreen(b.p);
+    if (base < -H * 0.45 || base > H * 1.25) continue;
     for (let i = 0; i < b.n; i++) {
-      const u = i / Math.max(1, b.n - 1);
-      const x = -W * 0.18 + u * W * 1.25 + Math.sin(state.time * 0.08 + i + b.seed) * 18 * PX;
-      const wob = Math.sin(u * 5.5 + b.seed) * 22 * PX + Math.sin(state.time * 0.18 + i) * 8 * PX;
-      const w = W * b.sc * (0.85 + hash(i * 3 + bi) * 0.45);
-      const h = w * 0.42;
-      ctx.globalAlpha = b.a * (0.55 + day * 0.45) * (storm > 0.45 ? 0.92 : 1);
-      if (ready) ctx.drawImage(sprite, x - w * 0.5, base + wob - h * 0.62, w, h);
-      else ctx.drawImage(bi < 2 ? puffShade : puffLit, x - w * 0.5, base + wob - h * 0.2, w, h * 0.35);
+      const u = (i + 0.5) / b.n;
+      const drift = Math.sin(state.time * (0.035 + bi * 0.008) + b.seed + i) * (18 + bi * 8) * PX;
+      const x = (-0.08 + u * 1.16) * W + drift;
+      const y = base + Math.sin(u * 4.5 + b.seed) * 18 * PX + (hash(i + b.seed) - 0.5) * 22 * PX;
+      const w = W * (0.18 + hash(i * 2 + bi) * 0.1) * b.sc;
+      const h = H * (0.1 + hash(i + bi * 4) * 0.045) * b.sc;
+      drawCloudMass(x, y, w, h, storm, b.a, b.seed + i * 9);
     }
   }
   ctx.globalAlpha = 1;
-  const near = 1 - clamp(Math.abs(cam.y - CLOUD_Y) / 7.5, 0, 1);
-  if (near > 0.05) {
-    ctx.globalAlpha = near * 0.22;
-    ctx.fillStyle = css(mixc([255, 248, 242], SKYNOW.bot, storm * 0.35));
-    ctx.fillRect(-20, -20, W + 40, H + 40);
-    ctx.globalAlpha = 1;
-  }
 }
 
 function drawStrata() {
@@ -830,60 +842,58 @@ function drawWallSnow() {
 function drawWall() {
   if (wallPts.length < 2) return;
   const storm = state.stormVis == null ? 0 : state.stormVis;
-  const rockReady = TEX.rock.complete && TEX.rock.naturalWidth;
   ctx.save();
   wallPath();
   ctx.clip();
-  if (rockReady) {
-    const meters = 16;
-    const yTop = cam.y + H / ppm + meters;
-    const yBot = cam.y - H / ppm - meters;
-    for (let y = Math.floor(yBot / meters) * meters; y < yTop; y += meters) {
-      const top = toS(0, y + meters)[1];
-      const bot = toS(0, y)[1];
-      const y0 = Math.min(top, bot);
-      const hh = Math.max(1, Math.abs(bot - top));
-      ctx.drawImage(TEX.rock, -30, y0, Math.max(anchorX, W * 0.62) + 80, hh);
-    }
-  } else {
-    ctx.fillStyle = "#2a2422";
-    ctx.fillRect(-80, -80, W, H + 160);
-  }
-  const shade = ctx.createLinearGradient(0, 0, Math.max(120, anchorX + 30), 0);
-  shade.addColorStop(0, "rgba(0,0,0,0.45)");
-  shade.addColorStop(0.62, "rgba(0,0,0,0.12)");
-  shade.addColorStop(1, "rgba(255,236,214,0.05)");
-  ctx.fillStyle = shade;
-  ctx.fillRect(-40, -40, anchorX + 140, H + 80);
-  ctx.globalCompositeOperation = "soft-light";
-  ctx.fillStyle = storm > 0.4 ? "rgba(150, 170, 200, 0.45)" : "rgba(255, 196, 150, 0.28)";
-  ctx.fillRect(-40, -40, anchorX + 140, H + 80);
-  ctx.globalCompositeOperation = "source-over";
-  const yLo = cam.y - H / ppm - 1;
-  const yHi = cam.y + H / ppm + 1;
-  for (let y = yLo; y < yHi; y += 1.7) {
-    const e = edgeAt(y + 0.2);
-    const e2 = edgeAt(y + 1.45);
-    const n = hash(Math.floor(y * 1.7) + 3);
-    ctx.fillStyle = n > 0.55 ? "rgba(255,232,206,0.09)" : "rgba(0,0,0,0.18)";
+  const stone = ctx.createLinearGradient(0, 0, Math.max(80, anchorX), 0);
+  stone.addColorStop(0, storm > 0.45 ? "#1a1e28" : "#2a241f");
+  stone.addColorStop(0.72, storm > 0.45 ? "#3a4250" : "#5a4e45");
+  stone.addColorStop(1, storm > 0.45 ? "#6a7584" : "#8a7568");
+  ctx.fillStyle = stone;
+  ctx.fillRect(-40, -40, anchorX + 160, H + 80);
+  const yLo = cam.y - H / ppm - 2;
+  const yHi = cam.y + H / ppm + 2;
+  ctx.lineCap = "butt";
+  for (let y = Math.floor(yLo / 1.8) * 1.8; y < yHi; y += 1.8) {
+    const e = edgeAt(y);
     ctx.beginPath();
-    ctx.moveTo(e.x - PX, e.sy);
-    ctx.lineTo(e.x - (22 + n * 64) * PX, e.sy + 7 * PX);
-    ctx.lineTo(e2.x - (8 + n * 20) * PX, e2.sy);
-    ctx.closePath();
-    ctx.fill();
+    ctx.moveTo(-8, e.sy);
+    ctx.lineTo(e.x - 4 * PX, e.sy);
+    ctx.strokeStyle = (Math.round(y / 1.8) % 3 === 0) ? "rgba(0,0,0,0.28)" : "rgba(255,236,220,0.06)";
+    ctx.lineWidth = 1 * PX;
+    ctx.stroke();
+  }
+  ctx.strokeStyle = "rgba(0,0,0,0.45)";
+  ctx.lineWidth = 1.2 * PX;
+  for (let i = 0; i < 8; i++) {
+    const y = yLo + ((i * 17.3) % Math.max(4, yHi - yLo));
+    const e = edgeAt(y);
+    if (e.sy < -20 || e.sy > H + 20) continue;
+    const len = (18 + hash(i + 9) * 28) * PX;
+    ctx.beginPath();
+    ctx.moveTo(e.x - 2 * PX, e.sy);
+    ctx.lineTo(e.x - len, e.sy + (hash(i + 2) - 0.5) * 10 * PX);
+    ctx.stroke();
   }
   ctx.restore();
+  if (state.descending) {
+    ctx.save();
+    wallPath();
+    ctx.clip();
+    ctx.fillStyle = "rgba(170, 206, 224, 0.16)";
+    ctx.fillRect(-20, -20, anchorX + 80, H + 40);
+    ctx.restore();
+  }
   drawWallSnow();
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
   traceEdge();
-  ctx.strokeStyle = cssa(rimCol, 0.28 + (1 - storm) * 0.2);
-  ctx.lineWidth = 11 * PX;
+  ctx.strokeStyle = state.descending ? "rgba(190,220,235,0.55)" : cssa(rimCol, 0.45);
+  ctx.lineWidth = 8 * PX;
   ctx.stroke();
   traceEdge();
-  ctx.strokeStyle = cssa(SKYNOW.sun, 0.75 + (1 - storm) * 0.25);
-  ctx.lineWidth = 2.1 * PX;
+  ctx.strokeStyle = state.descending ? "rgba(230,244,255,0.85)" : cssa(SKYNOW.sun, 0.8);
+  ctx.lineWidth = 1.6 * PX;
   ctx.stroke();
 }
 function drawShelves() {
@@ -925,50 +935,54 @@ function drawHolds() {
     if (h.y < cam.y - H / ppm - 1.8 || h.y > cam.y + H / ppm + 1.8) continue;
     const hot = i === hotI;
     const zf = FX.faceZ(h.y);
-    const gripZ = h.z + 0.05;
-    const root = toS(zf, h.y);
-    const up = toS(zf + (gripZ - zf) * 0.45, h.y + 0.16);
-    const tip = toS(gripZ, h.y + 0.02);
-    const dn = toS(zf + (gripZ - zf) * 0.62, h.y - 0.12);
-    const low = toS(zf, h.y - 0.1);
+    const tipZ = h.z + 0.16;
+    const rootTop = toS(zf, h.y + 0.08);
+    const rootBot = toS(zf, h.y - 0.1);
+    const top = toS(tipZ - 0.04, h.y + 0.18);
+    const nose = toS(tipZ + 0.05, h.y + 0.03);
+    const belly = toS(tipZ - 0.02, h.y - 0.16);
+    const neck = toS(zf + (tipZ - zf) * 0.5, h.y);
     if (hot) {
-      const grd = ctx.createRadialGradient(tip[0], tip[1], 2 * PX, tip[0], tip[1], 22 * PX);
+      const grd = ctx.createRadialGradient(nose[0], nose[1], 2 * PX, nose[0], nose[1], 22 * PX);
       grd.addColorStop(0, "rgba(255,206,150,0.38)");
       grd.addColorStop(1, "rgba(255,206,150,0)");
       ctx.fillStyle = grd;
       ctx.beginPath();
-      ctx.arc(tip[0], tip[1], 22 * PX, 0, Math.PI * 2);
+      ctx.arc(nose[0], nose[1], 22 * PX, 0, Math.PI * 2);
       ctx.fill();
     }
-    ctx.beginPath();
-    ctx.moveTo(root[0], root[1] - 2 * PX);
-    ctx.quadraticCurveTo(up[0], up[1] - 2 * PX, tip[0], tip[1]);
-    ctx.quadraticCurveTo(dn[0], dn[1], low[0], low[1]);
-    ctx.closePath();
-    ctx.fillStyle = "#4a433c";
-    ctx.fill();
-    ctx.beginPath();
-    ctx.moveTo(root[0], root[1] - 2 * PX);
-    ctx.quadraticCurveTo(up[0], up[1] - 3 * PX, tip[0] - 2 * PX, tip[1] - 1 * PX);
-    ctx.lineTo(up[0], up[1] + 3 * PX);
-    ctx.closePath();
-    ctx.fillStyle = "#d5c6b2";
-    ctx.fill();
-    ctx.beginPath();
-    ctx.moveTo(root[0], root[1] - 2 * PX);
-    ctx.quadraticCurveTo(up[0], up[1], tip[0], tip[1]);
     const icy = !!state.descending;
+    ctx.beginPath();
+    ctx.moveTo(rootBot[0], rootBot[1]);
+    ctx.quadraticCurveTo(belly[0], belly[1] + 5 * PX, nose[0], nose[1] + 2 * PX);
+    ctx.quadraticCurveTo(neck[0], neck[1] + 3 * PX, rootTop[0], rootTop[1]);
+    ctx.closePath();
+    ctx.fillStyle = icy ? "#121820" : "#161310";
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(rootTop[0], rootTop[1]);
+    ctx.quadraticCurveTo(top[0], top[1], nose[0], nose[1]);
+    ctx.quadraticCurveTo(belly[0], belly[1], rootBot[0], rootBot[1]);
+    ctx.closePath();
+    ctx.fillStyle = icy ? "#3c4a56" : "#3a342e";
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(rootTop[0], rootTop[1]);
+    ctx.quadraticCurveTo(top[0] - 2 * PX, top[1] - 3 * PX, nose[0] - 3 * PX, nose[1] - 2 * PX);
+    ctx.quadraticCurveTo(neck[0], neck[1] - 2 * PX, rootTop[0], rootTop[1] + 4 * PX);
+    ctx.closePath();
+    ctx.fillStyle = icy ? "#d5e2ec" : "#d2c2ae";
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(rootTop[0], rootTop[1]);
+    ctx.quadraticCurveTo(top[0], top[1], nose[0], nose[1]);
     ctx.strokeStyle = icy
       ? (hot ? "rgba(214,236,255,0.95)" : "rgba(176,214,232,0.72)")
-      : (hot ? "rgba(255,220,180,0.9)" : "rgba(220,196,164,0.45)");
-    ctx.lineWidth = (hot ? 1.6 : 1) * PX;
+      : (hot ? "rgba(255,220,180,0.9)" : "rgba(220,196,164,0.55)");
+    ctx.lineWidth = (hot ? 1.6 : 1.1) * PX;
     ctx.lineJoin = "round";
     ctx.lineCap = "round";
     ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(tip[0], tip[1], (hot ? 2.4 : 1.7) * PX, 0, Math.PI * 2);
-    ctx.fillStyle = state.descending ? (hot ? "#e7f4ff" : "rgba(198,224,236,0.8)") : (hot ? "#ffe6c4" : "rgba(230,200,160,0.75)");
-    ctx.fill();
   }
 }
 function drawArc() {
@@ -993,7 +1007,8 @@ function drawArc() {
     if (i) ctx.lineTo(p[0], p[1]);
     else ctx.moveTo(p[0], p[1]);
   }
-  ctx.strokeStyle = state.armed ? "rgba(226,61,50,0.95)" : "rgba(240,210,160,0.82)";
+  const dropping = dots[dots.length - 1].y < dots[0].y - 0.35;
+  ctx.strokeStyle = dropping ? "rgba(186,220,235,0.95)" : (state.armed ? "rgba(226,61,50,0.95)" : "rgba(240,210,160,0.82)");
   ctx.lineWidth = 1.3 * PX;
   ctx.stroke();
   ctx.fillStyle = state.armed ? "#ffd2c8" : "#f3d7a6";
@@ -1005,6 +1020,14 @@ function drawArc() {
     const s = (2 + (i / dots.length) * 1.6) * PX;
     ctx.fillRect(-s / 2, -s / 2, s, s);
     ctx.restore();
+  }
+  if (dropping) {
+    const end = toS(dots[dots.length - 1].z, dots[dots.length - 1].y);
+    ctx.beginPath();
+    ctx.arc(end[0], end[1], 7 * PX, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(210,232,245,0.9)";
+    ctx.lineWidth = 1.4 * PX;
+    ctx.stroke();
   }
 }
 
@@ -1946,6 +1969,8 @@ function applyShot(name) {
     state.mask = 15;
     state.stormVis = 1;
     state.intro = 0;
+    state.visAngle = 0.7;
+    state.angle = 0.7;
   } else if (name === "pack") {
     window.__fx.openPack(5);
     state.mask = 15;
@@ -1993,13 +2018,41 @@ function applyShot(name) {
     state.angle = 0.5;
     state.visAngle = 0.5;
     state.intro = 0;
-  } else if (name === "hard") {
+  } else if (name === "hard" || name === "overhang") {
+    window.__fx.teleport(6);
+    state.mask = 15;
+    state.stormVis = 0.72;
+    state.intro = 0;
+    state.visAngle = 0.72;
+    state.angle = 0.72;
+  } else if (name === "gap") {
     window.__fx.teleport(11);
     state.mask = 15;
-    state.stormVis = 0.55;
+    state.stormVis = 0.48;
     state.intro = 0;
-    state.visAngle = 0.55;
-    state.angle = 0.55;
+    state.visAngle = 0.48;
+    state.angle = 0.48;
+  } else if (name === "chimney") {
+    window.__fx.teleport(16);
+    state.mask = 15;
+    state.stormVis = 0.36;
+    state.intro = 0;
+    state.visAngle = 0.42;
+    state.angle = 0.42;
+  } else if (name === "sparse") {
+    window.__fx.teleport(23);
+    state.mask = 15;
+    state.stormVis = 0.22;
+    state.intro = 0;
+    state.visAngle = 0.5;
+    state.angle = 0.5;
+  } else if (name === "ice") {
+    window.__fx.teleport(26);
+    state.mask = 15;
+    state.stormVis = 0.12;
+    state.intro = 0;
+    state.visAngle = 0.62;
+    state.angle = 0.62;
   } else if (name === "summit") {
     window.__fx.teleport(FX.HOLDS.length - 1);
     state.crown = true;
