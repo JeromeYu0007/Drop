@@ -1,10 +1,17 @@
 /* Release-window check. No physics changes: this only reads Fangxia. */
 const FX = require("../game.js");
 
-const PHASES = [0.4, 2.1, 4.2, 6.8];
-// The slow gust. Real climbs release across this whole cycle, not only the first few seconds.
-const GUST_PERIOD = (Math.PI * 2) / 0.16;
-const PHASE_COUNT = 4;
+// Current wind uses a 0.23 rad/s swell and a 0.70 rad/s gust. A
+// golden-ratio stride avoids repeatedly sampling the same phase of either.
+// These twelve offsets are a deterministic sample, not an exhaustive period.
+const SWELL_PERIOD = (Math.PI * 2) / 0.23;
+const GUST_PERIOD = (Math.PI * 2) / 0.70;
+const PHASE_OFFSETS = Array.from({ length: 12 }, (_, i) => i * SWELL_PERIOD * ((Math.sqrt(5) - 1) / 2));
+const BANDS = {
+  empty: { min: 0.20, max: 0.45 },
+  full: { min: 0.18, max: 0.30 },
+  down: { min: 0.25, max: 0.40 },
+};
 const MASKS = [
   { name: "empty", mask: 0 },
   { name: "full", mask: 15 },
@@ -26,40 +33,11 @@ function lowerIndex(i) {
   return best;
 }
 
-function grade(h, next) {
-  if (!next) return "hard";
-  const y = h.y;
-  // Named hard beats. A window outside 0.20–0.35 fails, long or short.
-  if (y >= 20.4 && y <= 22.4) return "hard";
-  if (y >= 31.0 && y <= 33.6) return "hard";
-  if (y >= 43.2 && y <= 48.6) return "hard";
-  if (y >= 55.8 && y <= 60.2) return "hard";
-  if (h.k === "ice") return "hard";
-  if (y < 20) return "easy";
-  if (y >= 25.2 && y < 31) return "easy";
-  if (y >= 22.5 && y < 25.2) return "normal";
-  if (y >= 34 && y < 41.5) return "easy";
-  if (y >= 49 && y < 55.8) return "easy";
-  if (y >= 60.3 && y < 65 && h.k !== "ice") return "easy";
-  if (next.k === "summit") return "normal";
-  return "normal";
-}
-
-function limitsFor(g) {
-  if (g === "easy") return { min: 0.6, max: 9 };
-  if (g === "normal") return { min: 0.3, max: 0.6 };
-  return { min: 0.2, max: 0.4 };
-}
-
 function meanOf(xs) {
   if (!xs || !xs.length) return null;
   let s = 0;
   for (let i = 0; i < xs.length; i++) s += xs[i];
   return s / xs.length;
-}
-
-function targetFor(g) {
-  return limitsFor(g).min;
 }
 
 function releaseAt(mask, i, t, phase, down, want) {
@@ -187,9 +165,7 @@ function phasesFor(i, arrivals) {
   if (arrivals[0][i] != null) samples.push(arrivals[0][i]);
   if (arrivals[15][i] != null) samples.push(arrivals[15][i]);
   const base = samples.length ? Math.min.apply(null, samples) : 6 + i;
-  const phases = [];
-  for (let k = 0; k < PHASE_COUNT; k++) phases.push(base + (k / PHASE_COUNT) * GUST_PERIOD);
-  return phases;
+  return PHASE_OFFSETS.map(offset => base + offset);
 }
 
 function measure() {
@@ -200,17 +176,11 @@ function measure() {
     const h = FX.HOLDS[i];
     const upTo = i + 1 < FX.HOLDS.length ? i + 1 : -1;
     const downTo = lowerIndex(i);
-    const g = upTo >= 0 ? grade(h, FX.HOLDS[upTo]) : "hard";
-    const band = upTo >= 0 ? limitsFor(g) : { min: 0, max: 9 };
-    const needUp = band.min;
     const cell = {
       i: i,
       y: h.y,
       z: h.z,
       k: h.k,
-      grade: upTo >= 0 ? g : "—",
-      needUp: needUp,
-      maxUp: band.max,
       up: {},
       down: {},
     };
@@ -241,20 +211,16 @@ function measure() {
     cell.upMean = meanOf(ups);
     cell.downMin = downMin;
     cell.downMax = downs.length ? Math.max.apply(null, downs) : null;
-    const inBand = function (v) {
-      return v + 1e-6 >= band.min && v - 1e-6 <= band.max;
-    };
+    const inBand = (value, band) => value + 1e-6 >= band.min && value - 1e-6 <= band.max;
     if (upTo < 0) cell.upOk = true;
     else {
-      const eOk = cell.up.empty.every(function (v) { return v + 1e-6 >= 0.2 && v - 1e-6 <= 0.45; });
-      const fOk = cell.up.full.every(function (v) { return v + 1e-6 >= 0.18 && v - 1e-6 <= 0.3; });
+      const eOk = cell.up.empty.every(v => inBand(v, BANDS.empty));
+      const fOk = cell.up.full.every(v => inBand(v, BANDS.full));
       cell.upOk = eOk && fOk;
     }
     if (downTo < 0) cell.downOk = true;
     else {
-      const dOk = downs.length > 0 && downs.every(function (v) {
-        return v + 1e-6 >= 0.25 && v - 1e-6 <= 0.4;
-      });
+      const dOk = downs.length > 0 && downs.every(v => inBand(v, BANDS.down));
       cell.downOk = dOk;
     }
     if (!cell.upOk || !cell.downOk) failed++;
@@ -265,35 +231,21 @@ function measure() {
 
 function fmt(v) {
   if (v == null) return "  —  ";
-  return v.toFixed(2);
+  return v.toFixed(3);
 }
 
 function main() {
   const t0 = Date.now();
   const report = measure();
-  const head = "i  y     kind    grade  need  upE   upF   upMin  uMean downE downF downMin";
-  console.log(head);
+  console.log("Sampled wind offsets:", PHASE_OFFSETS.length, "over", PHASE_OFFSETS.at(-1).toFixed(1), "seconds; not exhaustive.");
+  console.log("Accepted seconds: empty 0.20–0.45; full 0.18–0.30; descent 0.25–0.40.");
+  console.log("i  y     kind     upEmin upEmax upFmin upFmax downMin downMax");
   for (const r of report.rows) {
-    const upE = r.up.empty && r.up.empty.length ? Math.min.apply(null, r.up.empty) : null;
-    const upF = r.up.full && r.up.full.length ? Math.min.apply(null, r.up.full) : null;
-    const dnE = r.down.empty && r.down.empty.length ? Math.min.apply(null, r.down.empty) : null;
-    const dnF = r.down.full && r.down.full.length ? Math.min.apply(null, r.down.full) : null;
+    const range = xs => xs.length ? [Math.min(...xs), Math.max(...xs)] : [null, null];
+    const values = [...range(r.up.empty), ...range(r.up.full), r.downMin, r.downMax];
     const flag = r.upOk && r.downOk ? "" : "  FAIL";
-    console.log(
-      String(r.i).padStart(2),
-      r.y.toFixed(1).padStart(5),
-      r.k.padEnd(7),
-      String(r.grade).padEnd(6),
-      fmt(r.needUp).padStart(5),
-      fmt(upE).padStart(5),
-      fmt(upF).padStart(5),
-      fmt(r.upMin).padStart(6),
-      fmt(r.grade === "hard" ? r.upMean : null).padStart(6),
-      fmt(dnE).padStart(5),
-      fmt(dnF).padStart(5),
-      fmt(r.downMin).padStart(7),
-      flag
-    );
+    console.log(String(r.i).padStart(2), r.y.toFixed(1).padStart(5), r.k.padEnd(8),
+      ...values.map(v => fmt(v).padStart(6)), flag);
   }
   console.log(report.failed ? "FAIL " + report.failed : "PASS");
   console.log("seconds", ((Date.now() - t0) / 1000).toFixed(1));
@@ -301,4 +253,4 @@ function main() {
 }
 
 if (require.main === module) main();
-module.exports = { measure, grade, targetFor, limitsFor, caught, longest, lowerIndex, phasesFor, arrivalTimes, PHASES, DT, GUST_PERIOD };
+module.exports = { measure, caught, longest, lowerIndex, phasesFor, arrivalTimes, PHASE_OFFSETS, BANDS, DT, SWELL_PERIOD, GUST_PERIOD };

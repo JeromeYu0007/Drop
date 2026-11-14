@@ -1,0 +1,17 @@
+{
+  "name": "let-go-drop",
+  "version": "2.0.0",
+  "private": true,
+  "description": "A procedural one-touch climbing game about what we carry.",
+  "scripts": {
+    "start": "python3 -m http.server 8123",
+    "test": "node test/surface.js && node test/pose.js && node test/windows.js && node test/journeys.js && node test/recovery.js",
+    "test:human": "node test/human.js",
+    "test:browser": "node test/browser-ui.js && node test/browser.js",
+    "test:screens": "node test/browser.js --screens && node test/browser.js --mobile --screens",
+    "test:motion": "node test/motion-browser.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.56.1"
+  }
+}

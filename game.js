@@ -11,6 +11,7 @@
   const DRAG = 0.016;
   const CATCH = 0.7;
   const CATCH_HOLD = 0.96;
+  let windEnabled = true;
   // Light pack charges and swings faster. A heavy pack is slower, never unreachable.
   const TUNE = {
     omega: [3.55, 2.72],
@@ -21,11 +22,8 @@
     windMul: [0.22, 1.15],
   };
 
-  // Difficulty curve, bottom to top:
-  // approach, overhang, recovery, long gap, recovery, chimney, sparse, ice, door.
-  // Columns are separated in z on purpose. A miss falls in the column you left.
-  // Easy ladders share a column, so the hold below is catchable.
-  // Hard moves leave that column, and the air under them is empty.
+  // Four acts with breathers, changing wall slope, and a short exposed crown.
+  // Preserve the proven local launch geometry; shorten the climb, not each jump.
   const RAW = [
     [8, 1.71, "start"],
     [11.95, 1.852, "hold"],
@@ -33,120 +31,47 @@
     [19.9, 1.998, "hold"],
     [24.05, 2.229, "hold"],
     [28.25, 1.876, "hold"],
-    [32.2, 2.063, "hold"],
+    [32.25, 2.063, "hold"],
     [36.4, 2.187, "hold"],
     [40.35, 2.126, "hold"],
-    [44.55, 1.849, "hold"],
+    [44.55, 1.849, "trophy"],
     [48.5, 1.974, "hold"],
     [52.7, 1.962, "hold"],
     [56.65, 1.614, "hold"],
     [60.85, 1.803, "hold"],
-    [64.4, 1.803, "hold"],
+    [64.55, 1.803, "hold"],
     [67.87, 1.673, "hold"],
     [71.9, 1.403, "hold"],
     [76.07, 0.853, "hold"],
     [80.24, 0.583, "hold"],
-    [84.83, 0.593, "trophy"],
-    [89.05, -0.189, "hold"],
+    [84.62, 0.593, "hold"],
+    [88.95, -0.189, "letter"],
     [93.25, -0.101, "hold"],
-    [96.95, -0.12, "hold"],
+    [97.15, -0.12, "hold"],
     [101.15, -0.481, "hold"],
     [105.1, -0.992, "hold"],
     [109.3, -0.939, "hold"],
     [113.25, -1.003, "hold"],
-    [117.45, -1.203, "hold"],
-    [121.4, -0.956, "hold"],
-    [125.35, -0.785, "hold"],
-    [129.3, -0.715, "hold"],
-    [133.5, -0.213, "hold"],
-    [137.45, -0.029, "hold"],
-    [141.3, 0.271, "hold"],
-    [145.19, 0.701, "hold"],
-    [149.08, 0.851, "hold"],
-    [152.83, 1.141, "hold"],
-    [157, 1.151, "hold"],
-    [160.75, 1.441, "hold"],
-    [164.5, 1.591, "hold"],
-    [168.39, 1.741, "hold"],
-    [172.56, 1.191, "hold"],
-    [176.73, 1.761, "hold"],
-    [180.76, 1.911, "hold"],
-    [184.65, 2.061, "hold"],
-    [188.4, 2.211, "hold"],
-    [192.85, 2.221, "letter"],
-    [196.6, 2.371, "hold"],
-    [200.63, 2.241, "hold"],
-    [204.8, 1.691, "hold"],
-    [208.83, 2.261, "hold"],
-    [213, 1.711, "hold"],
-    [217.17, 1.861, "hold"],
-    [221.34, 1.311, "hold"],
-    [225.51, 1.461, "hold"],
-    [229.68, 0.911, "hold"],
-    [233.85, 0.361, "hold"],
-    [238.02, -0.049, "hold"],
-    [241.91, -0.599, "ice"],
-    [246.08, -0.169, "ice"],
-    [250.11, -0.719, "ice"],
-    [253.61, -0.619, "ice"],
-    [257.47, -0.979, "ice"],
-    [261.36, -0.829, "ice"],
-    [265.11, -0.819, "ice"],
-    [269, -0.809, "ice"],
-    [273.03, -0.799, "ice"],
-    [277.06, -0.509, "ice"],
-    [280.81, -0.219, "ice"],
-    [284.56, -0.069, "ice"],
-    [288.59, 0.501, "ring"],
-    [292.62, -0.049, "ice"],
-    [296.65, 0.381, "ice"],
-    [300.68, 0.391, "ice"],
-    [304.57, 0.681, "ice"],
-    [308.6, 0.831, "ice"],
-    [312.35, 1.121, "ice"],
-    [316.1, 1.271, "ice"],
-    [319.85, 1.421, "ice"],
-    [323.88, 1.291, "ice"],
-    [327.77, 1.721, "ice"],
-    [331.52, 2.011, "ice"],
-    [335.55, 2.021, "ice"],
-    [339.44, 2.311, "ice"],
-    [343.47, 2.321, "ice"],
-    [347.5, 2.471, "ice"],
-    [351.53, 2.481, "ice"],
-    [355.56, 1.931, "ice"],
-    [359.73, 2.361, "ice"],
-    [363.76, 2.231, "ice"],
-    [367.79, 1.961, "ice"],
-    [371.54, 1.831, "ice"],
-    [375.15, 1.561, "ice"],
-    [379.18, 1.011, "ice"],
-    [383.21, 0.461, "ice"],
-    [387.24, -0.089, "ice"],
-    [391.83, 0.061, "photo"],
-    [396, -0.349, "ice"],
-    [400.03, -0.339, "ice"],
-    [404.2, -0.889, "ice"],
-    [408.37, -0.599, "ice"],
-    [412.26, -0.589, "ice"],
-    [416.29, -0.579, "ice"],
-    [420.32, -0.569, "ice"],
-    [424.35, -0.559, "ice"],
-    [428.38, -0.549, "ice"],
-    [432.27, -0.259, "ice"],
-    [436.3, -0.809, "ice"],
-    [440.33, -0.239, "ice"],
-    [444.22, -0.089, "ice"],
-    [448.11, 0.061, "ice"],
-    [452.14, -0.069, "ice"],
-    [455.94, 0.431, "ice"],
-    [459.74, 0.531, "ice"],
-    [463.44, 0.831, "ice"],
-    [467.21, 1.001, "ice"],
-    [470.98, 1.291, "ice"],
-    [474.75, 1.581, "ice"],
-    [478.64, 1.751, "ice"],
-    [482.77, 2.521, "summit"],
+    [117.45, -1.203, "ice"],
+    [121.4, -0.956, "ice"],
+    [125.35, -0.785, "ice"],
+    [129.3, -0.715, "ice"],
+    [133.5, -0.213, "ring"],
+    [137.45, -0.029, "ice"],
+    [141.3, 0.271, "ice"],
+    [145.19, 0.608, "ice"],
+    [149.08, 0.819, "ice"],
+    [152.83, 1.013, "ice"],
+    [156.92, 1.271, "ice"],
+    [160.75, 1.337, "ice"],
+    [164.65, 1.506, "ice"],
+    [168.75, 1.741, "photo"],
+    [172.72, 1.191, "ice"],
+    [176.73, 1.761, "ice"],
+    [180.76, 1.911, "ice"],
+    [184.65, 2.008, "ice"],
+    [188.5, 2.116, "ice"],
+    [192.85, 2.221, "summit"],
   ];
   const SUMMIT_Y = RAW[RAW.length - 1][0];
   const GATE = { y: SUMMIT_Y + 1.55, z: RAW[RAW.length - 1][1] + 0.48 };
@@ -296,6 +221,7 @@
   }
 
   function wind(t, y, mask, returning) {
+    if (!windEnabled) return 0;
     const storm = stormOf(mask);
     const top = Math.max(156, HOLDS[HOLDS.length - 1].y);
     const alt = clamp((y - 16) / Math.max(30, top - 16), 0, 1);
@@ -417,6 +343,15 @@
     return k === "trophy" || k === "letter" || k === "ring" || k === "photo";
   }
 
+  function catchRadius(target, holding, descending) {
+    let reach = holding ? CATCH_HOLD : CATCH;
+    if (descending) reach *= 1.12;
+    else if (target && target.k === "ice") reach *= 0.92;
+    if (target && isRest(target.k)) reach += 0.16;
+    if (target && target.k === "summit") reach += 0.28;
+    return reach;
+  }
+
   function nextIndex(i) {
     return i + 1 < HOLDS.length ? i + 1 : -1;
   }
@@ -436,6 +371,7 @@
       vz: 0,
       angle: 0,
       flightT: 0,
+      downLaunch: false,
       origin: 0,
       prevHolding: false,
       holding: false,
@@ -505,6 +441,35 @@
     return st;
   }
 
+  // Shared by the trajectory guide and live physics. The upward launch remains
+  // untouched. After the apex the climber turns back into the wall; contact
+  // dissipates the fall, without teleporting to a hold or awarding a catch.
+  function integrateFlight(s, dt) {
+    s.vz += wind(s.time, s.y, s.mask, !!s.descending) * dt;
+    s.vy -= grav(s.mask) * dt;
+    const speed = Math.hypot(s.vz, s.vy) + 1e-4;
+    s.vz -= s.vz * DRAG * dt;
+    s.vy -= s.vy * DRAG * dt;
+    const origin = HOLDS[s.origin];
+    const missedDown = !s.downLaunch || !origin || s.y < origin.y - 5.2;
+    if (s.vy < 0 && missedDown) {
+      const contact = faceZ(s.y) + BODY_R + 0.12;
+      const exposure = clamp(((origin ? origin.y : s.y) - 40) / Math.max(40, SUMMIT_Y - 40), 0, 1);
+      const recovery = mix(8, 7.2, exposure);
+      // There is a finite amount of control in open air. Far outside the
+      // wall, an extreme miss can still outlast the available height.
+      const maxPull = mix(48, 36, exposure);
+      s.vz += (clamp((contact - s.z) * recovery, -maxPull, maxPull) - s.vz * 5) * dt;
+      // Friction starts at contact, not out in open air. A late recovery can
+      // still lose several ledges before there is a hold within arm's reach.
+      if (s.z <= contact + 0.5) s.vy = Math.max(s.vy, -14.5);
+    }
+    s.z += s.vz * dt;
+    s.y += s.vy * dt;
+    resolveBody(s);
+    return speed;
+  }
+
   function arcMin(mask, holdT, hold, target, time, downOk, returning) {
     const st = swung(mask, holdT, time, hold.y);
     let y = hold.y + st.offY;
@@ -518,23 +483,14 @@
     }
     let minD = 1e9;
     const dots = [];
+    const ghost = { y: y, z: z, vy: vy, vz: vz, mask: mask,
+      descending: !!returning, downLaunch: !!(downOk && downBeat(mask, holdT)),
+      origin: hold.i, time: time, shake: 0 };
     for (let i = 0; i < 80; i++) {
       const dt = 1 / 70;
-      const tt = time + i * dt;
-      vz += wind(tt, y, mask, !!returning) * dt;
-      vy -= grav(mask) * dt;
-      const sp = Math.hypot(vz, vy) + 1e-4;
-      const dc = DRAG * sp;
-      vz -= (vz / sp) * dc * dt;
-      vy -= (vy / sp) * dc * dt;
-      z += vz * dt;
-      y += vy * dt;
-      const ghost = { y: y, z: z, vy: vy, vz: vz, shake: 0 };
-      if (resolveBody(ghost)) {
-        z = ghost.z;
-        vy = ghost.vy;
-        vz = ghost.vz;
-      }
+      ghost.time = time + (i + 1) * dt;
+      integrateFlight(ghost, dt);
+      y = ghost.y; z = ghost.z; vy = ghost.vy; vz = ghost.vz;
       if (i % 6 === 0) dots.push({ y: y, z: z });
       if (target) {
         const d = Math.hypot(z - target.z, y - target.y);
@@ -575,6 +531,7 @@
     s.vy = 0;
     s.vz = 0;
     s.flightT = 0;
+    s.downLaunch = false;
     s.nearDone = false;
     s.origin = index;
     placeOnRope(s, h, 0, L * 0.35);
@@ -601,11 +558,10 @@
 
   function wantsDown(mask, holdT) {
     const p = params(mask);
-    const st = sampleRelease(mask, holdT);
     const peak = Math.PI / (2 * p.omega);
     // Upward full-charge releases land first, around one second.
     // Only after that window does the line turn down toward the hold below.
-    return holdT > Math.max(1.28, peak + 0.7) && st.angle < 0.55;
+    return holdT > Math.max(1.28, peak + 0.7);
   }
 
   function downBeat(mask, holdT) {
@@ -643,6 +599,7 @@
     s.vz = st.vz;
     s.angle = st.angle;
     const goingBack = downBeat(s.mask, s.holdT);
+    s.downLaunch = (s.crown || s.descending) && goingBack;
     if ((s.crown || s.descending) && goingBack) {
       const shot = downShot(st, h);
       s.vy = shot.vy;
@@ -736,6 +693,7 @@
     s.angle = 0;
     s.flightT = 0;
     s.origin = 0;
+    s.downLaunch = false;
     s.mode = "play";
     s.pressT = 0;
     s.nearDone = false;
@@ -932,10 +890,9 @@
       s.settle = Math.min(1, s.settle + dt / (0.2 + heavy * 0.15));
       const rope = mix(0.42, L, s.settle);
       tryPickup(s);
-      const onIce = h.k === "ice";
-      if ((s.descending || onIce) && !holding && s.settle > 0.88) {
+      if (s.descending && !holding && s.settle > 0.88) {
         s.slip += dt;
-        const ice = s.descending ? mix(2.4, 1.25, heavy) : mix(2.1, 1.45, heavy);
+        const ice = mix(2.4, 1.25, heavy);
         if (s.slip > ice) {
           s.attached = false;
           s.crown = false;
@@ -954,7 +911,7 @@
         s.dots = [];
       } else if (holding && s.settle > 0.9 && s.attached) {
         s.holdT += dt;
-        if (s.holdT > params(s.mask).stamina) {
+        if (s.descending && s.holdT > 7.2) {
           s.attached = false;
           s.crown = false;
           s.vy = -2.4 - heavy * 2.4;
@@ -983,9 +940,7 @@
             s.dots = hit.dots;
             s.aimD = hit.minD;
             const was = s.armed;
-            let need = downAim ? CATCH * 1.12 : CATCH;
-            if (!downAim && target && target.k === "ice") need *= 0.92;
-            if (target && target.k && (isRest(target.k) || target.k === "summit")) need += 0.28;
+            let need = catchRadius(target, false, downAim);
             if (s.crown && target === GATE) need = 1.2;
             s.armed = hit.minD < need;
             if (s.armed && !was) s.sfx.push("arm");
@@ -1019,15 +974,8 @@
     } else {
       s.flightT += dt;
       s.armed = false;
-      s.vz += wind(s.time, s.y, s.mask, s.descending) * dt;
-      s.vy -= grav(s.mask) * dt;
-      const sp = Math.hypot(s.vz, s.vy) + 1e-4;
-      const dc = DRAG * sp;
-      s.vz -= (s.vz / sp) * dc * dt;
-      s.vy -= (s.vy / sp) * dc * dt;
-      s.z += s.vz * dt;
-      s.y += s.vy * dt;
-      resolveBody(s);
+      const oldY = s.y, oldZ = s.z;
+      const sp = integrateFlight(s, dt);
       if (sp > 0.8) s.angle = Math.atan2(-s.vz, s.vy);
       if (s.crown && s.vy > -2 && Math.hypot(s.z - GATE.z, s.y - GATE.y) < 1.05) {
         beginEnding(s);
@@ -1035,20 +983,19 @@
 
       let caught = -1;
       let bestD = 1e9;
-      const reach = holding && s.flightT > 0.14 ? CATCH_HOLD : CATCH;
+      const reaching = holding && s.flightT > 0.14;
       const origin = HOLDS[s.origin];
       for (let i = 0; i < HOLDS.length; i++) {
         if (i === s.origin && s.flightT < 0.34) continue;
         const hd = HOLDS[i];
         // Still rising: the hold you came from, and anything below it, is not a catch.
-        if (s.vy > 0.6 && hd.y < origin.y - 0.25) continue;
-        let r = reach;
-        if (s.descending && s.vy < 0) r *= 1.12;
-        else if (hd.k === "ice") r *= 0.92;
-        if (isRest(hd.k) || hd.k === "summit") r += 0.32;
-        const d = Math.hypot(s.z - hd.z, s.y - hd.y);
-        const toward = (hd.y - s.y) * s.vy + (hd.z - s.z) * s.vz;
-        if (d > r * 0.72 && toward < -1.2) continue;
+        if (s.vy > 0.6 && (i === s.origin || hd.y < origin.y - 0.25)) continue;
+        const r = catchRadius(hd, reaching, s.descending && s.vy < 0);
+        // Sweep the frame segment so a reachable hold cannot be skipped by
+        // a fast fall between physics samples.
+        const dy = s.y - oldY, dz = s.z - oldZ;
+        const f = clamp(((hd.y - oldY) * dy + (hd.z - oldZ) * dz) / (dy * dy + dz * dz || 1), 0, 1);
+        const d = Math.hypot(oldZ + dz * f - hd.z, oldY + dy * f - hd.y);
         if (d < r && d < bestD) {
           bestD = d;
           caught = i;
@@ -1094,9 +1041,7 @@
     for (let i = 0; i < HOLDS.length - 1; i++) {
       const h = HOLDS[i];
       const n = HOLDS[i + 1];
-      let need = CATCH;
-      if (n.k === "ice") need *= 0.92;
-      if (n.k !== "hold" && n.k !== "ice" && n.k !== "start") need += 0.28;
+      const need = catchRadius(n, false, false);
       let best = 1e9;
       let bestT = full;
       let phasesOk = 0;
@@ -1176,6 +1121,7 @@
     };
   }
 
+  // Greedy smoke-test player, not a proof of reachability or human difficulty.
   function simulate(options) {
     options = options || {};
     const s = createState();
@@ -1183,15 +1129,9 @@
     s.intro = 0;
     s.settle = 1;
     const dt = 1 / 100;
-    const windBackup = options.noWind;
     let guard = 0;
     let stuck = 0;
     let lastIndex = 0;
-    if (windBackup) {
-      // temporarily flatten wind by climbing with a flag checked in a wrapper
-    }
-    const origWind = wind;
-    // local flight uses wind(); for noWind we zero via mask trick? We'll patch by climbing fast.
     while (guard < 25000) {
       guard++;
       let holding = false;
@@ -1234,12 +1174,6 @@
         input.holding = true; // reach a little farther while falling
       }
       if (s.needUp || s.lock > 0) input.holding = false;
-      if (options.noWind) {
-        // zero wind by shifting time-independent: monkeypatch through y gate
-        // handled below by replacing function? can't. Use a high wind start by
-        // temporarily wrapping: we'll integrate no-wind by setting a property.
-        s._noWind = true;
-      }
       step(s, dt, input);
       if (s.holdIndex !== lastIndex) {
         lastIndex = s.holdIndex;
@@ -1262,21 +1196,8 @@
     };
   }
 
-  // The no-wind path needs step() to honor s._noWind. Patch wind usage by
-  // wrapping step's calls: we edit wind at the source via a flag check.
-  // Re-bind: monkeypatch below after definition by replacing wind inside step
-  // is hard. Instead, simulate() sets a global flag read by wind().
-  let windGate = true;
-  const windReal = wind;
-  function windGated(t, y, mask) {
-    if (!windGate) return 0;
-    return windReal(t, y, mask);
-  }
-
   function catchNeed(descending, target) {
-    let need = descending ? CATCH * 0.82 : CATCH;
-    if (target && target.k && (isRest(target.k) || target.k === "summit")) need += 0.28;
-    return need;
+    return catchRadius(target, false, descending);
   }
 
   function gotBit(s, bit) {
@@ -1486,6 +1407,7 @@
     L: L,
     G: G,
     CATCH: CATCH,
+    catchRadius: catchRadius,
     GATE: GATE,
     SUMMIT_Y: SUMMIT_Y,
     HOLDS: HOLDS,
@@ -1511,19 +1433,16 @@
     createState: createState,
     step: step,
     arcMin: arcMin,
+    integrateFlight: integrateFlight,
     reachCheck: reachCheck,
     isRest: isRest,
     simulateReturn: simulateReturn,
     simulate: function (options) {
       options = options || {};
-      windGate = !options.noWind;
-      // Rewire the closed-over wind by swapping the function the module uses.
-      // step() calls wind() by name in this closure, so we temporarily replace it.
-      const saved = wind;
-      // Can't reassign const. simulate handles wind by the real function.
-      // For noWind, we run and accept wind. Provide a dedicated loop here.
-      windGate = true;
-      return simulate(options);
+      const saved = windEnabled;
+      windEnabled = !options.noWind;
+      try { return simulate(options); }
+      finally { windEnabled = saved; }
     },
     wipePosition: wipePosition,
   };
