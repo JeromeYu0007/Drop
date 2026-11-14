@@ -46,6 +46,7 @@ async function main() {
     await page.goto("http://127.0.0.1:" + server.address().port + "/");
     await page.waitForTimeout(800);
     await page.screenshot({ path: path.join(out, "ui-intro.png") });
+    assert.match(await page.locator("#hint").textContent(), /按住蓄力/, "the initial climb explains upward controls");
 
     await page.evaluate(() => {
       const s = __fx.state, h = Fangxia.HOLDS.find(h => h.k === "trophy");
@@ -79,9 +80,111 @@ async function main() {
     assert(audio.gain !== null && audio.gain < .001);
     console.log("PASS mute silences wind and effects", audio);
 
+    // Exercise the actual ending button and keyboard handlers. The guide must
+    // come from the page's render loop, without a test calling updateGuide().
+    phase = "ending selects independent descent controls";
+    await page.evaluate(() => {
+      cancelCharge();
+      const s = __fx.state, h = Fangxia.HOLDS.at(-1);
+      const left = Fangxia.HOLDS.find(h => h.k === "trophy");
+      Object.assign(s, Fangxia.createState(), {
+        mode: "ending", endingT: 2, intro: 0, catches: 6,
+        holdIndex: h.i, origin: h.i, y: h.y + .22, z: h.z,
+        attached: true, crown: true, mask: 11,
+        lost: [{ kind: "trophy", bit: 4, y: left.y - 1.8, z: left.z, hold: left.i }],
+      });
+      prologueLeft = 0;
+    });
+    await page.locator("#retrieve").click();
+    await page.waitForFunction(() => {
+      const s = __fx.state;
+      return s.mode === "play" && s.descending && s.returning && document.body.dataset.scene === "descend";
+    });
+    const selected = await page.evaluate(() => ({ attached: __fx.state.attached, launches: __fx.state.launches, crown: __fx.state.crown, index: __fx.state.holdIndex }));
+    assert.equal(selected.attached, true);
+    assert.equal(selected.launches, 0, "choosing descent cannot launch without a press/release gesture");
+    assert.equal(selected.crown, false);
+    assert.match(await page.locator("#hint").textContent(), /按住稳住身体，松手向下/);
+    assert.match(await page.locator("#c").getAttribute("aria-label"), /松手向下/);
+    assert.equal(await page.locator("#backHint").count(), 0, "the obsolete long-press direction hint is gone");
+    await page.waitForFunction(() => {
+      const s = __fx.state;
+      return s.attached && s.settle > .9 && !s.lock && !s.needUp;
+    }, null, { timeout: 15000 });
+    await page.keyboard.down("Space");
+    await page.waitForFunction(() => {
+      const s = __fx.state, h = Fangxia.HOLDS[s.holdIndex];
+      return s.holding && s.holdT > .25 && s.armed && s.aimD < .35 && s.dots.some(p => p.y < h.y - 2);
+    }, null, { timeout: 15000 });
+    assert.equal(await page.evaluate(() => __fx.state.launches), 0, "holding the descent curve cannot release automatically");
+    await page.keyboard.up("Space");
+    await page.waitForFunction(() => __fx.state.launches === 1 && !__fx.state.attached, null, { timeout: 10000 });
+    // Reach through the catch, then keep the same physical key down. A catch
+    // must consume that gesture rather than starting another automatic drop.
+    await page.keyboard.down("Space");
+    await page.waitForFunction(origin => __fx.state.attached && __fx.state.holdIndex < origin, selected.index, { timeout: 15000 });
+    const caught = await page.evaluate(() => ({ index: __fx.state.holdIndex, time: __fx.state.time, launches: __fx.state.launches, falls: __fx.state.falls }));
+    assert.equal(caught.index, selected.index - 1, "the downward curve catches the next lower hold");
+    assert.equal(caught.launches, 1);
+    assert.match(await page.locator("#hint").textContent(), /再次按住、松开才会继续下放/);
+    await page.waitForFunction(time => __fx.state.time > time + 3, caught.time, { timeout: 20000 });
+    const resting = await page.evaluate(() => ({ index: __fx.state.holdIndex, attached: __fx.state.attached, launches: __fx.state.launches, falls: __fx.state.falls, descending: __fx.state.descending }));
+    assert.deepEqual(resting, { index: caught.index, attached: true, launches: 1, falls: caught.falls, descending: true }, "holding after a catch remains stable beyond the old 2.4-second slip timeout");
+    await page.keyboard.up("Space");
+    await page.waitForTimeout(150);
+    assert.equal(await page.evaluate(() => __fx.state.launches), 1, "releasing the consumed catch gesture cannot launch again");
+    console.log("PASS ending selects descent; real keyboard draws a downward arc; one release makes one stable lower catch", resting);
+
+    // Catch the second pack node with a held reach gesture, as happens in the
+    // full journey after discarding the trophy. Releasing and briefly tapping
+    // the climbing key must leave the choice visible until its button is used.
+    phase = "caught rest point keeps its explicit backpack choice";
+    await page.keyboard.down("Space");
+    const packIndex = await page.evaluate(() => {
+      const s = __fx.state, h = Fangxia.HOLDS.find(h => h.k === "letter");
+      const left = Fangxia.HOLDS.find(h => h.k === "trophy");
+      Object.assign(s, Fangxia.createState(), {
+        intro: 0, catches: 19, launches: 20, mask: 11,
+        holdIndex: h.i - 1, origin: h.i - 1, attached: false,
+        flightT: 1, y: h.y + .2, z: h.z, vy: -1,
+        holding: true, prevHolding: true,
+        lost: [{ kind: "trophy", bit: 4, y: left.y - 1.8, z: left.z, hold: left.i }],
+      });
+      return h.i;
+    });
+    await page.waitForFunction(index => __fx.state.mode === "ledge" && __fx.state.holdIndex === index, packIndex, { timeout: 10000 });
+    await page.keyboard.up("Space");
+    await page.waitForFunction(() => __fx.state.seenRelease && !__fx.state.holding);
+    await page.keyboard.down("Space");
+    const tapAt = await page.evaluate(() => __fx.state.time);
+    await page.waitForFunction(time => __fx.state.holding && __fx.state.time > time + .09, tapAt, { timeout: 10000 });
+    await page.keyboard.up("Space");
+    await page.waitForFunction(() => {
+      const s = __fx.state;
+      return s.mode === "ledge" && s.settle >= .9 && document.querySelector("#pack").classList.contains("show");
+    }, null, { timeout: 10000 });
+    const packStableAt = await page.evaluate(() => __fx.state.time);
+    await page.waitForFunction(time => __fx.state.time > time + .25, packStableAt, { timeout: 10000 });
+    assert.equal(await page.evaluate(() => __fx.state.mode), "ledge", "the short climbing tap cannot implicitly choose Continue");
+    assert(await page.locator("#packKeep").isVisible(), "Continue stays available after the caught body settles");
+    assert.equal(await page.locator("#packItems button").count(), 3, "only the three retained objects are offered");
+    await page.keyboard.down("Space");
+    await page.waitForFunction(() => __fx.state.holding, null, { timeout: 10000 });
+    await page.locator("#packKeep").click();
+    await page.waitForFunction(() => __fx.state.mode === "play", null, { timeout: 10000 });
+    const keptAt = await page.evaluate(() => __fx.state.time);
+    await page.waitForFunction(time => __fx.state.time > time + .2, keptAt, { timeout: 10000 });
+    const kept = await page.evaluate(() => ({ index: __fx.state.holdIndex, attached: __fx.state.attached, mask: __fx.state.mask, lost: __fx.state.lost.length, launches: __fx.state.launches }));
+    assert.deepEqual(kept, { index: packIndex, attached: true, mask: 11, lost: 1, launches: 20 }, "explicit Continue works while Space stays held, without another launch");
+    await page.keyboard.up("Space");
+    await page.waitForFunction(() => !__fx.state.holding);
+    assert.equal(await page.evaluate(() => __fx.state.launches), 20, "releasing Space after Continue cannot launch");
+    console.log("PASS real multi-frame rest catch keeps its pack choice until explicit Continue", kept);
+
+    phase = "background pause and safe input reset";
     await page.evaluate(() => {
       const s = __fx.state, h = Fangxia.HOLDS[4];
-      Object.assign(s, { mode: "play", holdIndex: 4, origin: 4, attached: true, y: h.y - 1, z: h.z, holdT: 1, holding: true, prevHolding: true, launches: 3, mask: 15, lost: [] });
+      Object.assign(s, Fangxia.createState(), { mode: "play", intro: 0, holdIndex: 4, origin: 4, attached: true, y: h.y - 1, z: h.z, holdT: 1, holding: true, prevHolding: true, launches: 3, mask: 15, lost: [] });
       holding = true;
       window.pauseDraws = 0;
       const draw = FXRender.draw;

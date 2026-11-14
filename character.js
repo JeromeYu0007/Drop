@@ -301,7 +301,7 @@
         if (gripping) workQ.identity();
         else workQ.setFromUnitVectors(up, axis.set(r["hand" + name].x - r["elbow" + name].x, r["hand" + name].y - r["elbow" + name].y, r["hand" + name].z - r["elbow" + name].z).normalize());
         place(hands[name], r["hand" + name], workQ);
-        workQ.setFromAxisAngle(new T.Vector3(1, 0, 0), -r["shinAngle" + name]); place(boots[name], r["foot" + name], workQ);
+        workQ.setFromAxisAngle(new T.Vector3(1, 0, 0), -r["bootAngle" + name]); place(boots[name], r["foot" + name], workQ);
       }
       updateScarf(r, state, dt, forecast);
     }

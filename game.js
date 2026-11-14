@@ -19,7 +19,7 @@
     maxSpeed: [20.6, 15.2],
     aimScale: [0.86, 0.70],
     chargeRate: [2.65, 1.18],
-    windMul: [0.22, 1.15],
+    windMul: [0.70, 1.15],
   };
 
   // Four acts with breathers, changing wall slope, and a short exposed crown.
@@ -210,27 +210,34 @@
       grav: mix(0.86, 1.26, k),
       stamina: mix(8.4, 4.8, k),
       sway: mix(0.03, 0.2, k),
+      preload: mix(0.04, 0.20, k),
+      settleDuration: mix(0.36, 0.90, k),
     };
   }
   function grav(mask) {
     return G * params(mask).grav;
   }
 
-  function stormOf(mask) {
-    return weight01(mask);
+  function stageAt(y) {
+    let stage = 0;
+    for (const h of HOLDS) if (isRest(h.k) && y >= h.y - 0.001) stage++;
+    return stage;
+  }
+  function weatherAt(y, returning) {
+    const stage = stageAt(y), intensity = [0.10, 0.28, 0.48, 0.71, 0.94][stage];
+    return { stage: stage, intensity: Math.min(1, intensity + (returning ? .10 : 0)),
+      windScale: [0.16, 0.38, 0.70, 1.05, 1.40][stage] * (returning ? 1.12 : 1) };
+  }
+  function stormOf(mask, y, returning) {
+    return weatherAt(y == null ? HOLDS[0].y : y, returning).intensity;
   }
 
   function wind(t, y, mask, returning) {
     if (!windEnabled) return 0;
-    const storm = stormOf(mask);
-    const top = Math.max(156, HOLDS[HOLDS.length - 1].y);
-    const alt = clamp((y - 16) / Math.max(30, top - 16), 0, 1);
-    const gale = smooth(clamp((y - top * 0.58) / Math.max(10, top * 0.16), 0, 1));
-    // A slow swell, plus a gust the eye can see coming. Both grow hard with height.
-    const swell = Math.sin(t * 0.23 + y * 0.01) * (0.14 + alt * 0.24);
-    const gust = Math.sin(t * 0.7 + y * 0.015 + 1.1) * (0.08 + gale * 0.5);
-    const amp = (0.08 + storm * 0.82 + gale * 0.22) * (returning ? 1.22 : 1);
-    return (swell + gust) * amp;
+    const weather = weatherAt(y, returning);
+    const swell = Math.sin(t * 0.23 + y * 0.01) * .55;
+    const gust = Math.sin(t * 0.7 + y * 0.015 + 1.1) * .45;
+    return (swell + gust) * weather.windScale * params(mask).windMul;
   }
 
   function gustForecast(t, y, mask, returning) {
@@ -282,37 +289,213 @@
     return sway + n;
   }
   const BODY_R = 0.22;
+  let solid = null;
+  function solidWorld() {
+    if (!solid) {
+      const factory = typeof module !== "undefined" && module.exports ? require("./surface.js") : globalThis.FXSurface;
+      solid = factory.create({ buildCliffMesh: buildCliffMesh, faceZ: faceZ, top: SUMMIT_Y });
+    }
+    return solid;
+  }
+  function surfaceZ(x, y) { return solidWorld().surfaceZ(x, y); }
+  const BODY = { torso: .53, upperArm: .36, forearm: .34, thigh: .42, shin: .41 };
+  const KIP = [
+    [0,-.675,.17,.05,0,.07],[.24,-.630,.29,.33,.02,.08],
+    [.49,-.510,.47,.72,.02,.10],[.65,-.405,.40,.36,-.95,1.20],
+    [.79,-.150,.40,.07,-.60,.95],[.97,.290,.34,.32,-.20,.70],
+    [1.12,.470,.28,.27,-.17,.58],[1.27,-.120,.37,.23,.20,.38],
+    [1.39,-.470,.45,.50,.15,.16],[1.49,-.110,.37,.15,-.60,.95],
+    [1.62,.330,.29,.30,-.18,.68],[1.82,.430,.26,.28,-.18,.58],
+    [2.12,.470,.28,.27,-.17,.58],
+  ];
+  function sampleKip(phase) {
+    let i=0; while(i<KIP.length-2 && phase>KIP[i+1][0])i++;
+    const a=KIP[i],b=KIP[i+1],p=KIP[Math.max(0,i-1)],n=KIP[Math.min(KIP.length-1,i+2)];
+    const span=b[0]-a[0],t=clamp((phase-a[0])/span,0,1),t2=t*t,t3=t2*t;
+    return a.slice(1).map(function(v,j){const k=j+1,m0=i===0?0:(b[k]-p[k])/(b[0]-p[0]),m1=i===KIP.length-2?0:(n[k]-a[k])/(n[0]-a[0]);
+      return (2*t3-3*t2+1)*v+(t3-2*t2+t)*span*m0+(-2*t3+3*t2)*b[k]+(t3-t2)*span*m1;});
+  }
+  function chargeFrame(mask,t,time,y,descending) {
+    const w=weight01(mask),st=sampleRelease(mask,t,y);
+    const phase=st.phase<=1.12?st.phase:1.12+(st.phase-1.12)%1;
+    let sy,sz,theta,hipFlex,kneeFlex;
+    if(descending){
+      const active=Math.max(0,t-params(mask).preload),lean=smooth(active/.8);
+      sy=mix(-.675,-.61,lean);sz=.17+.11*lean+.035*Math.sin(active*2.4)*lean;
+      theta=.05+.10*lean;hipFlex=-.12*lean;kneeFlex=.07+.32*lean;
+    }else{
+      [sy,sz,theta,hipFlex,kneeFlex]=sampleKip(phase);
+      const amplitude=mix(1,.84,w)*(.65+.35*st.charge),fade=1-smooth((phase-.6)/.2);
+      const angle=Math.atan2(sz,-sy),radius=Math.hypot(sy,sz),scaled=mix(angle,.247+(angle-.247)*amplitude,fade);
+      sy=-Math.cos(scaled)*radius;sz=Math.sin(scaled)*radius;theta*=mix(1,amplitude,fade);
+    }
+    const length=Math.hypot(sy,sz);if(length>.697){sy*=.697/length;sz*=.697/length;}
+    return {sy:sy,sz:sz,theta:theta,hipFlex:hipFlex,kneeFlex:kneeFlex,phase:phase};
+  }
+  function launchBodyFor(s) {
+    const h=HOLDS[s.holdIndex],p=chargeFrame(s.mask,s.holdT,s.time,h.y,s.descending);
+    return {hipY:h.y+.035+p.sy-Math.cos(p.theta)*BODY.torso,
+      hipZ:h.z+.035+p.sz+Math.sin(p.theta)*BODY.torso,
+      theta:p.theta,hipFlex:p.hipFlex,kneeFlex:p.kneeFlex};
+  }
+  // Reaching is a continuous physical pose, not a yes/no predicted catch.
+  // A trajectory can just miss a grip after brushing the rock. Its body must
+  // release that reach smoothly instead of losing a large hip correction in
+  // one tick. Blend nearby grips; a closest-target switch cannot move the root.
+  function forecastBodyContact(s) {
+    const origin=HOLDS[s.origin],t=Math.max(0,s.flightT||0),speed=Math.abs(s.vy||0);
+    const band=clamp(speed*.20,.85,3.0),age=smooth(t/.08);
+    let sum=0,none=1,anchorY=0,anchorZ=0,best=null,bestWeight=0,exact=null;
+    for(const h of HOLDS){
+      const d=Math.hypot(s.y-h.y,s.z-h.z);
+      const radius=catchRadius(h,true,!!s.descending);
+      if(d>=radius+band)continue;
+      // A far sideways miss must not drag the whole body toward every lip it
+      // passes. Within the real grab radius this factor is exactly one.
+      let eligible=1-smooth((Math.abs(s.z-h.z)-radius)/.6);
+      if(h.i===s.origin)eligible*=smooth((t-.16)/.18);
+      if(h.i===s.origin||(origin&&h.y<origin.y-.25))eligible*=1-smooth(((s.vy||0)-.6)/3);
+      const near=(1-smooth((d-radius)/band))*eligible*age,weight=near*near;
+      if(weight<=1e-8)continue;
+      none*=1-weight;
+      // Odds weighting is continuous between neighbouring lips, and makes a
+      // reachable grip dominate completely at contact instead of averaging it
+      // with the next rock and shifting the body at the actual catch.
+      if(weight>1-1e-8)exact={x:0,y:h.y+.035,z:h.z+.035};
+      const odds=weight/Math.max(1e-8,1-weight);
+      sum+=odds;anchorY+=(h.y+.035)*odds;anchorZ+=(h.z+.035)*odds;
+      if(weight>bestWeight){bestWeight=weight;best={hold:h,index:h.i,eta:Math.max(0,d-radius)/Math.max(1,speed)};}
+    }
+    if(!best)return null;
+    return {...best,weight:1-none,grip:exact||{x:0,y:anchorY/sum,z:anchorZ/sum},before:{y:s.y,z:s.z}};
+  }
+  const solvedBodies = new WeakMap();
+  function bodyFrame(s) {
+    const cached = solvedBodies.get(s);
+    if (cached && cached.time === s.time && cached.flightT === s.flightT && cached.y === s.y && cached.z === s.z && cached.vy === s.vy && cached.vz === s.vz) return cached.frame;
+    return freeBodyFrame(s);
+  }
+  function freeBodyFrame(s) {
+    const t=Math.max(0,s.flightT||0),start=s.launchBody,down=!!s.downLaunch;
+    const extend=smooth(t/(down?.40:.38)),fade=1-smooth(t/(down?.40:.38));
+    const ascending=smooth(clamp((s.vy+1)/2,0,1));
+    const pitch=mix(.12,clamp((s.vz||0)*.022,-.12,.26),ascending);
+    let theta=start?mix(start.theta,pitch,extend):pitch;
+    const dy=start?start.hipY-s.launchY:-.96,dz=start?start.hipZ-s.launchZ:.34;
+    const targetY=down?-.96:-.43-Math.cos(theta)*BODY.torso+.60*clamp((s.vy||0)/5,-1,1);
+    let hip={x:0,y:s.y+mix(targetY,dy,fade),z:s.z+mix(.33+Math.sin(theta)*BODY.torso,dz,fade)};
+    let hipFlex=start?mix(start.hipFlex,.07,extend):.07;
+    let kneeFlex=start?mix(start.kneeFlex,mix(.42,.22,ascending),extend):mix(.42,.22,ascending);
+    let contact=null;
+    const predicted=forecastBodyContact(s);
+    if(predicted){
+      const weight=predicted.weight,sy=-.43,grip=predicted.grip;
+      const catchY=grip.y+sy-Math.cos(.20)*BODY.torso;
+      const catchZ=grip.z+.33+Math.sin(.20)*BODY.torso;
+      // A missed lip may be metres behind a fast-falling body. Bound the
+      // preparatory trunk correction smoothly; arms can reach, but the body
+      // must not stop in mid-air then whip back to its ballistic trajectory.
+      const reachY=catchY-hip.y,reachZ=catchZ-hip.z;
+      const reachScale=1/Math.sqrt(1+(reachY*reachY+reachZ*reachZ)/1.44);
+      hip.y+=reachY*reachScale*weight;hip.z+=reachZ*reachScale*weight;
+      theta=mix(theta,.20,weight);hipFlex=mix(hipFlex,0,weight);kneeFlex=mix(kneeFlex,.65,weight);
+      contact={...predicted,weight:weight,sy:sy,grip:grip};
+    }
+    return {hip:hip,theta:theta,hipFlex:hipFlex,kneeFlex:kneeFlex,contact:contact};
+  }
+  function flightArms(s, frame) {
+    const r=frame||bodyFrame(s),p=r.hip,up={y:Math.cos(r.theta),z:-Math.sin(r.theta)},back={y:Math.sin(r.theta),z:Math.cos(r.theta)},out={};
+    const start=s.launchBody,origin=HOLDS[s.origin],extend=smooth((s.flightT||0)/.32);
+    for(const side of ['L','R']){
+      const sign=side==='L'?-1:1,sh={x:sign*.17,y:p.y+up.y*BODY.torso,z:p.z+up.z*BODY.torso};
+      const ty=up.y*.43-back.y*.33,tz=up.z*.43-back.z*.33;
+      let hand={x:sh.x+sign*.025,y:sh.y+ty,z:sh.z+tz};
+      if(start&&origin){
+        const fy=origin.y+.035-(start.hipY+Math.cos(start.theta)*BODY.torso),fz=origin.z+.035-(start.hipZ-Math.sin(start.theta)*BODY.torso);
+        if(s.downLaunch){hand={x:sh.x,y:sh.y+fy,z:sh.z+fz};}
+        else{
+          const a0=Math.atan2(fy,-fz);let a1=Math.atan2(ty,-tz);
+          while(a1-a0>Math.PI)a1-=Math.PI*2;while(a1-a0<-Math.PI)a1+=Math.PI*2;
+          const angle=mix(a0,a1,extend),radius=mix(Math.hypot(fy,fz),Math.hypot(ty,tz),extend);
+          hand={x:sh.x+sign*.025*extend,y:sh.y+Math.sin(angle)*radius,z:sh.z-Math.cos(angle)*radius};
+        }
+      }
+      if(r.contact){
+        const w=r.contact.weight;
+        hand.x=mix(hand.x,sh.x,w);hand.y=mix(hand.y,sh.y-r.contact.sy,w);hand.z=mix(hand.z,sh.z-.33,w);
+      }
+      let dx=hand.x-sh.x,dy=hand.y-sh.y,dz=hand.z-sh.z,len=Math.hypot(dx,dy,dz);
+      if(len>.697){dx*=.697/len;dy*=.697/len;dz*=.697/len;len=.697;hand={x:sh.x+dx,y:sh.y+dy,z:sh.z+dz};}
+      const d=Math.max(.020001,len),ax=dx/d,ay=dy/d,az=dz/d,along=(BODY.upperArm**2-BODY.forearm**2+d*d)/(2*d),lift=Math.sqrt(Math.max(0,BODY.upperArm**2-along*along));
+      const dot=sign*.55*ax+.42*az;let px=sign*.55-ax*dot,py=-ay*dot,pz=.42-az*dot,pl=Math.hypot(px,py,pz)||1;
+      const elbow={x:sh.x+ax*along+px/pl*lift,y:sh.y+ay*along+py/pl*lift,z:sh.z+az*along+pz/pl*lift};
+      out['sh'+side]=sh;out['elbow'+side]=elbow;out['hand'+side]=hand;
+    }
+    return out;
+  }
+  function bodyCapsules(s,frame) {
+    const r=frame||bodyFrame(s),p=r.hip,up={y:Math.cos(r.theta),z:-Math.sin(r.theta)},back={y:Math.sin(r.theta),z:Math.cos(r.theta)};
+    const point=(x,y,z)=>({x:x,y:p.y+up.y*y+back.y*z,z:p.z+up.z*y+back.z*z});
+    const shoulder=point(0,BODY.torso,0),head=point(0,BODY.torso+.23,-.02),parts=[];
+    const add=(a,b,radius,kind)=>parts.push({a:a,b:b,r:radius,kind:kind});
+    add(point(0,0,0),shoulder,.15,'torso');add(point(0,.75,-.02),point(0,.78,-.02),.145,'head');
+    add(point(0,.205,.207),point(0,.425,.207),mix(.16,.195,weight01(s.mask)),'pack');
+    const arms=flightArms(s,r);
+    for(const sign of [-1,1]){
+      const pelvis=point(sign*.105,0,0),a=r.theta+r.hipFlex+(sign>0?-.035:0),b=a+Math.max(.04,r.kneeFlex);
+      const knee={x:pelvis.x,y:pelvis.y-Math.cos(a)*BODY.thigh,z:pelvis.z+Math.sin(a)*BODY.thigh};
+      const foot={x:pelvis.x,y:knee.y-Math.cos(b)*BODY.shin,z:knee.z+Math.sin(b)*BODY.shin};
+      add(pelvis,knee,.120,'thigh');add(knee,foot,.091,'shin');
+      const boot=(z)=>({x:foot.x,y:foot.y-Math.cos(b)*.035+Math.sin(b)*z,z:foot.z+Math.sin(b)*.035+Math.cos(b)*z});
+      add(boot(-.13),boot(.035),.085,'boot');
+      const side=sign<0?'L':'R',sh=arms['sh'+side],elbow=arms['elbow'+side],hand=arms['hand'+side];
+      add(sh,elbow,.094,'upperArm');
+      const cuff={x:mix(elbow.x,hand.x,.86),y:mix(elbow.y,hand.y,.86),z:mix(elbow.z,hand.z,.86)};
+      add(elbow,cuff,.080,'forearm');
+    }
+    return parts;
+  }
   function resolveBody(s) {
-    const ys = [0, 0.38, -0.46];
-    let push = 0;
-    let overhang = false;
-    const faceHip = faceZ(s.y);
-    for (let i = 0; i < ys.length; i++) {
-      const y = s.y + ys[i];
-      const limit = faceZ(y) + BODY_R;
-      if (s.z < limit) {
-        const pen = limit - s.z;
-        if (pen > push) push = pen;
-        if (ys[i] > 0.2 && faceZ(y) > faceHip + 0.1 && s.vy > 0.8) overhang = true;
+    if (s.attached) return false;
+    // Articulate once, then translate the whole volume. Re-forecasting a catch
+    // during projection would pull the wrists back into the same rock.
+    const world = solidWorld(), frame = freeBodyFrame(s), parts = bodyCapsules(s, frame);
+    let push = 0, contactY = s.y;
+    for (const part of parts) {
+      const n = Math.max(1, Math.ceil(Math.hypot(part.b.y-part.a.y,part.b.z-part.a.z)/.075));
+      for (let i = 0; i <= n; i++) {
+        const t = i/n, y = mix(part.a.y,part.b.y,t), z = mix(part.a.z,part.b.z,t);
+        // A 6mm skin covers the curved intervals between section samples.
+        for (const off of [-.94,-.70,0,.70,.94]) {
+          const cy = y + off*part.r, depth = world.envelopeZ(cy) + part.r*Math.sqrt(1-off*off) + .006 - z;
+          if (depth > push) { push = depth; contactY = cy; }
+        }
       }
     }
-    if (push <= 0) return false;
-    s.z += push;
-    if (s.vz < 0) s.vz = 0;
-    if (overhang) {
-      s.vy = Math.min(0, s.vy);
-      s.shake = Math.max(s.shake, 0.12);
+    if (push > 0) {
+      s.z += push+.002; frame.hip.z += push+.002;
+      // This is an actively driven climbing pose. Projection constrains the
+      // actual displacement, while vz/vy retain the intended launch effort.
+      // A sleeve grazing the departure lip must not erase inward drive for the
+      // rest of the jump once the body has cleared that lip.
+      s.shake=Math.max(s.shake||0,Math.min(.22,push*.4));
     }
-    return true;
+    solvedBodies.set(s, { frame: frame, time: s.time, flightT: s.flightT, y:s.y, z:s.z, vy:s.vy, vz:s.vz });
+    return push > 0;
   }
 
-  function sampleRelease(mask, t) {
+  function sampleRelease(mask, t, y) {
     const p = params(mask);
-    const charge = clamp(p.chargeRate * t, 0, 1);
+    const active = Math.max(0, t - p.preload);
+    const charge = clamp(p.chargeRate * active, 0, 1);
     const A = p.amp * smooth(charge);
-    const angle = Math.sin(p.omega * t) * A;
+    const angle = Math.sin(p.omega * active) * A;
     const aim = clamp(angle * p.aimScale, -1.25, 1.25);
-    const speed = p.maxSpeed * (0.34 + 0.66 * smooth(charge));
+    // Drive peaks as the body comes over the grip. A mistimed release loses
+    // useful lift; later exposed sections require a more precise turnover.
+    const strokeWidth = [1.65, 1.40, 1.18, .90, .78][stageAt(y == null ? HOLDS[0].y : y)];
+    const efficiency = .34 + .66 * Math.exp(-Math.pow(Math.sin(p.omega * active) / strokeWidth, 2));
+    const speed = p.maxSpeed * (0.34 + 0.66 * smooth(charge)) * efficiency;
     return {
       charge: charge,
       angle: angle,
@@ -322,6 +505,7 @@
       vz: Math.sin(aim) * speed,
       offY: -Math.cos(angle) * L,
       offZ: Math.sin(angle) * L,
+      phase: p.omega * active / Math.PI,
     };
   }
 
@@ -345,8 +529,8 @@
 
   function catchRadius(target, holding, descending) {
     let reach = holding ? CATCH_HOLD : CATCH;
-    if (descending) reach *= 1.12;
-    else if (target && target.k === "ice") reach *= 0.92;
+    if (descending) reach *= .94;
+    else if (target) reach *= [1, .91, .80, .70, .60][stageAt(target.y - .02)];
     if (target && isRest(target.k)) reach += 0.16;
     if (target && target.k === "summit") reach += 0.28;
     return reach;
@@ -372,6 +556,9 @@
       angle: 0,
       flightT: 0,
       downLaunch: false,
+      launchBody: null,
+      launchY: h.y - L,
+      launchZ: h.z,
       origin: 0,
       prevHolding: false,
       holding: false,
@@ -407,11 +594,12 @@
       flashBest: 0,
       resetFade: 0,
       restSeen: 0,
-      stormVis: 1,
+      stormVis: weatherAt(h.y, false).intensity,
       lost: [],
       reclaimed: 0,
       crown: false,
       descending: false,
+      returning: false,
       lock: 0,
       needUp: false,
       slip: 0,
@@ -429,7 +617,7 @@
   }
 
   function swung(mask, holdT, time, y) {
-    const st = sampleRelease(mask, holdT);
+    const st = sampleRelease(mask, holdT, y);
     const bias = wind(time, y, mask) * 0.04;
     st.angle += bias;
     const p = params(mask);
@@ -441,64 +629,89 @@
     return st;
   }
 
-  // Shared by the trajectory guide and live physics. The upward launch remains
-  // untouched. After the apex the climber turns back into the wall; contact
-  // dissipates the fall, without teleporting to a hold or awarding a catch.
+  // Live motion and the optional guide use the same volume-aware integrator.
   function integrateFlight(s, dt) {
-    s.vz += wind(s.time, s.y, s.mask, !!s.descending) * dt;
-    s.vy -= grav(s.mask) * dt;
-    const speed = Math.hypot(s.vz, s.vy) + 1e-4;
-    s.vz -= s.vz * DRAG * dt;
-    s.vy -= s.vy * DRAG * dt;
-    const origin = HOLDS[s.origin];
-    const missedDown = !s.downLaunch || !origin || s.y < origin.y - 5.2;
-    if (s.vy < 0 && missedDown) {
-      const contact = faceZ(s.y) + BODY_R + 0.12;
-      const exposure = clamp(((origin ? origin.y : s.y) - 40) / Math.max(40, SUMMIT_Y - 40), 0, 1);
-      const recovery = mix(8, 7.2, exposure);
-      // There is a finite amount of control in open air. Far outside the
-      // wall, an extreme miss can still outlast the available height.
-      const maxPull = mix(48, 36, exposure);
-      s.vz += (clamp((contact - s.z) * recovery, -maxPull, maxPull) - s.vz * 5) * dt;
-      // Friction starts at contact, not out in open air. A late recovery can
-      // still lose several ledges before there is a hold within arm's reach.
-      if (s.z <= contact + 0.5) s.vy = Math.max(s.vy, -14.5);
+    const speed = Math.hypot(s.vz, s.vy);
+    const count = Math.max(1, Math.ceil(speed * dt / .075));
+    const sub = dt / count;
+    for (let i = 0; i < count; i++) {
+      s.vz += wind(s.time, s.y, s.mask, !!(s.returning || s.descending)) * sub;
+      s.vy -= grav(s.mask) * sub;
+      s.vz *= Math.max(0, 1 - DRAG * sub);
+      s.vy *= Math.max(0, 1 - DRAG * sub);
+      const origin = HOLDS[s.origin];
+      const missedDown = !s.downLaunch || !origin || s.y < origin.y - 5.2;
+      if (s.vy < 0 && missedDown) {
+        const contact = faceZ(s.y) + BODY_R + .12;
+        const exposure = clamp(((origin ? origin.y : s.y) - 40) / Math.max(40, SUMMIT_Y - 40), 0, 1);
+        s.vz += (clamp((contact - s.z) * mix(8, 7.2, exposure), -48, 48) - s.vz * 5) * sub;
+        if (s.z <= contact + .5) s.vy = Math.max(s.vy, -14.5);
+      }
+      s.z += s.vz * sub;
+      s.y += s.vy * sub;
+      resolveBody(s);
     }
-    s.z += s.vz * dt;
-    s.y += s.vy * dt;
-    resolveBody(s);
     return speed;
   }
 
+  function sampleDown(mask, t, hold, time) {
+    const p = params(mask), active = Math.max(0, t - p.preload);
+    const charge = clamp(active * .9, 0, 1), phase = active * 2.4;
+    const offY = -.62 - .12 * smooth(charge), offZ = .16 + .12 * Math.sin(phase);
+    const vy = -(1.4 + 3.2 * smooth(charge));
+    const target = lowerHold(hold);
+    const gap = target ? Math.max(.2, hold.y + offY - target.y) : 4;
+    const g = grav(mask), flight = (vy + Math.sqrt(vy * vy + 2 * g * gap)) / g;
+    const aim = .70 * Math.sin(phase - 1.3);
+    const vz = target ? (target.z - hold.z - offZ + aim) / Math.max(.18, flight) : 0;
+    return { charge: charge, angle: .10 + .10 * Math.sin(phase), aim: aim,
+      speed: Math.hypot(vy, vz), vy: vy, vz: vz, offY: offY, offZ: offZ, phase: phase / Math.PI };
+  }
+  function releaseSample(s, t) {
+    const h = HOLDS[s.holdIndex];
+    t = t == null ? s.holdT : t;
+    return s.descending ? sampleDown(s.mask, t, h, s.time) : swung(s.mask, t, s.time, h.y);
+  }
   function arcMin(mask, holdT, hold, target, time, downOk, returning) {
-    const st = swung(mask, holdT, time, hold.y);
-    let y = hold.y + st.offY;
-    let z = hold.z + st.offZ;
-    let vy = st.vy;
-    let vz = st.vz;
-    if (downOk && downBeat(mask, holdT)) {
-      const shot = downShot(st, hold);
-      vy = shot.vy;
-      vz = shot.vz;
-    }
+    const ghost = { mask: mask, holdT: holdT, holdIndex: hold.i, origin: hold.i,
+      time: time, descending: !!downOk, returning: !!returning, attached: false,
+      downLaunch: !!downOk, flightT: 0, holding: false, shake: 0 };
+    const st = releaseSample(ghost);
+    ghost.launchBody = launchBodyFor(ghost);
+    ghost.y = ghost.launchY = hold.y + st.offY;
+    ghost.z = ghost.launchZ = hold.z + st.offZ;
+    ghost.vy = st.vy; ghost.vz = st.vz;
     let minD = 1e9;
-    const dots = [];
-    const ghost = { y: y, z: z, vy: vy, vz: vz, mask: mask,
-      descending: !!returning, downLaunch: !!(downOk && downBeat(mask, holdT)),
-      origin: hold.i, time: time, shake: 0 };
-    for (let i = 0; i < 80; i++) {
-      const dt = 1 / 70;
-      ghost.time = time + (i + 1) * dt;
+    const dots = [], dt = 1 / 120;
+    for (let i = 0; i < 168; i++) {
+      ghost.time += dt; ghost.flightT += dt;
+      const oldY = ghost.y, oldZ = ghost.z;
       integrateFlight(ghost, dt);
-      y = ghost.y; z = ghost.z; vy = ghost.vy; vz = ghost.vz;
-      if (i % 6 === 0) dots.push({ y: y, z: z });
+      if (i % 12 === 0) dots.push({ y: ghost.y, z: ghost.z });
       if (target) {
-        const d = Math.hypot(z - target.z, y - target.y);
-        if (d < minD) minD = d;
+        const dy = ghost.y - oldY, dz = ghost.z - oldZ;
+        const f = clamp(((target.y-oldY)*dy+(target.z-oldZ)*dz)/(dy*dy+dz*dz||1),0,1);
+        minD = Math.min(minD, Math.hypot(oldY+f*dy-target.y,oldZ+f*dz-target.z));
       }
-      if (vy < 0 && y < hold.y - 18) break;
+      if (ghost.vy < 0 && ghost.y < (target ? target.y : hold.y) - 1.5) break;
     }
     return { minD: minD, dots: dots, st: st };
+  }
+  const guideTimes = new WeakMap();
+  function updateGuide(s) {
+    if (s.mode !== "play" || !s.attached || !s.holding || s.holdT <= .12 || s.crown) {
+      s.armed = false; s.dots = []; s.aimD = 99; guideTimes.delete(s); return false;
+    }
+    const previous = guideTimes.get(s);
+    if (previous != null && s.time >= previous && s.time - previous < .05) return false;
+    guideTimes.set(s, s.time);
+    const h = HOLDS[s.holdIndex], target = s.descending ? lowerHold(h) : HOLDS[nextIndex(s.holdIndex)];
+    if (!target) return false;
+    const hit = arcMin(s.mask, s.holdT, h, target, s.time, s.descending, s.returning);
+    const was = s.armed;
+    s.dots = hit.dots; s.aimD = hit.minD;
+    s.armed = hit.minD < catchRadius(target, false, s.descending);
+    return s.armed && !was;
   }
 
   function beginEnding(s) {
@@ -528,6 +741,8 @@
     s.holdIndex = index;
     s.holdT = 0;
     s.settle = 0.15;
+    s.needUp = true;
+    s.lock = .08;
     s.vy = 0;
     s.vz = 0;
     s.flightT = 0;
@@ -545,7 +760,7 @@
       s.descending = false;
       s.mode = "play";
       s.lock = 0.35;
-    } else if (isRest(h.k) && hasItems(s.mask) && (s.restSeen & (1 << index)) === 0) {
+    } else if (!s.descending && isRest(h.k) && hasItems(s.mask) && (s.restSeen & (1 << index)) === 0) {
       s.crown = false;
       beginLedge(s);
     } else {
@@ -554,19 +769,6 @@
     }
     tryPickup(s);
     if (s.y > s.bestRun) s.bestRun = s.y;
-  }
-
-  function wantsDown(mask, holdT) {
-    const p = params(mask);
-    const peak = Math.PI / (2 * p.omega);
-    // Upward full-charge releases land first, around one second.
-    // Only after that window does the line turn down toward the hold below.
-    return holdT > Math.max(1.28, peak + 0.7);
-  }
-
-  function downBeat(mask, holdT) {
-    // The line has turned down, and it only stays on the hold for a short beat.
-    return wantsDown(mask, holdT) && holdT < 1.62;
   }
 
   function lowerHold(hold) {
@@ -581,39 +783,18 @@
     return best;
   }
 
-  function downShot(st, hold) {
-    const speed = Math.min(6.4, Math.abs(st.vy) * 0.16 + 4.4);
-    const target = lowerHold(hold);
-    if (!target) return { vy: -speed, vz: 0 };
-    const dz = target.z - (hold.z + st.offZ);
-    return { vy: -speed * 0.88, vz: clamp(dz * 2.2, -3.1, 3.1) };
-  }
-
   function launch(s) {
-    const h = HOLDS[s.holdIndex];
-    const st = swung(s.mask, s.holdT, s.time, h.y);
+    const h = HOLDS[s.holdIndex], st = releaseSample(s);
+    s.launchBody = launchBodyFor(s);
     s.attached = false;
-    s.y = h.y + st.offY;
-    s.z = h.z + st.offZ;
-    s.vy = st.vy;
-    s.vz = st.vz;
-    s.angle = st.angle;
-    const goingBack = downBeat(s.mask, s.holdT);
-    s.downLaunch = (s.crown || s.descending) && goingBack;
-    if ((s.crown || s.descending) && goingBack) {
-      const shot = downShot(st, h);
-      s.vy = shot.vy;
-      s.vz = shot.vz;
-      s.descending = true;
-      s.crown = false;
-    }
-    s.flightT = 0;
-    s.origin = s.holdIndex;
-    s.nearDone = false;
-    s.launches += 1;
-    s.holdT = 0;
-    s.mode = "play";
-    s.slip = 0;
+    s.y = s.launchY = h.y + st.offY;
+    s.z = s.launchZ = h.z + st.offZ;
+    s.vy = st.vy; s.vz = st.vz; s.angle = st.angle;
+    s.downLaunch = !!s.descending;
+    s.crown = false;
+    s.flightT = 0; s.origin = s.holdIndex; s.nearDone = false;
+    s.launches += 1; s.holdT = 0; s.mode = "play"; s.slip = 0;
+    resolveBody(s);
     s.sfx.push("release");
   }
 
@@ -645,6 +826,10 @@
       s.revealT = 0;
       s.sfx.push("pickup");
     }
+    if (s.descending && s.returning && s.lost.length === 0) {
+      s.descending = false; s.needUp = true; s.holdT = 0;
+      s.prevHolding = false; s.holding = false; s.lock = .2;
+    }
   }
 
   function dropItem(s, kind) {
@@ -669,6 +854,8 @@
     s.attached = true;
     s.holdT = 0;
     s.settle = 1;
+    s.prevHolding = false;
+    s.holding = false;
     s.pressT = 0;
     s.lock = 0.2;
     s.needUp = true;
@@ -694,6 +881,10 @@
     s.flightT = 0;
     s.origin = 0;
     s.downLaunch = false;
+    s.launchBody = null;
+    s.launchY = h.y - L;
+    s.launchZ = h.z;
+    s.returning = false;
     s.mode = "play";
     s.pressT = 0;
     s.nearDone = false;
@@ -718,7 +909,7 @@
       s.learned = 0;
       s.failedOnce = false;
       s.bestRun = h.y;
-      s.stormVis = 1;
+      s.stormVis = weatherAt(h.y, false).intensity;
     }
     placeOnRope(s, h, 0, L);
     s.resetFade = 1;
@@ -745,8 +936,8 @@
     let holding = !!input.holding;
     let released = s.prevHolding && !holding;
     s.time += dt;
-    let stormTarget = stormOf(s.mask);
-    if (s.descending) stormTarget = Math.max(stormTarget, 0.92);
+    const stormTarget = stormOf(s.mask, s.attached ? HOLDS[s.holdIndex].y : s.y, s.returning || s.descending);
+    if (s.attached) s.settle = Math.min(1, s.settle + dt / params(s.mask).settleDuration);
     if (s.stormVis == null) s.stormVis = stormTarget;
     s.stormVis += (stormTarget - s.stormVis) * (1 - Math.exp(-dt * 1.8));
     s.burst = Math.max(0, s.burst - dt * 1.8);
@@ -804,19 +995,21 @@
         const h = HOLDS[HOLDS.length - 1];
         s.mode = "play";
         s.endingT = 0;
-        s.crown = true;
-        s.descending = false;
+        s.crown = false;
+        s.descending = true;
+        s.returning = true;
+        s.needUp = true;
         s.attached = true;
         s.holdIndex = h.i;
         s.origin = h.i;
         s.holdT = 0;
-        s.settle = 1;
+        s.settle = .15;
         s.vy = 0;
         s.vz = 0;
         s.angle = 0;
-        s.y = h.y + 0.22;
-        s.z = Math.max(h.z, faceZ(h.y) + BODY_R + 0.08);
-        s.lock = 0.3;
+        s.y = h.y - L;
+        s.z = h.z;
+        s.lock = .86;
         s.sfx.push("keep");
         s.prevHolding = false;
         s.holding = false;
@@ -840,7 +1033,8 @@
       s.dropZ += Math.sin(s.time * 2.2) * dt * 0.25;
       if (s.dropT > 2.05) {
         s.dropT = -1;
-        s.mode = "play";
+        keepItem(s);
+        holding = false;
       }
       s.prevHolding = holding;
       s.holding = holding;
@@ -848,19 +1042,13 @@
     }
 
     if (s.mode === "ledge") {
-      if (!s.seenRelease) {
-        if (!holding) s.seenRelease = true;
-      } else if (input.dropKind) {
-        dropItem(s, input.dropKind);
-      } else if (input.keep || (released && s.pressT > 0.02 && s.pressT < 0.42)) {
-        keepItem(s);
-      } else if (holding) {
-        s.pressT += dt;
-      } else {
-        s.pressT = 0;
-      }
+      // Explicit menu choices must work even while another input is held.
+      // Releasing the catch gesture alone never chooses what to leave behind.
+      if (input.dropKind) dropItem(s, input.dropKind);
+      else if (input.keep) keepItem(s);
+      else if (!holding) s.seenRelease = true;
       const h = HOLDS[s.holdIndex];
-      s.y = h.y + 0.22;
+      s.y = h.y - mix(.42, L, s.settle);
       s.z = h.z;
       s.angle = 0;
       s.prevHolding = holding;
@@ -875,100 +1063,39 @@
       s.holding = false;
       return s;
     }
+    const locked = s.lock > 0;
+    s.lock = Math.max(0, s.lock - dt);
     if (s.needUp) {
       if (!input.holding) s.needUp = false;
       holding = false;
       released = false;
-    } else if (s.lock > 0) {
-      s.lock = Math.max(0, s.lock - dt);
+    } else if (locked) {
       holding = false;
       released = false;
     }
+    s.holding = holding;
     if (s.attached) {
-      const h = HOLDS[s.holdIndex];
-      const heavy = weight01(s.mask);
-      s.settle = Math.min(1, s.settle + dt / (0.2 + heavy * 0.15));
-      const rope = mix(0.42, L, s.settle);
+      const h = HOLDS[s.holdIndex], heavy = weight01(s.mask);
+      const rope = mix(.42, L, s.settle);
       tryPickup(s);
-      if (s.descending && !holding && s.settle > 0.88) {
-        s.slip += dt;
-        const ice = mix(2.4, 1.25, heavy);
-        if (s.slip > ice) {
-          s.attached = false;
-          s.crown = false;
-          s.vy = -3.2 - heavy * 2.2;
-          s.vz = 0.35;
-          s.slip = 0;
-          s.flightT = 0.2;
-          s.sfx.push("slip");
-        }
-      } else s.slip = 0;
-      if (s.crown && !holding && s.holdT === 0 && s.attached) {
-        s.y = h.y + 0.22;
-        s.z = Math.max(h.z, faceZ(h.y) + BODY_R + 0.08);
-        s.angle = Math.sin(s.time * 1.1) * 0.02;
-        s.armed = false;
-        s.dots = [];
-      } else if (holding && s.settle > 0.9 && s.attached) {
-        s.holdT += dt;
-        if (s.descending && s.holdT > 7.2) {
-          s.attached = false;
-          s.crown = false;
-          s.vy = -2.4 - heavy * 2.4;
-          s.vz = 0.25;
+      if (s.crown && !s.descending) {
+        if (holding && s.settle > .9) s.holdT += dt;
+        else {
+          if (released && s.holdT > .05 && s.settle > .9) beginEnding(s);
           s.holdT = 0;
-          s.flightT = 0.16;
-          s.slip = 0;
-          s.sfx.push("slip");
-        } else {
-          const st = swung(s.mask, s.holdT, s.time, h.y);
-          s.angle = st.angle;
-          placeOnRope(s, h, st.angle, L);
-          resolveBody(s);
-          let target = null;
-          const turned = (s.crown || s.descending) && wantsDown(s.mask, s.holdT);
-          if ((s.crown || s.descending) && downBeat(s.mask, s.holdT)) {
-            target = lowerHold(h);
-          } else if (s.crown && !turned) target = GATE;
-          if (!target && !turned) {
-            const ni = nextIndex(s.holdIndex);
-            if (ni >= 0) target = HOLDS[ni];
-          }
-          if (target && s.holdT > 0.12) {
-            const downAim = (s.crown || s.descending) && downBeat(s.mask, s.holdT);
-            const hit = arcMin(s.mask, s.holdT, h, target, s.time, downAim, s.descending || downAim);
-            s.dots = hit.dots;
-            s.aimD = hit.minD;
-            const was = s.armed;
-            let need = catchRadius(target, false, downAim);
-            if (s.crown && target === GATE) need = 1.2;
-            s.armed = hit.minD < need;
-            if (s.armed && !was) s.sfx.push("arm");
-          } else {
-            s.armed = false;
-            s.dots = [];
-            s.aimD = 99;
-          }
         }
-      } else if (s.attached) {
-        const turned = (s.crown || s.descending) && wantsDown(s.mask, s.holdT);
-        const down = (s.crown || s.descending) && downBeat(s.mask, s.holdT);
-        const onTop = s.crown && h.k === "summit";
-        // On the summit a short press is the door. A release that is not
-        // aimed at the hold below never throws the climber off.
-        // Once the line has turned down, a late release stays put. It does not
-        // flip into an upward launch that would still land on the hold below.
-        if (released && down && s.armed && s.holdT > 0.16 && s.settle > 0.9) launch(s);
-        else if (released && onTop && !turned && s.holdT > 0.05 && s.holdT <= 1.28 && s.settle > 0.9) beginEnding(s);
-        else if (released && !onTop && !turned && s.holdT > 0.16 && s.settle > 0.9) launch(s);
-        s.holdT = 0;
-        s.armed = false;
-        s.dots = [];
-        if (s.attached && !s.crown) {
-          const idle = Math.sin(s.time * (1.05 + heavy * 0.7)) * params(s.mask).sway * s.settle;
-          s.angle = idle;
+        s.y = h.y + .22; s.z = h.z; s.angle = 0;
+        s.armed = false; s.dots = [];
+      } else if (holding && s.settle > .9) {
+        s.holdT += dt;
+        const st = releaseSample(s);
+        s.angle = st.angle; s.y = h.y + st.offY; s.z = h.z + st.offZ;
+      } else {
+        if (released && s.holdT > .16 && s.settle > .9) launch(s);
+        s.holdT = 0; s.armed = false; s.dots = [];
+        if (s.attached) {
+          const idle = Math.sin(s.time * (1.05 + heavy * .7)) * params(s.mask).sway * s.settle;
           placeOnRope(s, h, idle, rope);
-          resolveBody(s);
         }
       }
     } else {
@@ -1055,7 +1182,7 @@
           if (t > tune.stamina - 0.25) break;
           const rel = sampleRelease(mask, t);
           if (rel.charge < 0.98) continue;
-          if (wantsDown(mask, t)) continue;
+
           const hit = arcMin(mask, t, h, n, time, false, false);
           if (hit.minD < local) {
             local = hit.minD;
@@ -1156,7 +1283,7 @@
         if (ni < 0) break;
         const preview = arcMin(s.mask, Math.max(0.2, s.holdT + dt), HOLDS[s.holdIndex], HOLDS[ni], s.time);
         // Hold until the arc would land, then release this frame.
-        if (s.settle > 0.9 && s.holdT > 0.3 && preview.minD < CATCH) {
+        if (s.settle > 0.9 && s.holdT > 0.3 && preview.minD < catchRadius(HOLDS[ni], false, false)) {
           input.holding = false;
           // If we were not holding, step won't launch. Force a hold cycle:
           // mark previous holding via a direct launch path.
@@ -1214,26 +1341,28 @@
     let guard = 0;
     while (guard < 70000) {
       guard++;
-      if (s.mode === "ending") break;
+      if (s.mode === "ending" && gotBit(s, bit)) break;
       if (s.falls > 3) break;
       const input = { holding: false, freezeIntro: true };
       const got = (s.reclaimed & bit) !== 0;
-      if (s.mode === "ledge") {
+      if (s.mode === "ending") {
+        input.retrieve = true;
+      } else if (s.mode === "ledge") {
         if (!got && (s.mask & bit)) input.dropKind = kind;
         else input.keep = true;
       } else if (s.mode === "drop" || s.mode === "impact" || s.needUp || s.lock > 0) {
         input.holding = false;
       } else if (!s.attached) {
         input.holding = true;
-      } else if (s.crown && got) {
+      } else if (s.crown) {
         input.choice = "door";
-      } else if ((s.crown && !got) || (s.descending && !got)) {
+      } else if (s.descending && !got) {
         const here = HOLDS[s.holdIndex];
         const target = lowerHold(here);
         if (!target) break;
-        const beat = downBeat(s.mask, Math.max(0.2, s.holdT));
+        const beat = s.holdT > .2;
         const hit = arcMin(s.mask, Math.max(0.2, s.holdT), here, target, s.time, true, true);
-        const need = CATCH * 1.12;
+        const need = catchRadius(target, false, true);
         if (s.settle > 0.9 && beat && hit.minD < need) {
           s.prevHolding = true;
           s.holding = true;
@@ -1428,6 +1557,16 @@
     ORDER: ["trophy", "letter", "ring", "photo"],
     hasItems: hasItems,
     sampleRelease: sampleRelease,
+    sampleDown: sampleDown,
+    releaseSample: releaseSample,
+    stageAt: stageAt,
+    weatherAt: weatherAt,
+    chargeFrame: chargeFrame,
+    bodyFrame: bodyFrame,
+    flightArms: flightArms,
+    bodyCapsules: bodyCapsules,
+    surfaceZ: surfaceZ,
+    updateGuide: updateGuide,
     faceX: faceX,
     radii: radii,
     createState: createState,

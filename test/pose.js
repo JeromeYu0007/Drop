@@ -152,7 +152,7 @@ function actualTransitions(renderer, from, mask, stride, options = {}) {
       Pilot.tick(s, input);
       physicalTravel += Math.hypot(s.y - y, s.z - z);
     }
-    const next = withoutMutation(renderer.updatePose, s), label = `live ${120 / stride}Hz mask${mask}/from${from}/${options.slip ? "slip-" + options.slip : options.direction < 0 ? "down" : options.release || "up"} frame${count} ${previousMode}→${s.mode}${!wasAttached && s.attached ? " catch" : ""}`;
+    const next = withoutMutation(renderer.updatePose, s), label = `live ${120 / stride}Hz mask${mask}/from${from}/${options.direction < 0 ? "down" : options.release || "up"} frame${count} ${previousMode}→${s.mode}${!wasAttached && s.attached ? " catch" : ""}`;
     finitePose(next, label); lengths(next, dims, label);
     const catchFrame = !wasAttached && s.attached;
     const detachFrame = wasAttached && !s.attached;
@@ -181,18 +181,11 @@ function actualTransitions(renderer, from, mask, stride, options = {}) {
     previous = next;
     count++;
   }
-  if (options.slip) {
-    const launches = s.launches;
-    while (s.attached && s.time < 12) frame({ holding: options.slip === "held" });
-    assert.equal(s.attached, false, "return-trip slip did not trigger");
-    assert.equal(s.launches, launches, "slip regression must exercise a real slip, not a voluntary launch");
-  } else {
-    const timing = options.release ? { release: options.release } : Pilot.plan(s, options.direction || 1);
-    assert.ok(timing, "live pose path needs a reachable launch");
-    while (s.holdT + 1e-7 < timing.release) frame({ holding: true });
-    frame({ holding: false });
-    assert.equal(s.attached, false, "live pose sequence did not launch");
-  }
+  const timing = options.release ? { release: options.release } : Pilot.plan(s, options.direction || 1);
+  assert.ok(timing, "live pose path needs a reachable launch");
+  while (s.holdT + 1e-7 < timing.release) frame({ holding: true });
+  frame({ holding: false });
+  assert.equal(s.attached, false, "live pose sequence did not launch");
   for (let i = 0; i < 3600 / stride && !s.attached && s.mode === "play"; i++) frame({ holding: s.vy < 0 });
   assert.equal(caught, true, "live pose sequence never caught the next ledge");
   if (!options.release) assert.ok(options.direction < 0 ? s.holdIndex < from : s.holdIndex > from,
@@ -206,7 +199,25 @@ function actualTransitions(renderer, from, mask, stride, options = {}) {
   return count;
 }
 
-function summitDoor(renderer, stride, pressSeconds, ending = true) {
+function stableDescent(renderer, mask, holding) {
+  renderer.resetPoseHistory();
+  const from = Math.floor(FX.HOLDS.length * .75), s = Pilot.fresh(mask, from);
+  s.descending = true; s.returning = true;
+  let previous = withoutMutation(renderer.updatePose, s);
+  for (let i = 0; i < 1200; i++) {
+    Pilot.tick(s, { holding });
+    const p = withoutMutation(renderer.updatePose, s), label = `descent wait/${mask}/${holding}/${i}`;
+    finitePose(p, label); lengths(p, renderer.poseDimensions, label);
+    continuity(previous, p, .14, label);
+    assert.equal(s.attached, true, "downhill must not slip or launch without a release");
+    assert.equal(s.holdIndex, from, "waiting changed the current hold");
+    assert.equal(s.launches, 0, "holding input caused an automatic downhill launch");
+    previous = p;
+  }
+  return 1200;
+}
+
+function summitDoor(renderer, stride, pressSeconds) {
   renderer.resetPoseHistory();
   const s = Pilot.fresh(15, FX.HOLDS.length - 1);
   s.crown = true;
@@ -216,7 +227,7 @@ function summitDoor(renderer, stride, pressSeconds, ending = true) {
     const oldMode = s.mode;
     for (let i = 0; i < stride; i++) Pilot.tick(s, { holding });
     const p = withoutMutation(renderer.updatePose, s);
-    const label = `summit ${ending ? "door" : "cancel"} ${pressSeconds}s/${120 / stride}Hz ${oldMode}→${s.mode}`;
+    const label = `summit door ${pressSeconds}s/${120 / stride}Hz ${oldMode}→${s.mode}`;
     finitePose(p, label); lengths(p, renderer.poseDimensions, label);
     if (oldMode !== s.mode || previous.standing !== p.standing) {
       continuity(previous, p, Math.max(0.18, 8 * dt), label);
@@ -227,11 +238,10 @@ function summitDoor(renderer, stride, pressSeconds, ending = true) {
   }
   for (let i = 0; i < Math.round(pressSeconds / dt); i++) frame(true);
   frame(false);
-  assert.equal(s.mode, ending ? "ending" : "play", "summit action took the wrong path");
-  if (!ending) {
-    assert.equal(s.crown, true, "late release must stay on the summit");
-    assert.equal(s.attached, true, "late release must not launch");
-  }
+  assert.equal(s.mode, "ending", "summit release must open the ending choices");
+  assert.equal(s.crown, true, "summit release must remain on the summit");
+  assert.equal(s.attached, true, "summit release must not launch");
+  assert.equal(s.descending, false, "long press must not select downhill");
   for (let i = 0; i < Math.ceil(1 / dt); i++) frame(false);
   return frames;
 }
@@ -277,7 +287,11 @@ function main() {
     const releaseState = Pilot.fresh(mask, holdIndex);
     const timing = Pilot.plan(releaseState, 1);
     assert.ok(timing, `mask${mask}/hold${holdIndex}: no valid release window`);
-    while (releaseState.holdT + 1e-7 < timing.release) Pilot.tick(releaseState, { holding: true });
+    // The light pack can still reach an easy hold after the body has already
+    // descended from the turnover. Inspect the first part of the proven window
+    // for the muscle-up itself; later releases are covered by live transitions.
+    const releaseAt = Math.min(timing.b, timing.a + 2 * Pilot.DT);
+    while (releaseState.holdT + 1e-7 < releaseAt) Pilot.tick(releaseState, { holding: true });
     const before = pose(releaseState);
     const gripY = (before.handL.y + before.handR.y) / 2;
     assert.ok(before.chest.y > gripY + 0.015,
@@ -303,9 +317,9 @@ function main() {
   }
   // World altitude must translate the character, never scale body proportions.
   for (const mode of ["ledge", "drop", "ending"]) {
-    const s = Pilot.fresh(15, FX.HOLDS.length - 1);
+    const s = Pilot.fresh(15, mode === "ending" ? FX.HOLDS.length - 1 : FX.HOLDS.findIndex(h => FX.ITEMS[h.k]));
     s.mode = mode;
-    s.crown = true;
+    s.crown = mode === "ending";
     const p = pose(s);
     finitePose(p, mode); lengths(p, dims, mode);
     assert.ok(distance(p.head, p.shoulder) < 0.45, `${mode}: detached head`);
@@ -322,10 +336,7 @@ function main() {
     { from: high, mask: 0, release: 0.65 },
     { from: high, mask: 15, release: 1.58 },
     { from: Math.floor(FX.HOLDS.length / 2), mask: 0, release: 1.65 },
-    { from: high, mask: 0, direction: -1, slip: "idle" },
-    { from: high, mask: 15, direction: -1, slip: "idle" },
-    { from: high, mask: 0, direction: -1, slip: "held" },
-    { from: high, mask: 15, direction: -1, slip: "held" },
+    { from: high, mask: 0, direction: -1 },
   ];
   for (const stride of [1, 2, 4, 6]) for (const c of cases) {
     transitionSamples += actualTransitions(renderer, c.from, c.mask, stride, c);
@@ -334,8 +345,9 @@ function main() {
     transitionSamples += summitDoor(renderer, stride, press);
   }
   for (const stride of [1, 2, 4, 6]) for (const press of [1.8, 2.2]) {
-    transitionSamples += summitDoor(renderer, stride, press, false);
+    transitionSamples += summitDoor(renderer, stride, press);
   }
+  for (const mask of [0, 15]) for (const holding of [false, true]) transitionSamples += stableDescent(renderer, mask, holding);
   console.table(rows);
   console.log(`PASS pose: ${samples} skeletal samples, ${bendChecks} joint-direction checks, ${transitionSamples} live transition samples; fixed lengths, anchored hands, muscle-up, launch/catch/standing continuity`);
   return rows;

@@ -84,7 +84,6 @@
   #passage { margin: 0; font-size: clamp(16px, 2.05vh, 20px); letter-spacing: .13em; line-height: 2.1; font-weight: 400; text-wrap: pretty; }
   #endChoices { margin-top: 2em; display: flex; justify-content: center; gap: 2em; }
   #endChoices button { min-height: 44px; letter-spacing: .2em; border: 1px solid rgba(238,230,213,.24); padding: 8px 14px; font-size: 13px; opacity: 1; background: rgba(5,10,14,.76); }
-  #backHint { position: absolute; margin: 0; padding: 6px 10px; letter-spacing: .16em; font-size: 13px; color: rgba(246,235,211,.85); opacity: 0; pointer-events: none; text-shadow: 0 1px 12px #03080d; background: radial-gradient(ellipse, rgba(8,13,18,.45), transparent 73%); }
   #marks { position: absolute; left: 50%; bottom: calc(3vh + env(safe-area-inset-bottom)); transform: translateX(-50%); display: flex; gap: 7px; opacity: 0; transition: opacity .6s; }
   #marks.show { opacity: .55; }
   #marks span { width: 4px; height: 4px; display: block; box-shadow: inset 0 0 0 1px rgba(238,230,213,.45); transform: rotate(45deg); }
@@ -95,7 +94,7 @@
   #resume button:disabled { opacity: .5; cursor: default; }
   #resume p { color: var(--dim); font-size: 12px; letter-spacing: .12em; }
   body.paused #pack, body.paused #ending, body.paused #prologue { visibility: hidden; }
-  body.paused #hint, body.paused #backHint, body.paused #whisper { opacity: 0 !important; }
+  body.paused #hint, body.paused #whisper { opacity: 0 !important; }
   @media (min-width: 1000px) { #pack { left: 60%; } }
   @media (max-height: 600px) and (min-aspect-ratio: 4/5) {
     #pack { bottom: 4vh; width: min(82vw, 600px); padding: 14px 22px 9px; }
@@ -153,7 +152,6 @@
   <div id="prologue"><h1>放下</h1><span class="subtitle">LET GO</span></div>
   <p id="hint"></p>
   <p id="whisper"></p>
-  <p id="backHint">长按，可以回头</p>
   <div id="meter" aria-hidden="true"><div class="track"></div><div id="bestMark"></div><div id="nowMark"><b id="alt"></b></div></div>
   <section id="pack">
     <h2>背包</h2>
@@ -172,10 +170,11 @@
   </section>
 </div>
 <script src="vendor/three.min.js?v=c3b026a"></script>
-<script src="game.js?v=a8022f6ce372"></script>
+<script src="surface.js?v=4ddfebd43c6c"></script>
+<script src="game.js?v=cb126a8f37f5"></script>
 <script src="world.js?v=71da76665f33"></script>
-<script src="character.js?v=cb884e4245a7"></script>
-<script src="render.js?v=a98f4c6168b8"></script>
+<script src="character.js?v=97f87cf3793a"></script>
+<script src="render.js?v=94bb0c2f19ed"></script>
 <script>
 "use strict";
 const FX = window.Fangxia;
@@ -193,7 +192,6 @@ const ui = {
   prologue: document.getElementById("prologue"),
   hint: document.getElementById("hint"),
   whisper: document.getElementById("whisper"),
-  back: document.getElementById("backHint"),
   mute: document.getElementById("mute"),
   restart: document.getElementById("restart"),
   pack: document.getElementById("pack"),
@@ -233,6 +231,7 @@ for (let i = 0; i < 16; i++) {
   ui.marks.appendChild(s);
 }
 const coarse = matchMedia("(pointer: coarse)").matches;
+const reducedMotionPreference = matchMedia("(prefers-reduced-motion: reduce)");
 let quality = coarse || innerWidth < innerHeight ? 1 : 2;
 if (live) FXRender.setQuality(quality);
 let camY = 12, focusZ = 0;
@@ -240,14 +239,15 @@ const state = FX.createState();
 let holding = false;
 let wantKeep = false, wantDrop = "", wantRetrieve = false, restartPulse = false;
 let acc = 0, last = 0;
-let backT = -1, backWait = true;
+let lastDescending = false, directionHintT = 0;
 let prologueLeft = shot ? 0 : 7.2;
 let slowSeconds = 0;
-let flash = 0;
+let flash = 0, flashCooldown = 4.5;
 let activePointer = null, keyHeld = false;
 let contextLost = false, pausedNeedsRender = false;
 let paused = false, sessionClock = 0, packSignature = "", sessionActive = false;
 const SESSION_KEY = "fangxia-session-v2";
+const SESSION_SCHEMA = 3;
 const routeVersion = FX.HOLDS.map(function (h) { return [h.y, h.z, h.k].join(":"); }).join("|");
 function cancelCharge() {
   if (activePointer !== null && canvas.hasPointerCapture(activePointer)) canvas.releasePointerCapture(activePointer);
@@ -262,7 +262,7 @@ function saveSession() {
     sessionActive = sessionActive || state.launches > 0 || state.holdIndex > 0 || state.mask !== 15 || state.lost.length > 0 || state.mode !== "play";
     if (!sessionActive) { localStorage.removeItem(SESSION_KEY); return; }
     const snapshot = Object.assign({}, state, { dots: [], sfx: [], holding: false, prevHolding: false, holdT: 0, armed: false });
-    localStorage.setItem(SESSION_KEY, JSON.stringify({ route: routeVersion, state: snapshot }));
+    localStorage.setItem(SESSION_KEY, JSON.stringify({ schema: SESSION_SCHEMA, route: routeVersion, state: snapshot }));
   } catch (e) {}
 }
 function restoreSession() {
@@ -272,6 +272,17 @@ function restoreSession() {
     if (!entry || entry.route !== routeVersion || !entry.state) return false;
     const v = entry.state;
     if (!["play", "ledge", "drop", "ending", "impact"].includes(v.mode) || !Number.isInteger(v.holdIndex) || v.holdIndex < 0 || v.holdIndex >= FX.HOLDS.length || !Number.isInteger(v.origin) || v.origin < 0 || v.origin >= FX.HOLDS.length || !Number.isInteger(v.mask) || v.mask < 0 || v.mask > 15 || !Array.isArray(v.lost)) return false;
+    // Preserve interrupted runs from the previous direction/physics schema.
+    // Return weather used to share the descending flag; an empty recovery list
+    // now means climbing up again, without clearing that weather history.
+    if (entry.schema == null) {
+      if (!("returning" in v)) v.returning = !!v.descending;
+      if (v.descending && v.lost.length === 0) { v.descending = false; v.returning = true; }
+      if (!("launchBody" in v)) v.launchBody = null;
+      if (!("launchY" in v)) v.launchY = v.y;
+      if (!("launchZ" in v)) v.launchZ = v.z;
+    } else if (entry.schema !== SESSION_SCHEMA) return false;
+    if (v.launchBody !== null && (typeof v.launchBody !== "object" || Array.isArray(v.launchBody) || Object.keys(v.launchBody).length !== 5 || !["hipY", "hipZ", "theta", "hipFlex", "kneeFlex"].every(function (key) { return Number.isFinite(v.launchBody[key]); }))) return false;
     for (const key of Object.keys(state)) {
       const initial = state[key];
       if (typeof initial === "number" && !Number.isFinite(v[key])) return false;
@@ -490,26 +501,26 @@ function memoryGlyph(kind) {
 
 function syncUI(dt) {
   const dropped = state.lost && state.lost.length;
-  if (!state.crown) { backT = -1; backWait = true; }
-  else if (backWait && dropped && state.attached) { backT = 0; backWait = false; }
-  if (backT >= 0) {
-    if (holding && backT > 0.18) backT = -1;
-    else { backT += dt; if (backT > 3.4) backT = -1; }
+  if (state.descending !== lastDescending) {
+    directionHintT = state.descending ? 5.5 : state.returning && !dropped ? 4.5 : 0;
+    lastDescending = state.descending;
+    canvas.setAttribute("aria-label", state.descending ? "放下。按住空格稳住身体，松手向下。每次下放都需重新按住、松开。" : "放下。按住空格蓄力，松手向上。");
   }
-  ui.back.style.opacity = state.mode !== "ending" && backT > 0.2 && backT < 3.2 ? "0.86" : "0";
-  if (backT > 0) {
-    ui.back.style.left = "16%";
-    ui.back.style.top = (innerHeight * 0.4) + "px";
-    ui.back.style.transform = "none";
-  }
+  directionHintT = Math.max(0, directionHintT - dt);
   if (!shot && prologueLeft > 0) {
     prologueLeft -= dt;
     ui.prologue.classList.add("show");
     if (holding) prologueLeft = Math.min(prologueLeft, 0.4);
   } else ui.prologue.classList.remove("show");
-  ui.hint.style.opacity = state.catches < 2 && state.mode === "play" && !paused ? "0.8" : "0";
-  ui.hint.textContent = state.attached ? (holding ? "感受摆动\n弧线接近岩点时松开" : "按住蓄力，松手跃起\n让弧线接近下一处岩点") : "下坠时按住，伸手抓住岩点";
-  const showPack = state.mode === "ledge";
+  const resetDownGrip = state.descending && state.attached && state.needUp && holding;
+  const showHint = state.mode === "play" && !paused && (state.catches < 2 || directionHintT > 0 || resetDownGrip || state.crown && !state.descending);
+  ui.hint.style.opacity = showHint ? "0.8" : "0";
+  if (resetDownGrip) ui.hint.textContent = "已经抓稳，先松手\n再次按住、松开才会继续下放";
+  else if (state.descending) ui.hint.textContent = state.attached ? "按住稳住身体，松手向下\n让弧线接近下方岩点" : "下坠时按住，伸手抓住岩点";
+  else if (state.crown) ui.hint.textContent = "按住，再松手\n走进门里的光";
+  else if (directionHintT > 0 && state.returning && !dropped) ui.hint.textContent = "已经捡回，继续向上\n按住蓄力，松手跃起";
+  else ui.hint.textContent = state.attached ? (holding ? "感受摆动\n弧线接近岩点时松开" : "按住蓄力，松手跃起\n让弧线接近下一处岩点") : "下坠时按住，伸手抓住岩点";
+  const showPack = state.mode === "ledge" && state.settle >= .9;
   ui.pack.classList.toggle("show", showPack);
   const signature = showPack ? String(state.mask) : "";
   if (showPack && signature !== packSignature) {
@@ -552,7 +563,7 @@ function syncUI(dt) {
     }
   }
   ui.marks.classList.toggle("show", showEnd || prologueLeft > 0);
-  const sceneState = paused ? "paused" : showEnd ? "ending" : showPack ? "choice" : prologueLeft > 0 ? "intro" : "climb";
+  const sceneState = paused ? "paused" : showEnd ? "ending" : showPack ? "choice" : prologueLeft > 0 ? "intro" : state.descending ? "descend" : "climb";
   if (document.body.dataset.scene !== sceneState) document.body.dataset.scene = sceneState;
   const top = FX.HOLDS[FX.HOLDS.length - 1].y;
   const t = 1 - clamp01((state.y - 8) / (top - 8));
@@ -583,6 +594,7 @@ ui.mute.addEventListener("click", function (e) {
 function restartRun(e) {
   e.stopPropagation(); cancelCharge(); setPaused(false);
   restartPulse = true; sessionActive = false; prologueLeft = 0; packSignature = "";
+  flash = 0; flashCooldown = 4.5; directionHintT = 0;
   try { localStorage.removeItem(SESSION_KEY); } catch (err) {}
   focusGame();
 }
@@ -645,7 +657,7 @@ function applyShot(name) {
   const n = FX.HOLDS.length;
   const mid = FX.HOLDS[holdNear(60)];
   state.intro = 0; state.settle = 1; state.mode = "play"; state.catches = 4;
-  state.attached = true; state.descending = false; state.crown = false; state.lost = [];
+  state.attached = true; state.descending = false; state.returning = false; state.crown = false; state.lost = [];
   const scenic = { base: 10, mid: 90, storm: 150, gale: FX.HOLDS[n - 1].y * 0.92, hang: 28, charge: 36, flight: 48, swing: 55, descend: 70 };
   if (scenic[name] != null && name !== "ending" && name !== "choices" && name !== "summit") {
     state.holdIndex = holdNear(scenic[name]);
@@ -653,7 +665,7 @@ function applyShot(name) {
   }
   if (name === "storm" || name === "gale") { state.mask = 15; state.stormVis = 1; }
   else if (name === "charge") { state.mask = 15; state.stormVis = 0.08; state.holding = true; }
-  else if (name === "descend") { state.mask = 8; state.descending = true; state.holding = true; state.stormVis = 0.2; }
+  else if (name === "descend") { state.mask = 8; state.descending = true; state.returning = true; state.holding = true; state.stormVis = FX.weatherAt(scenic.descend, true).intensity; }
   else if (name === "ending" || name === "choices") {
     state.holdIndex = n - 1; state.origin = n - 1; state.mask = 9; state.mode = "ending"; state.endingT = 2;
     state.lost = [{ kind: "trophy", bit: 4, y: mid.y, z: mid.z, hold: mid.i }];
@@ -731,6 +743,7 @@ function frame(now) {
   }
   if (n > 0) { restartPulse = false; wantKeep = false; wantDrop = ""; wantRetrieve = false; }
   pinShot();
+  if (!paused && FX.updateGuide(state)) sounds.push("arm");
   playSfx(sounds);
   if (!shot && state.y > bestEver) bestEver = state.y;
   if (!paused && !shot) {
@@ -740,15 +753,24 @@ function frame(now) {
 
   const top = FX.HOLDS[FX.HOLDS.length - 1].y;
   const altN = clamp01((state.y - 8) / Math.max(20, top - 8));
-  const forecast = FX.gustForecast(state.time, state.y, state.mask, state.descending);
-  const gale = Math.min(1, Math.max(0, (state.y - top * 0.58) / 28));
-  const storm = state.stormVis || 0;
-  const wet = Math.min(1, storm * 0.8 + gale);
-  if (gale > 0.35 && forecast.soon > 0.85 && Math.random() < 0.012) flash = 1;
-  flash *= Math.exp(-raw * 6);
+  const forecast = FX.gustForecast(state.time, state.y, state.mask, state.returning || state.descending);
+  const weather = FX.weatherAt(state.y, state.returning || state.descending);
+  const storm = clamp01(Number.isFinite(state.stormVis) ? state.stormVis : weather.intensity);
+  const gale = clamp01((storm - .1) / .9);
+  const wet = clamp01(storm * .8 + gale * .35);
+  const weatherDt = paused ? 0 : raw;
+  flashCooldown = Math.max(0, flashCooldown - weatherDt);
+  // A rate per second keeps storms consistent across frame rates. Darkness
+  // separates flashes, and reduced-motion mode removes them altogether.
+  if (reducedMotionPreference.matches) flash = 0;
+  else if (weatherDt > 0 && flashCooldown === 0 && gale > .35 && Math.abs(forecast.soon) > .5 && Math.random() < 1 - Math.exp(-(.035 + gale * .10) * weatherDt)) {
+    flash = .8;
+    flashCooldown = 4.5 + Math.random() * 2;
+  }
+  flash *= Math.exp(-weatherDt * 6);
   gustAudio(forecast);
 
-  const standing = state.crown || state.mode === "ledge" || state.mode === "ending";
+  const standing = state.mode === "ending" || state.crown && !state.descending;
   let lookY = state.y + (standing ? 1.8 : 0.9);
   const target = FX.HOLDS[state.holdIndex + (state.descending ? -1 : 1)];
   if (target && state.attached && !standing) lookY += Math.max(-0.35, Math.min(0.35, (target.y - state.y) * 0.06));

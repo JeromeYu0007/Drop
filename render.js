@@ -15,24 +15,7 @@
   const hash = (n) => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
   const P = (x, y, z) => ({ x, y, z });
   const RIG = { torso: .53, upperArm: .36, forearm: .34, thigh: .42, shin: .41 };
-  const KIP = [
-    // phase, shoulder relative to hands (y,z), trunk pitch, hip flexion, knee flexion.
-    // The opening kip then repeating pull beats track the physical release phase.
-    [0,    -.675,.17, .05, .00,.07],
-    [.24,  -.630,.29, .33, .02,.08],
-    [.49,  -.510,.47, .72, .02,.10],
-    [.65,  -.405,.40, .36,-.95,1.20],
-    [.79,  -.150,.40, .07,-.60,.95],
-    [.97,   .290,.34, .32,-.20,.70],
-    [1.12,  .470,.28, .27,-.17,.58],
-    [1.27, -.120,.37, .23, .20,.38],
-    [1.39, -.470,.45, .50, .15,.16],
-    [1.49, -.110,.37, .15,-.60,.95],
-    [1.62,  .330,.29, .30,-.18,.68],
-    [1.82,  .430,.26, .28,-.18,.58],
-    [2.12,  .470,.28, .27,-.17,.58],
-  ];
-  let lastPose = null, poseHistory = null, releaseHistory = null, mantleHistory = null, returnHistory = null, catchHistory = null;
+  let lastPose = null, poseHistory = null, mantleHistory = null, returnHistory = null, catchHistory = null;
   const add = (a,b) => P(a.x+b.x,a.y+b.y,a.z+b.z);
   const sub = (a,b) => P(a.x-b.x,a.y-b.y,a.z-b.z);
   const mul = (a,s) => P(a.x*s,a.y*s,a.z*s);
@@ -55,79 +38,45 @@
     if(length(tangent)<.00001)tangent=P(axis.y,-axis.x,.1);
     return add(add(a,mul(axis,along)),mul(unit(tangent),lift));
   }
-  function sampleKip(phase) {
-    let i=0;while(i<KIP.length-2&&phase>KIP[i+1][0])i++;
-    const a=KIP[i],b=KIP[i+1],p=KIP[Math.max(0,i-1)],n=KIP[Math.min(KIP.length-1,i+2)];
-    const span=b[0]-a[0],t=clamp((phase-a[0])/span,0,1),t2=t*t,t3=t2*t;
-    return a.slice(1).map((v,j)=>{
-      const k=j+1,m0=i===0?0:(b[k]-p[k])/(b[0]-p[0]),m1=i===KIP.length-2?0:(n[k]-a[k])/(n[0]-a[0]);
-      return (2*t3-3*t2+1)*v+(t3-2*t2+t)*span*m0+(-2*t3+3*t2)*b[k]+(t3-t2)*span*m1;
-    });
-  }
-  function arcHand(root,from,target,t) {
-    const a=sub(from,root),b=sub(target,root),distance=length(b);
-    if(distance>.697){b.x*=.697/distance;b.y*=.697/distance;b.z*=.697/distance;}
-    let angle0=Math.atan2(a.y,-a.z),angle1=Math.atan2(b.y,-b.z);
-    while(angle1-angle0>Math.PI)angle1-=Math.PI*2;while(angle1-angle0<-Math.PI)angle1+=Math.PI*2;
-    const angle=mix(angle0,angle1,t),radius=mix(Math.hypot(a.y,a.z),Math.hypot(b.y,b.z),t)*(1-.45*Math.sin(Math.PI*t)**2);
-    return add(root,P(mix(a.x,b.x,t),Math.sin(angle)*radius,-Math.cos(angle)*radius));
-  }
-  function forecastCatch(state) {
-    const ghost={...state,lost:(state.lost||[]).map(item=>({...item})),dots:[],sfx:[]},dt=1/120;
-    for(let n=1;n<=30;n++){
-      const before=P(0,ghost.y,ghost.z);
-      FX.step(ghost,dt,{holding:!!state.holding,freezeIntro:true});
-      if(ghost.attached)return {hold:FX.HOLDS[ghost.holdIndex],eta:n*dt,before};
-      if(ghost.mode!=="play")return null;
-    }
-    return null;
-  }
   function isStanding(state) {
-    return state.attached&&(["ledge","drop","ending"].includes(state.mode)||(state.crown&&(state.holdT||0)<=1.28));
+    // Ordinary rock lips cannot support a pair of boots. Rest and drop choices
+    // keep the same secure hanging pose; only the summit has a real platform.
+    return state.attached&&(state.mode==="ending"||(state.crown&&!state.descending));
   }
   function computePose(state,release) {
     const h=FX.HOLDS[state.holdIndex]||FX.HOLDS[0],w=FX.weight01(state.mask);
-    const flightAge=Math.max(0,(state.flightT||0)-(release&&release.flightStart||0));
-    const lowering=!!state.downLaunch||!!(release&&release.slip);
     const charging=state.attached&&state.holding&&state.mode==="play"&&(state.holdT||0)>.0001;
     const stand=isStanding(state);
-    const rawPhase=charging?FX.params(state.mask).omega*(state.holdT||0)/Math.PI:0;
-    const phase=rawPhase<=1.12?rawPhase:1.12+(rawPhase-1.12)%1;
+    let phase=0;
     const grip=P(0,h.y+.035,h.z+.035);
-    let shoulder,hip,theta,hipFlex,kneeFlex,handL,handR,contact=null;
+    let shoulder,hip,theta,hipFlex,kneeFlex,handL,handR,contact=null,flyingArms=null;
     const mantle=stand&&release&&release.mantle;
     const rising=mantle&&mantle.pose;
-    const mantleT=mantle?clamp((state.time-mantle.time)/(rising?.55:.85),0,1):1;
+    const mantleDuration=(rising?.78:1.05)+w*.18;
+    const mantleT=mantle?clamp((state.time-mantle.time)/mantleDuration,0,1):1;
     if(stand){
-      theta=.055;hip=P(0,h.y+.855,h.z+.27);hipFlex=-.04;kneeFlex=.13;
+      // The summit threshold is at h.y + .125; a boot sole sits .09 below
+      // its ankle. These anchors support the feet instead of burying the boots.
+      theta=.055;hip=P(0,h.y+1.04,h.z+.27);hipFlex=-.04;kneeFlex=.13;
       if(rising&&mantleT<1){
         const p=smooth(mantleT);
         hip=blendPoint(rising.hip,hip,p);theta=mix(rising.theta,theta,p);hipFlex=mix(rising.hipFlex,hipFlex,p);kneeFlex=mix(rising.kneeFlex,kneeFlex,p);
       }else if(mantleT<1){
         const p=mantleT;
         const initialY=mantle.sy==null?-.43:mantle.sy,dipY=initialY-.08;
-        const sy=p<.16?mix(initialY,dipY,smooth(p/.16)):p<.54?mix(dipY,.36,smooth((p-.16)/.38)):mix(.36,1.3492,smooth((p-.54)/.46));
+        const sy=p<.16?mix(initialY,dipY,smooth(p/.16)):p<.54?mix(dipY,.36,smooth((p-.16)/.38)):mix(.36,1.5342,smooth((p-.54)/.46));
         const sz=mix(.33,.2059,smooth(p));theta=mix(.20,.055,smooth(p));
         shoulder=P(0,grip.y+sy,grip.z+sz);hip=sub(shoulder,mul(P(0,Math.cos(theta),-Math.sin(theta)),RIG.torso));
         hipFlex=0;kneeFlex=mix(.65,.13,smooth(p));
       }
     }else if(state.attached){
-      let [sy,sz,pitch,flex,knee]=sampleKip(phase);
-      const st=FX.sampleRelease(state.mask,state.holdT||0);
-      const amplitude=mix(1,.84,w)*(.65+.35*st.charge);
-      const swayFade=1-smooth((phase-.6)/.2);
-      const armAngle=Math.atan2(sz,-sy),radius=Math.hypot(sy,sz);
-      const scaledAngle=mix(armAngle,.247+(armAngle-.247)*amplitude,swayFade);
-      sy=-Math.cos(scaledAngle)*radius;sz=Math.sin(scaledAngle)*radius;
-      theta=pitch*mix(1,amplitude,swayFade);hipFlex=flex;kneeFlex=knee;
+      const frame=FX.chargeFrame(state.mask,charging?(state.holdT||0):0,state.time,h.y,!!state.descending);
+      let {sy,sz}=frame;
+      phase=frame.phase;theta=frame.theta;hipFlex=frame.hipFlex;kneeFlex=frame.kneeFlex;
       if(!charging){
         const absorb=1-smooth(clamp(((state.settle==null?1:state.settle)-.15)/.85,0,1));
         const catchY=release&&release.caught?release.caught.sy:-.43;
         sy=mix(sy,catchY,absorb);sz=mix(sz,.33,absorb);theta=mix(theta,.20,absorb);kneeFlex=mix(kneeFlex,.65,absorb);
-      }
-      if(charging&&(state.descending||state.crown)){
-        const lower=smooth(clamp(((state.holdT||0)-.88)/.40,0,1));
-        sy=mix(sy,-.60,lower);sz=mix(sz,.27,lower);theta=mix(theta,.12,lower);hipFlex=mix(hipFlex,0,lower);kneeFlex=mix(kneeFlex,.22,lower);
       }
       // The hands stay on the rock. Bound the shoulder root, never scale an arm.
       const d=Math.hypot(sy,sz),max=.697;
@@ -137,40 +86,21 @@
       hip=sub(shoulder,mul(up,RIG.torso));
       handL=P(-.17,grip.y,grip.z);handR=P(.17,grip.y,grip.z);
     }else{
-      const t=flightAge,fade=1-smooth((t-(lowering?.35:0))/.32),extend=smooth(t/.28);
-      const start=release&&release.pose;
-      const dy=start?start.hip.y-release.physicsY:0,dz=start?start.hip.z-release.physicsZ:0;
-      const ascending=smooth(clamp(((state.vy||0)+1)/2,0,1));
-      const travelPitch=mix(.12,clamp((state.vz||0)*.022,-.12,.26),ascending);
-      theta=start?mix(start.theta,travelPitch,extend):travelPitch;
-      // The flight collision marker is the future hand-contact point, not a hip.
-      // Carry the authored launch offset into a consistent hanging reach frame.
-      const targetY=lowering?-.90:-.43-Math.cos(theta)*RIG.torso+.78*clamp((state.vy||0)/5,-1,1),targetZ=.33+Math.sin(theta)*RIG.torso;
-      hip=P(0,state.y+mix(targetY,dy,fade),state.z+mix(targetZ,dz,fade));
-      hipFlex=start?mix(start.hipFlex,.07,extend):.07;
-      kneeFlex=start?mix(start.kneeFlex,mix(.42,.22,ascending),extend):mix(.42,.22,ascending);
-      // Only a real future collision may influence the reach pose. Nearby rocks
-      // on a failed trajectory do not pull the body off its flight path.
-      const predicted=forecastCatch(state);
-      if(predicted){
-        const reachWeight=eta=>1-smooth(clamp((eta-.012)/(.250-.012),0,1));
-        const elapsed=Math.max(0,Math.min(t,.25-predicted.eta)),progress=clamp(elapsed/(elapsed+predicted.eta-1/120||1),0,1);
-        // A deliberate down-reach has a nearly uniform speed: the next hold
-        // can arrive in a quarter second, so a strong ease-in/out would whip the arms.
-        const r=.10,downWeight=progress<r?progress*progress/(2*r*(1-r)):progress>1-r?1-(1-progress)**2/(2*r*(1-r)):(progress-r*.5)/(1-r);
-        const a=lowering?downWeight:reachWeight(predicted.eta)*smooth(t/.08);
-        const cg=P(0,predicted.hold.y+.035,predicted.hold.z+.035),cu=P(0,Math.cos(.20),-Math.sin(.20));
-        const catchY=lowering?.30:-.43;
-        const targetHip=sub(P(0,cg.y+catchY,cg.z+.33),mul(cu,RIG.torso));
-        // Anticipate the contact OFFSET, not its future world position. This
-        // preserves physical travel even when a deep fall covers metres before contact.
-        const incoming=add(targetHip,P(0,state.y-predicted.before.y,state.z-predicted.before.z));
-        hip=blendPoint(hip,incoming,a);theta=mix(theta,.20,a);hipFlex=mix(hipFlex,0,a);kneeFlex=mix(kneeFlex,.65,a);
-        contact={weight:a,grip:cg,index:predicted.hold.i,eta:predicted.eta,sy:catchY};
-      }
+      // Gameplay collision and the dressed skeleton share this root, including
+      // the catch preparation. A second visual hip correction would let limbs
+      // pass through terrain that the physical capsules had already cleared.
+      const frame=FX.bodyFrame(state);
+      hip=P(frame.hip.x||0,frame.hip.y,frame.hip.z);theta=frame.theta;
+      hipFlex=frame.hipFlex;kneeFlex=frame.kneeFlex;contact=frame.contact||null;
+      flyingArms=FX.flightArms(state,frame);
     }
+    // Climb around the summit lip before planting the soles. A straight hip
+    // interpolation drives the bent thigh through the outer edge halfway up.
+    const mantleClearance=stand?.20*Math.sin(Math.PI*mantleT)**2:0;
+    if(mantleClearance){hip.z+=mantleClearance;shoulder=null;}
     const returning=state.attached&&!stand&&release&&release.returning;
-    const returnT=returning?smooth(clamp((state.time-returning.time)/(state.crown?.34:.55),0,1)):1;
+    const returnDuration=.58+w*.20;
+    const returnT=returning?smooth(clamp((state.time-returning.time)/returnDuration,0,1)):1;
     if(returning&&returnT<1){
       hip=blendPoint(returning.pose.hip,hip,returnT);theta=mix(returning.pose.theta,theta,returnT);
       hipFlex=mix(returning.pose.hipFlex,hipFlex,returnT);kneeFlex=mix(returning.pose.kneeFlex,kneeFlex,returnT);shoulder=null;
@@ -187,7 +117,7 @@
       poles["elbow"+side]=add(a,P(sign*.55,0,.42));
     }
     if(stand){
-      const free=smooth((mantleT-.50)/.32);
+      const free=smooth((mantleT-.78)/.22);
       handL=blendPoint(P(-.17,grip.y,grip.z),localPoint(shL,up,back,-.56,-.08,-.025),free);
       handR=blendPoint(P(.17,grip.y,grip.z),localPoint(shR,up,back,-.56,-.08,.025),free);
       if(rising){
@@ -197,33 +127,9 @@
       }
       for(const side of ["L","R"]){const a=side==="L"?shL:shR,b=side==="L"?handL:handR,d=sub(b,a),len=length(d);if(len>.697){const target=add(a,mul(d,.697/len));if(side==="L")handL=target;else handR=target;}}
     }else if(!state.attached){
-      const extend=smooth(flightAge/.32),start=release&&release.pose;
-      const reach=.43;
-      const targets={L:localPoint(shL,up,back,reach,-.33,-.025),R:localPoint(shR,up,back,reach-.025,-.32,.025)};
-      if(start&&lowering){
-        // Downward release goes directly from the old grip toward the lower
-        // ledge; it must not also play the upward flight extension.
-        handL=add(shL,sub(start.handL,start.shL));handR=add(shR,sub(start.handR,start.shR));
-      }else if(start){
-        // Sweep the free hand around its shoulder instead of through the joint.
-        const sweep=(side,a,target)=>{
-          const from=sub(start["hand"+side],start["sh"+side]),to=sub(target,a);
-          let a0=Math.atan2(from.y,-from.z),a1=Math.atan2(to.y,-to.z);
-          while(a1-a0>Math.PI)a1-=Math.PI*2;while(a1-a0<-Math.PI)a1+=Math.PI*2;
-          const angle=mix(a0,a1,extend),radius=mix(Math.hypot(from.y,from.z),Math.hypot(to.y,to.z),extend);
-          return add(a,P(mix(from.x,to.x,extend),Math.sin(angle)*radius,-Math.cos(angle)*radius));
-        };
-        handL=sweep("L",shL,targets.L);handR=sweep("R",shR,targets.R);
-      }else{handL=targets.L;handR=targets.R;}
-      if(contact){
-        // Prepare the final reach relative to the travelling shoulder. A distant
-        // ledge must not rotate the wrist down and back up as it approaches.
-        const reaching=lowering?((root,from,target,t)=>blendPoint(from,target,t)):arcHand;
-        handL=reaching(shL,handL,add(shL,P(0,-contact.sy,-.33)),contact.weight);
-        handR=reaching(shR,handR,add(shR,P(0,-contact.sy,-.33)),contact.weight);
-      }
-      // Flying hands are free to reach, so clamp their targets to the true arm length.
-      for(const side of ["L","R"]){const a=side==="L"?shL:shR,b=side==="L"?handL:handR,d=sub(b,a),len=length(d);if(len>.697){const target=add(a,mul(d,.697/len));if(side==="L")handL=target;else handR=target;}}
+      // The collision solver and renderer use the same immutable release pose
+      // and arm sweep, independent of the display's previous frame rate.
+      handL=flyingArms.handL;handR=flyingArms.handR;
     }
     if(returning&&returnT<1){
       const gripBlend=smooth(clamp((returnT-.12)/.60,0,1));
@@ -231,7 +137,7 @@
       handR=blendPoint(add(hip,sub(returning.pose.handR,returning.pose.hip)),handR,gripBlend);
       for(const side of ["L","R"]){const a=side==="L"?shL:shR,b=side==="L"?handL:handR,d=sub(b,a),len=length(d);if(len>.697){const target=add(a,mul(d,.697/len));if(side==="L")handL=target;else handR=target;}}
     }
-    const elbowL=joint(shL,handL,RIG.upperArm,RIG.forearm,poles.elbowL),elbowR=joint(shR,handR,RIG.upperArm,RIG.forearm,poles.elbowR);
+    const elbowL=flyingArms?flyingArms.elbowL:joint(shL,handL,RIG.upperArm,RIG.forearm,poles.elbowL),elbowR=flyingArms?flyingArms.elbowR:joint(shR,handR,RIG.upperArm,RIG.forearm,poles.elbowR);
     // Forward kinematics gives a one-way knee hinge: flexion puts heels behind
     // the knees. The entire leg follows trunk rotation plus deliberate hip drive.
     const legs={};
@@ -242,7 +148,7 @@
       let knee=add(origin,P(0,-Math.cos(thighAngle)*RIG.thigh,Math.sin(thighAngle)*RIG.thigh));
       let foot=add(knee,P(0,-Math.cos(shinAngle)*RIG.shin,Math.sin(shinAngle)*RIG.shin));
       if(stand){
-        const step=smooth((mantleT-.28)/.47),target=P(origin.x,h.y+.035,h.z+(side==="L"?.21:.32));
+        const step=smooth((mantleT-.55)/.45),target=P(origin.x,h.y+.22,h.z+(side==="L"?.21:.32)+mantleClearance);
         foot=rising?blendPoint(add(hip,sub(rising["foot"+side],rising.hip)),target,smooth(mantleT)):blendPoint(foot,target,step);const v=sub(foot,origin),d=length(v);
         if(d>.828)foot=add(origin,mul(v,.828/d));
         knee=joint(origin,foot,RIG.thigh,RIG.shin,add(origin,P(side==="L"?-.08:.08,0,-.7)));
@@ -251,37 +157,64 @@
         const v=sub(foot,origin),d=length(v);if(d>.828)foot=add(origin,mul(v,.828/d));
         knee=joint(origin,foot,RIG.thigh,RIG.shin,add(origin,P((side==="L"?-.08:.08)*(1-returnT),0,-.7)));
       }
-      legs["knee"+side]=knee;legs["foot"+side]=foot;legs["shinAngle"+side]=Math.atan2(foot.z-knee.z,knee.y-foot.y);
+      legs["knee"+side]=knee;legs["foot"+side]=foot;
+      const actualShin=Math.atan2(foot.z-knee.z,knee.y-foot.y);
+      legs["shinAngle"+side]=actualShin;
+      // The ankle levels the sole on the summit. Rotating the boot with the
+      // shin would bury its toe even when the ankle is above the platform.
+      legs["bootAngle"+side]=stand?actualShin*(1-smooth(mantleT)):returning&&returnT<1?mix(returning.pose["bootAngle"+side]||0,actualShin,returnT):actualShin;
     }
     const chest=localPoint(shoulder,up,back,-.12,-.095),neck=localPoint(shoulder,up,back,.09,-.012),head=localPoint(shoulder,up,back,.23,-.02);
     return {hip,shoulder,shL,shR,handL,handR,pelvisL,pelvisR,elbowL,elbowR,...legs,chest,neck,head,up,back,theta,hipFlex,kneeFlex,phase,grip,poles,w,standing:stand,contact,mantleT};
   }
+  // Collision regressions inspect the volume occupied by the dressed skeleton,
+  // not only zero-radius joints. Fingers may wrap the grip; sleeves stop before
+  // that contact so every other part has an unambiguous outside-of-rock test.
+  function visualCapsules(r) {
+    const capsules=[];
+    const put=(name,a,b,radius,endRadius=radius)=>capsules.push({name,a,b,radius,endRadius});
+    put("torso",r.hip,r.shoulder,.15);
+    put("head",localPoint(r.head,r.up,r.back,-.01,0),localPoint(r.head,r.up,r.back,.02,0),.145);
+    const packCenter=localPoint(r.shoulder,r.up,r.back,-.215,.207);
+    put("pack",add(packCenter,mul(r.up,-.11)),add(packCenter,mul(r.up,.11)),mix(.16,.195,r.w));
+    for(const side of ["L","R"]){
+      const sh=r["sh"+side],elbow=r["elbow"+side],hand=r["hand"+side],pelvis=r["pelvis"+side],knee=r["knee"+side],foot=r["foot"+side];
+      const cuff=sub(hand,mul(unit(sub(hand,elbow)),.04));
+      put("upperArm"+side,sh,elbow,.094,.080);
+      put("forearm"+side,elbow,cuff,.080,.046);
+      put("thigh"+side,pelvis,knee,.120,.094);
+      put("shin"+side,knee,foot,.091,.064);
+      const a=r["bootAngle"+side],c=Math.cos(a),s=Math.sin(a);
+      const bootPoint=(y,z)=>P(foot.x,foot.y+c*y+s*z,foot.z-s*y+c*z);
+      put("boot"+side,bootPoint(-.012,-.095),bootPoint(0,.045),.078);
+    }
+    return capsules;
+  }
+  function visualCapsuleSamples(r,maxStep=.065) {
+    const points=[];
+    for(const capsule of visualCapsules(r)){
+      const count=Math.max(1,Math.ceil(length(sub(capsule.b,capsule.a))/Math.max(.015,maxStep)));
+      for(let i=0;i<=count;i++){
+        const t=i/count,p=blendPoint(capsule.a,capsule.b,t);
+        points.push({...p,name:capsule.name,radius:mix(capsule.radius,capsule.endRadius,t)});
+      }
+    }
+    return points;
+  }
   function pose(state) {
     if(poseHistory&&state.time<poseHistory.time-.0001)resetPoseHistory();
     const standing=isStanding(state);
-    if(!state.attached&&poseHistory&&poseHistory.attached&&lastPose){
-      if(state.launches>poseHistory.launches){
-        const h=FX.HOLDS[poseHistory.holdIndex],launchTime=state.time-(state.flightT||0);
-        const angle=FX.sampleRelease(poseHistory.mask,poseHistory.holdT).angle+FX.wind(launchTime,h.y,poseHistory.mask)*.04;
-        releaseHistory={pose:lastPose,physicsY:h.y-Math.cos(angle)*FX.L,physicsZ:h.z+Math.sin(angle)*FX.L};
-      }else{
-        // Slip flightT includes a gameplay catch cooldown. Its visual motion
-        // starts here, from the actual body, without replaying a charged launch.
-        releaseHistory={pose:lastPose,physicsY:state.y,physicsZ:state.z,flightStart:state.flightT||0,slip:true};
-      }
-    }
     if(standing&&poseHistory&&!poseHistory.standing)mantleHistory={time:state.time,pose:poseHistory.attached?lastPose:null,sy:lastPose&&lastPose.contact?lastPose.contact.sy:null};
     if(!standing&&state.attached&&poseHistory&&poseHistory.standing&&poseHistory.holdIndex===state.holdIndex) returnHistory={time:state.time,pose:lastPose};
-    if(!state.attached||standing||(returnHistory&&state.time-returnHistory.time>.55))returnHistory=null;
+    if(!state.attached||standing||(returnHistory&&state.time-returnHistory.time>.80))returnHistory=null;
     if(!standing)mantleHistory=null;
     if(state.attached&&poseHistory&&!poseHistory.attached)catchHistory=lastPose&&lastPose.contact?{sy:lastPose.contact.sy}:null;
     if(!state.attached)catchHistory=null;
-    if(state.attached)releaseHistory=null;
-    const context=state.attached?{mantle:mantleHistory,returning:returnHistory,caught:catchHistory}:releaseHistory;
+    const context=state.attached?{mantle:mantleHistory,returning:returnHistory,caught:catchHistory}:null;
     const r=computePose(state,context);
-    lastPose=r;poseHistory={attached:state.attached,standing,holdIndex:state.holdIndex,holdT:state.holdT||0,mask:state.mask,launches:state.launches||0,time:state.time};return r;
+    lastPose=r;poseHistory={attached:state.attached,standing,descending:!!state.descending,holdIndex:state.holdIndex,holdT:state.holdT||0,mask:state.mask,launches:state.launches||0,time:state.time};return r;
   }
-  function resetPoseHistory(){lastPose=null;poseHistory=null;releaseHistory=null;mantleHistory=null;returnHistory=null;catchHistory=null;}
+  function resetPoseHistory(){lastPose=null;poseHistory=null;mantleHistory=null;returnHistory=null;catchHistory=null;}
   function drawClimber(state,dt,forecast) {
     const r=pose(state);character.draw(r,state,dt,forecast);return r;
   }
@@ -407,7 +340,7 @@
     const state=o.state,dt=clamp(Number.isFinite(o.dt)?o.dt:1/60,0,.05),now=performance.now();
     if(lastFrameTime){elapsed+=(now-lastFrameTime)/1000;frames++;if(elapsed>.6){fps=frames/elapsed;frames=0;elapsed=0;}}lastFrameTime=now;
     const camY=o.camY,focusZ=o.focusZ,alt=o.alt||0,storm=o.storm||0,gale=o.gale||0,flash=o.flash||0;
-    const forecast=FX.gustForecast(state.time,state.y,state.mask,state.descending),rig=drawClimber(state,dt,forecast);
+    const forecast=FX.gustForecast(state.time,state.y,state.mask,!!(state.returning||state.descending)),rig=drawClimber(state,dt,forecast);
     world.update({...o,state,dt,camY,focusZ,alt,storm,gale,flash,forecast,rig});
     const arr=weather.geometry.attributes.position.array,count=quality===0?65:quality===1?160:320;
     const snow=alt>.6;
@@ -481,7 +414,7 @@
     postMaterial.uniforms.uScene.value=sceneRT.texture;postMaterial.uniforms.uBloom.value=quality>0?bloomRT.texture:sceneRT.texture;postMaterial.uniforms.uBloomAmount.value=quality>0?.12:0;postMaterial.uniforms.uTime.value=state.time;
     quad.material=postMaterial;renderer.render(quad,postCamera);
   }
-  window.FXRender={init,resize,setQuality,restoreContext,draw,computePose,updatePose:pose,resetPoseHistory,RIG,poseDimensions:RIG,get pose(){return lastPose;},get fps(){return fps;},get quality(){return quality;},get diagnostics(){
+  window.FXRender={init,resize,setQuality,restoreContext,draw,computePose,updatePose:pose,resetPoseHistory,visualCapsules,visualCapsuleSamples,RIG,poseDimensions:RIG,get pose(){return lastPose;},get fps(){return fps;},get quality(){return quality;},get diagnostics(){
     if(!renderer)return null;
     const targets=[sceneRT,bloomRT,bloomRT2].map(t=>({width:t.width,height:t.height,bytesPerColorPixel:t.texture.type===THREE.HalfFloatType?8:4,depth:t.depthBuffer}));
     return {quality,canvas:{width,height,cssWidth,cssHeight,ratio:pixelRatio},memory:{...renderer.info.memory},render:{...renderer.info.render},programs:renderer.info.programs.length,targets,estimatedTargetBytes:targets.reduce((sum,t)=>sum+t.width*t.height*(t.bytesPerColorPixel+(t.depth?4:0)),0),world:world.stats,character:character.stats};

@@ -11,6 +11,7 @@
   function copy(s) {
     const c = Object.assign({}, s);
     c.lost = (s.lost || []).map(x => Object.assign({}, x));
+    c.launchBody = s.launchBody ? Object.assign({}, s.launchBody) : null;
     c.dots = [];
     c.sfx = [];
     for (const k of ["restSeen", "restVisited"]) if (Array.isArray(s[k])) c[k] = s[k].slice();
@@ -43,6 +44,13 @@
     const s = copy(snapshot), origin = s.holdIndex, launches = s.launches;
     tick(s, { holding: false });
     if (s.launches === launches || s.attached) return false;
+    if (direction > 0) {
+      const next = FX.HOLDS[origin + 1];
+      const apex = s.y + Math.max(0, s.vy) ** 2 / (2 * FX.G * FX.params(s.mask).grav);
+      // Gravity is the only vertical acceleration; wall contacts change z.
+      // Even the widest held catch cannot reach above this generous bound.
+      if (next && apex < next.y - FX.catchRadius(next, true, false)) return false;
+    }
     const ceiling = 3.5;
     let frames = 0;
     while (!s.attached && s.mode === "play" && frames++ < ceiling / DT) {
@@ -52,14 +60,29 @@
     return s.attached && (direction > 0 ? s.holdIndex > origin : s.holdIndex === origin - 1);
   }
   function plan(state, direction) {
-    direction = direction || 1;
+    direction = direction || (state.descending ? -1 : 1);
+    // A plan may inspect a direction, but must never silently switch the live
+    // control mode. Selection/pickup owns that transition in production.
+    if ((direction < 0) !== !!state.descending) return null;
     const s = copy(state), startTime = s.time;
-    const low = direction < 0 ? 1.275 : 0.4;
-    const high = direction < 0 ? 1.66 : (state.descending || state.crown ? 1.285 : 1.55);
-    let samples = [], guard = 0;
-    while (s.holdT <= high && guard++ < 400 && s.attached && s.mode === "play") {
+    const low = direction < 0 ? 0.25 : 0.17;
+    const high = direction < 0 ? 2.4 : 2.2;
+    let samples = [], guard = 0, open = null;
+    while (s.holdT <= high && guard++ < 720 && s.attached && s.mode === "play") {
       tick(s, { holding: true });
-      if (s.holdT >= low && guard % 3 === 0) samples.push({ t: s.holdT, elapsed: s.time - startTime, good: trial(s, direction) });
+      if (s.holdT >= low && guard % 3 === 0) {
+        const x = { t: s.holdT, elapsed: s.time - startTime, good: trial(s, direction) };
+        samples.push(x);
+        if (x.good) {
+          if (!open) open = { a: x.t, b: x.t };
+          else open.b = x.t;
+        } else if (open) {
+          // Prefer the first usable effort. Later cycles are a fallback when
+          // the first opening is narrower than six physics frames.
+          if (open.b - open.a >= .05 - 1e-7) break;
+          open = null;
+        }
+      }
     }
     let best = null, current = null;
     for (const x of samples) {
@@ -73,7 +96,12 @@
     }
     if (current && (!best || current.b - current.a > best.b - best.a)) best = current;
     if (!best) return null;
-    return { a: best.a, b: best.b, span: best.b - best.a, release: Math.round((best.a + best.b) / 2 / DT) * DT, direction: direction };
+    // A collision can split a release window between two 25ms samples. Use
+    // an actual successful input trace near the center, not an untested mean.
+    const middle = (best.a + best.b) / 2;
+    const chosen = samples.filter(x => x.good && x.t >= best.a && x.t <= best.b)
+      .reduce((a, b) => Math.abs(a.t - middle) <= Math.abs(b.t - middle) ? a : b);
+    return { a: best.a, b: best.b, span: best.b - best.a, release: chosen.t, direction: direction };
   }
   function execute(s, release, onTick) {
     const origin = s.holdIndex, launches = s.launches;

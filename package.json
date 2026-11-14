@@ -5,7 +5,7 @@
   "description": "A procedural one-touch climbing game about what we carry.",
   "scripts": {
     "start": "python3 -m http.server 8123",
-    "test": "node test/budget.js && node test/surface.js && node test/pose.js && node test/windows.js && node test/journeys.js && node test/recovery.js",
+    "test": "node test/budget.js && node test/surface.js && node test/solid-surface.js && node test/pose.js && node test/body-pose.js && node test/descent.js && node test/difficulty.js && node test/windows.js && node test/journeys.js && node test/recovery.js",
     "test:human": "node test/human.js",
     "test:browser": "node test/browser-ui.js && node test/browser.js",
     "test:screens": "node test/browser.js --screens && node test/browser.js --mobile --screens",

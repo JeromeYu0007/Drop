@@ -37,22 +37,28 @@ function catchContract() {
   // A large outward miss low on the route still has real consequences.
   const low = FX.HOLDS.findIndex(h => h.y > 20);
   const miss = P.fresh(0, low);
-  P.execute(miss, 0.55);
+  miss.attached = false; miss.crown = false; miss.flightT = .5;
+  miss.y = FX.HOLDS[low].y; miss.z = FX.HOLDS[low].z + 24;
+  miss.vy = -12; miss.vz = 8;
+  P.finishFlight(miss, low, 10);
   assert.equal(miss.mode, "impact", "extreme outward miss was teleported to safety");
   assert.equal(miss.falls, 1, "missing every reachable hold must count as a ground fall");
 }
 
 function roundTrip(kind) {
-  const bit = FX.ITEMS[kind].bit;
-  const first = P.climb({ targetMask: 15 & ~bit });
-  assert.equal(first.ok, true, `${kind}: initial ascent`);
-  assert.equal(first.falls, 0, `${kind}: initial ascent fell`);
-  assert.equal(first.mask & bit, 0, `${kind}: selected item wasn't dropped`);
+  const kinds = Array.isArray(kind) ? kind : [kind], label = kinds.join("+");
+  const bits = kinds.reduce((mask, name) => mask | FX.ITEMS[name].bit, 0);
+  const first = P.climb({ targetMask: 15 & ~bits });
+  assert.equal(first.ok, true, `${label}: initial ascent`);
+  assert.equal(first.falls, 0, `${label}: initial ascent fell`);
+  assert.equal(first.mask & bits, 0, `${label}: selected items weren't dropped`);
   const s = first.state;
   P.tick(s, { retrieve: true });
-  assert.equal(s.mode, "play", "ending retrieve must return to summit");
+  assert.equal(s.mode, "play", "ending retrieve must begin controllable descent");
+  assert.equal(s.descending, true, "retrieve selects the downward curve immediately");
+  assert.equal(s.returning, true, "retrieve retains the return weather separately");
   let downMoves = 0;
-  while (!(s.reclaimed & bit) && downMoves < FX.HOLDS.length * 2) {
+  while ((s.reclaimed & bits) !== bits && downMoves < FX.HOLDS.length * 2) {
     if (s.mode === "ledge") {
       P.tick(s, { holding: false });
       P.tick(s, { keep: true });
@@ -60,21 +66,22 @@ function roundTrip(kind) {
     }
     P.ready(s);
     const plan = P.plan(s, -1);
-    assert.ok(plan, `${kind}: no downward release at hold ${s.holdIndex}, mask ${s.mask}`);
+    assert.ok(plan, `${label}: no downward release at hold ${s.holdIndex}, mask ${s.mask}`);
     const from = s.holdIndex;
     const result = P.execute(s, plan.release);
     assert.ok(result.launched && result.landed && result.delta === -1,
-      `${kind}: downward move ${from} failed: ${JSON.stringify(result)}`);
+      `${label}: downward move ${from} failed: ${JSON.stringify(result)}`);
     downMoves++;
   }
-  assert.ok(s.reclaimed & bit, `${kind}: item not reclaimed`);
-  assert.equal(s.mask, 15, `${kind}: inventory not restored`);
-  assert.equal(s.descending, true, `${kind}: return weather must persist after pickup`);
+  assert.equal(s.reclaimed & bits, bits, `${label}: items not reclaimed`);
+  assert.equal(s.mask, 15, `${label}: inventory not restored`);
+  assert.equal(s.descending, false, `${label}: last pickup restores the upward curve`);
+  assert.equal(s.returning, true, `${label}: return weather persists after pickup`);
   const again = P.climb({ state: s, targetMask: 15 });
-  assert.equal(again.ok, true, `${kind}: re-ascent failed`);
-  assert.equal(again.falls, 0, `${kind}: re-ascent fell`);
-  assert.equal(again.mask, 15, `${kind}: wrong final ending`);
-  return { kind, seconds: Math.round(s.time * 10) / 10, downMoves, upMoves: first.moves + again.moves };
+  assert.equal(again.ok, true, `${label}: re-ascent failed`);
+  assert.equal(again.falls, 0, `${label}: re-ascent fell`);
+  assert.equal(again.mask, 15, `${label}: wrong final ending`);
+  return { kind: label, seconds: Math.round(s.time * 10) / 10, downMoves, upMoves: first.moves + again.moves };
 }
 
 function main() {
@@ -101,6 +108,9 @@ function main() {
     returns.push(r);
     console.log(`PASS return ${kind}: ${r.downMoves} down moves, final ending 15`);
   }
+  const all = roundTrip(FX.ORDER);
+  returns.push(all);
+  console.log(`PASS return all four items: ${all.downMoves} down moves, final ending 15`);
   const s = P.fresh(15);
   s.mask = 11;
   s.lost = [{ kind: "trophy", bit: 4, hold: 3, y: FX.HOLDS[3].y, z: FX.HOLDS[3].z }];

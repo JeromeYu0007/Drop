@@ -16,10 +16,10 @@ async function main() {
   const out = process.env.DROP_CAPTURE_DIR || "/tmp/drop-validation";
   fs.mkdirSync(out, { recursive: true });
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || "/usr/bin/chromium", headless: true, args: ["--no-sandbox", "--disable-dev-shm-usage"] });
-  const context = await browser.newContext(mobile ? { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true } : { viewport: fast ? { width: 900, height: 600 } : { width: 1440, height: 900 } });
+  const context = await browser.newContext(mobile ? { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true } : { viewport: fast ? { width: 640, height: 480 } : { width: 1440, height: 900 } });
   const page = await context.newPage();
   const errors = [];
-  page.on("pageerror", e => errors.push(e.message));
+  page.on("pageerror", e => { errors.push(e.stack || e.message); console.error("BROWSER ERROR", e.stack || e.message); });
   page.on("console", m => { if (m.type() === "error" && !m.text().includes("favicon")) errors.push(m.text()); });
   const prefix = mobile ? "mobile" : "desktop";
   const capture = name => page.screenshot({ path: path.join(out, prefix + "-" + name + ".png") });
@@ -39,7 +39,7 @@ async function main() {
     await page.addScriptTag({ path: path.join(__dirname, "pilot.js") });
     await page.waitForTimeout(1500);
     await capture("start");
-    const position = mobile ? { x: 300, y: 700 } : fast ? { x: 740, y: 510 } : { x: 1100, y: 700 };
+    const position = mobile ? { x: 300, y: 700 } : fast ? { x: 530, y: 415 } : { x: 1100, y: 700 };
     await page.mouse.move(position.x, position.y);
     let holding = false;
     async function press() { if (!holding) { await page.mouse.down(); holding = true; } }
@@ -116,6 +116,11 @@ async function main() {
     assert.equal(final.mask, 15, "final ending must retain reclaimed items");
     assert.equal(stage, "return-ascent", "must exercise complete return journey");
     assert.deepEqual(errors, [], "browser console errors");
+  } catch (error) {
+    console.error("JOURNEY FAILURE", await page.evaluate(() => ({ state: __fx.state, paused: __fx.paused, holding, keyHeld, activePointer, packClass: document.querySelector("#pack").className })).catch(() => null));
+    console.error("BROWSER ERRORS", errors);
+    await capture("failure").catch(() => {});
+    throw error;
   } finally { await browser.close(); }
 }
 main().catch(e => { console.error(e.stack); process.exitCode = 1; });
