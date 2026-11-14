@@ -83,15 +83,16 @@
         "tri = fbm(vW * 0.72);",
         "float fine = fbm(vW.yzx * 1.85);",
         "float strata = smoothstep(0.4, 0.6, fract(vW.y * 0.31 + tri * 0.12));",
-        "vec3 rock = mix(vec3(0.34, 0.31, 0.28), vec3(0.62, 0.54, 0.46), tri);",
-        "rock = mix(rock, rock * vec3(0.62, 0.56, 0.48), strata * 0.85);",
-        "float lichen = smoothstep(0.58, 0.8, fbm(vW * 2.1 + 4.0)) * smoothstep(0.1, 0.65, vWN.y);",
-        "rock = mix(rock, vec3(0.32, 0.38, 0.24), lichen * 0.55);",
-        "streak = smoothstep(0.68, 0.9, fbm(vec3(vW.x * 5.0, vW.y * 0.28, vW.z * 5.0)));",
-        "rock = mix(rock, rock * vec3(0.45, 0.50, 0.56), streak * uWet);",
-        "float snow = smoothstep(0.5, 0.86, vWN.y) * smoothstep(uTop * 0.72, uTop * 0.94, vW.y);",
-        "rock = mix(rock, vec3(0.78, 0.81, 0.86), snow * 0.82);",
-        "float cavity = smoothstep(0.2, -0.45, vWN.y) * 0.45 + (1.0 - fine) * 0.08;",
+        "vec3 rock = mix(vec3(0.10, 0.10, 0.11), vec3(0.42, 0.34, 0.27), tri);",
+        "rock = mix(rock, vec3(0.20, 0.16, 0.13), smoothstep(0.35, 0.7, strata));",
+        "rock = mix(rock, vec3(0.30, 0.25, 0.20), fine * 0.12);",
+        "float lichen = smoothstep(0.55, 0.82, fbm(vW * 1.8 + 4.0)) * smoothstep(0.05, 0.7, vWN.y);",
+        "rock = mix(rock, vec3(0.22, 0.30, 0.16), lichen * 0.7);",
+        "streak = smoothstep(0.62, 0.88, fbm(vec3(vW.x * 4.0, vW.y * 0.22, vW.z * 4.0)));",
+        "rock = mix(rock, rock * vec3(0.35, 0.42, 0.5), streak * uWet);",
+        "float snow = smoothstep(0.42, 0.8, vWN.y) * smoothstep(uTop * 0.62, uTop * 0.9, vW.y);",
+        "rock = mix(rock, vec3(0.72, 0.76, 0.82), snow * 0.9);",
+        "float cavity = smoothstep(0.15, -0.55, vWN.y) * 0.62 + (1.0 - fine) * 0.16;",
         "rock *= 1.0 - cavity;",
         "diffuseColor.rgb = rock * diffuseColor.rgb * (1.0 + uFlash * 0.85);",
       ].join("\n"))
@@ -119,8 +120,8 @@
   }
 
   function makeCliff() {
-    const step = quality > 0 ? 0.32 : 0.5;
-    const data = FX.buildCliffMesh(step, quality > 0 ? 0.36 : 0.55);
+    const step = quality > 0 ? 0.18 : 0.36;
+    const data = FX.buildCliffMesh(step, quality > 0 ? 0.24 : 0.46);
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.BufferAttribute(data.positions, 3));
     geo.setAttribute("normal", new THREE.BufferAttribute(data.normals, 3));
@@ -167,8 +168,8 @@
         "void main(){",
         "  vec3 dir = normalize(vDir);",
         "  float h = dir.y * 0.5 + 0.5;",
-        "  vec3 zenith = mix(vec3(0.05, 0.07, 0.12), vec3(0.02, 0.025, 0.05), uAlt);",
-        "  vec3 horizon = mix(vec3(0.16, 0.18, 0.22), vec3(0.20, 0.22, 0.26), uStorm);",
+        "  vec3 zenith = mix(vec3(0.03, 0.04, 0.08), vec3(0.012, 0.014, 0.03), uAlt);",
+        "  vec3 horizon = mix(vec3(0.08, 0.09, 0.12), vec3(0.11, 0.12, 0.14), uStorm);",
         "  vec3 col = mix(horizon, zenith, smoothstep(0.0, 0.55, h));",
         "  col = mix(col, vec3(0.18, 0.19, 0.21), uStorm * 0.65);",
         "  vec3 moonDir = normalize(vec3(-0.42, 0.74, 0.28));",
@@ -192,22 +193,40 @@
 
   function makeRidges() {
     ridges = new THREE.Group();
-    const mat = new THREE.MeshBasicMaterial({ color: 0x1b2432, side: THREE.DoubleSide });
-    for (let i = 0; i < 8; i++) {
-      const shape = new THREE.Shape();
-      shape.moveTo(-26, 0);
-      for (let p = 0; p <= 14; p++) {
-        const x = -26 + p * (52 / 14);
-        const h = 4 + Math.pow(Math.abs(Math.sin(p * 0.9 + i * 1.7)), 1.35) * (18 + (i % 3) * 6);
-        shape.lineTo(x, p === 0 || p === 14 ? 0 : h);
+    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0.03 });
+    for (let r = 0; r < 5; r++) {
+      const n = 32;
+      const length = 70;
+      const height = 14 + r * 3;
+      const depth = 12;
+      const pos = [];
+      const col = [];
+      const idx = [];
+      for (let i = 0; i <= n; i++) {
+        const t = i / n;
+        const z = (t - 0.5) * length;
+        const crest = Math.pow(Math.sin(t * Math.PI), 0.65) * height * (0.35 + 0.65 * Math.abs(Math.sin(t * 8.5 + r * 1.7)));
+        const snow = Math.max(0, Math.min(1, (crest - height * 0.5) / (height * 0.28)));
+        const rock = [0.045 + snow * 0.5, 0.05 + snow * 0.52, 0.07 + snow * 0.55];
+        const shade = [0.02, 0.025, 0.04];
+        pos.push(0, 0, z, depth, 0, z, depth * 0.42, crest, z);
+        col.push(shade[0], shade[1], shade[2], shade[0] * 0.7, shade[1] * 0.7, shade[2] * 0.8);
+        col.push(rock[0], rock[1], rock[2]);
       }
-      shape.lineTo(26, 0);
-      const geo = new THREE.ShapeGeometry(shape);
+      for (let i = 0; i < n; i++) {
+        const a = i * 3;
+        idx.push(a, a + 3, a + 2, a + 2, a + 3, a + 5);
+        idx.push(a + 1, a + 2, a + 4, a + 2, a + 5, a + 4);
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+      geo.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+      geo.setIndex(idx);
+      geo.computeVertexNormals();
       const mesh = new THREE.Mesh(geo, mat);
-      const ang = i / 8 * Math.PI * 2 + 0.3;
-      const rad = 70 + (i % 3) * 12;
-      mesh.position.set(Math.sin(ang) * rad, -8, Math.cos(ang) * rad * 0.65);
-      mesh.lookAt(0, 4, 0);
+      mesh.receiveShadow = true;
+      mesh.position.set(36 + r * 18, -10 - r, (r - 2) * 22);
+      mesh.rotation.y = -0.4 + r * 0.05;
       ridges.add(mesh);
     }
     scene.add(ridges);
@@ -382,10 +401,11 @@
         "}",
         "void main(){",
         "  vec3 c = texture2D(uScene, vUv).rgb + texture2D(uBloom, vUv).rgb * uBloomAmt;",
-        "  c = aces(c * 1.12);",
+        "  c = aces(c * 1.05);",
         "  float l = dot(c, vec3(0.2126, 0.7152, 0.0722));",
-        "  vec3 grade = mix(c * vec3(0.76, 0.86, 1.06), c * vec3(1.08, 1.02, 0.92), smoothstep(0.08, 0.7, l));",
-        "  c = mix(c, grade, 0.62);",
+        "  vec3 grade = mix(c * vec3(0.55, 0.64, 0.92), c * vec3(1.18, 1.04, 0.82), smoothstep(0.18, 0.72, l));",
+        "  c = mix(c, grade, 0.78);",
+        "  c *= 0.92;",
         "  vec2 q = vUv - 0.5;",
         "  float vig = smoothstep(0.78, 0.22, dot(q, q));",
         "  c *= mix(0.55, 1.0, vig);",
@@ -438,7 +458,9 @@
     const st = FX.sampleRelease(state.mask, state.holdT || 0);
     const charging = state.attached && state.holding && state.mode === "play" && !(state.crown && state.holdT === 0);
     const charge = charging ? st.charge : 0;
-    const wall = -1;
+    // The center of mass still follows the rope. The body faces the rock:
+    // chest and hands toward smaller z, pack toward the open air.
+    // A charge is a kip in that plane, not a swing along the wall.
     const hip = P(0, state.y, state.z);
     const flying = !state.attached && state.mode === "play";
     let shoulder, head, handL, handR, footL, footR;
@@ -447,45 +469,50 @@
       if (standing) {
         const footY = hold.y + 0.2;
         hip.y = footY + 0.92;
-        hip.z = hold.z + 0.16;
-        shoulder = P(0, hip.y + 0.48, hip.z + wall * 0.04);
-        head = P(0, shoulder.y + 0.26, shoulder.z + wall * 0.1);
-        handL = P(0.04, hold.y + 1.05, hold.z + wall * 0.02);
-        handR = P(-0.04, hold.y + 0.96, hold.z + wall * 0.01);
-        footL = P(0.06, footY, hold.z + wall * 0.02);
+        hip.z = hold.z + 0.22;
+        shoulder = P(0, hip.y + 0.48, hip.z - 0.1);
+        head = P(0, shoulder.y + 0.24, shoulder.z - 0.1);
+        handL = P(0.08, hold.y + 1.05, hold.z - 0.04);
+        handR = P(-0.08, hold.y + 0.98, hold.z - 0.04);
+        footL = P(0.06, footY, hold.z - 0.02);
         footR = P(-0.05, footY, hold.z);
       } else {
-        const pull = charge;
-        hip.y += pull * 0.16;
-        hip.z += wall * pull * 0.1;
-        shoulder = P(0, hip.y + 0.42 + pull * 0.28, hip.z + wall * (0.06 + pull * 0.14));
-        head = P(0, shoulder.y + 0.22, shoulder.z + wall * 0.1);
-        handL = P(0.05, hold.y + 0.02, hold.z + wall * 0.02);
-        handR = P(-0.05, hold.y - 0.02, hold.z + wall * 0.015);
-        const tuck = pull;
-        footL = P(0.05, hip.y - 0.16 - (1 - tuck) * 0.62, hip.z + wall * (0.14 + tuck * 0.2));
-        footR = P(-0.04, hip.y - 0.24 - (1 - tuck) * 0.5, hip.z + wall * (0.05 + tuck * 0.14));
+        const out = Math.sin(Math.min(1, charge / 0.48) * Math.PI);
+        const driveT = charge < 0.34 ? 0 : (charge - 0.34) / 0.66;
+        const drive = driveT * driveT * (3 - 2 * driveT);
+        const pullT = charge < 0.6 ? 0 : (charge - 0.6) / 0.4;
+        const pull = pullT * pullT * (3 - 2 * pullT);
+        const gripY = hold.y + 0.02;
+        const gripZ = hold.z - 0.04;
+        hip.y = state.y + drive * 0.18 + pull * 0.26;
+        hip.z = Math.max(hold.z + 0.16, state.z - drive * 0.28);
+        const shoulderY = (1 - pull) * (hip.y + 0.42) + pull * (gripY + 0.22);
+        shoulder = P(0, shoulderY, hip.z - 0.06);
+        head = P(0, shoulder.y + 0.22, shoulder.z - 0.05);
+        handL = P(0.08, gripY, gripZ);
+        handR = P(-0.08, gripY - 0.03, gripZ);
+        footL = P(0.07, hip.y - 0.7 + out * 0.42, hip.z + 0.12 + out * 0.7);
+        footR = P(-0.06, hip.y - 0.78 + out * 0.36, hip.z + 0.08 + out * 0.64);
       }
     } else {
-      const sp = Math.hypot(state.vy, state.vz) || 1;
-      const uy = state.vy / sp, uz = state.vz / sp;
-      shoulder = P(0, hip.y + uy * 0.46, hip.z + uz * 0.46);
-      head = P(0, hip.y + uy * 0.7, hip.z + uz * 0.7 + wall * 0.1);
-      handL = P(0.05, hip.y + uy * 0.98, hip.z + uz * 0.98 + wall * 0.14);
-      handR = P(-0.05, hip.y + uy * 0.9, hip.z + uz * 0.9 + wall * 0.12);
-      footL = P(0.04, hip.y - uy * 0.74, hip.z - uz * 0.74 + wall * 0.04);
-      footR = P(-0.04, hip.y - uy * 0.66, hip.z - uz * 0.66 + wall * 0.02);
+      shoulder = P(0, hip.y + 0.5, hip.z - 0.1);
+      head = P(0, shoulder.y + 0.24, shoulder.z - 0.12);
+      handL = P(0.08, shoulder.y + 0.36, shoulder.z - 0.18);
+      handR = P(-0.08, shoulder.y + 0.28, shoulder.z - 0.16);
+      footL = P(0.06, hip.y - 0.62, hip.z + 0.3);
+      footR = P(-0.05, hip.y - 0.72, hip.z + 0.2);
     }
-    const eL = ik2(shoulder.z, shoulder.y, handL.z, handL.y, 0.34, 0.32, 1);
-    const eR = ik2(shoulder.z, shoulder.y, handR.z, handR.y, 0.34, 0.32, 1);
-    const kL = ik2(hip.z, hip.y, footL.z, footL.y, 0.42, 0.4, 1);
-    const kR = ik2(hip.z, hip.y, footR.z, footR.y, 0.42, 0.4, 1);
-    function lift(e, x) { return P(x, e.y, e.x); }
+    function bow(a, b, outZ) {
+      return P((a.x + b.x) * 0.5, (a.y + b.y) * 0.5 - 0.04, (a.z + b.z) * 0.5 + outZ);
+    }
+    const elbow = 0.2 + (charging ? charge * 0.08 : 0);
     return {
       hip: hip, shoulder: shoulder, head: head,
       handL: handL, handR: handR, footL: footL, footR: footR,
-      elbowL: lift(eL, 0.08), elbowR: lift(eR, -0.08),
-      kneeL: lift(kL, 0.05), kneeR: lift(kR, -0.04),
+      elbowL: bow(shoulder, handL, elbow),
+      elbowR: bow(shoulder, handR, elbow),
+      kneeL: bow(hip, footL, 0.08),
+      kneeR: bow(hip, footR, 0.06),
       charge: charge, w01: w01, flying: flying,
     };
   }
@@ -568,9 +595,9 @@
       uCamY: { value: 12 },
       uTop: { value: FX.HOLDS[FX.HOLDS.length - 1].y },
     };
-    hemi = new THREE.HemisphereLight(0x4a5c78, 0x1a1612, 0.72);
+    hemi = new THREE.HemisphereLight(0x1c2838, 0x070605, 0.32);
     scene.add(hemi);
-    moon = new THREE.DirectionalLight(0xd5e2f8, 2.35);
+    moon = new THREE.DirectionalLight(0xe4eeff, 3.1);
     moon.castShadow = true;
     moon.shadow.mapSize.set(1024, 1024);
     moon.shadow.camera.near = 0.5;
@@ -639,13 +666,13 @@
     uniforms.uFlash.value = flash;
     uniforms.uCamY.value = camY;
     const fogCol = new THREE.Color().setRGB(
-      0.16 + storm * 0.06 + flash * 0.2,
-      0.18 + storm * 0.04 + flash * 0.22,
-      0.22 + flash * 0.28
+      0.07 + storm * 0.05 + flash * 0.18,
+      0.08 + storm * 0.05 + flash * 0.2,
+      0.12 + flash * 0.26
     );
     scene.fog.color.copy(fogCol);
-    scene.fog.density = 0.012 + gale * 0.02 + storm * 0.008 + (1 - Math.min(1, camY / 80)) * 0.008;
-    moon.intensity = 2.2 + flash * 2.6;
+    scene.fog.density = 0.008 + gale * 0.016 + storm * 0.01 + (1 - Math.min(1, camY / 90)) * 0.004;
+    moon.intensity = 2.9 + flash * 3.2;
     moon.position.set(camY * 0 - 9, camY + 14, focusZ + 6);
     moon.target.position.set(0, camY, focusZ - 0.4);
     rim.position.set(-2, camY + 2, focusZ + 6);
@@ -656,14 +683,16 @@
     placeBone(b.torso, rig.hip, rig.shoulder, 0.16 + rig.w01 * 0.02);
     b.head.position.set(rig.head.x, rig.head.y, rig.head.z);
     b.head.scale.setScalar(1);
-    b.nose.position.set(rig.head.x, rig.head.y - 0.02, rig.head.z - 0.1);
+    b.nose.position.set(rig.head.x, rig.head.y - 0.01, rig.head.z - 0.09);
+    b.nose.scale.set(1.4, 1, 1.6);
     b.eyeL.position.set(rig.head.x + 0.035, rig.head.y + 0.02, rig.head.z - 0.09);
     b.eyeR.position.set(rig.head.x - 0.035, rig.head.y + 0.02, rig.head.z - 0.09);
     b.chest.position.set(
       (rig.hip.x + rig.shoulder.x) * 0.5,
       (rig.hip.y + rig.shoulder.y) * 0.55,
-      (rig.hip.z + rig.shoulder.z) * 0.5 - 0.07
+      (rig.hip.z + rig.shoulder.z) * 0.5 - 0.12
     );
+    b.chest.scale.set(1.2, 1.05, 1.35);
     placeBone(b.uarmL, rig.shoulder, rig.elbowL, 0.055);
     placeBone(b.larmL, rig.elbowL, rig.handL, 0.04);
     placeBone(b.uarmR, rig.shoulder, rig.elbowR, 0.052);
@@ -676,7 +705,7 @@
     placeBone(b.shinR, rig.kneeR, rig.footR, 0.048);
     b.footL.position.set(rig.footL.x, rig.footL.y, rig.footL.z);
     b.footR.position.set(rig.footR.x, rig.footR.y, rig.footR.z);
-    const packZ = rig.shoulder.z + 0.14 + rig.w01 * 0.04;
+    const packZ = rig.shoulder.z + 0.22 + rig.w01 * 0.04;
     const packY = rig.shoulder.y - 0.16;
     packMesh.position.set(rig.shoulder.x + 0.01, packY, packZ);
     const ps = 0.09 + rig.w01 * 0.045;
@@ -737,15 +766,16 @@
     }
 
     const portrait = !!o.portrait;
-    camera.fov = close ? 32 : portrait ? 50 : 36;
+    camera.fov = close ? 30 : portrait ? 42 : 32;
     camera.aspect = viewW / Math.max(1, viewH);
     camera.updateProjectionMatrix();
-    if (close) {
-      camera.position.set(rig.hip.x - 2.5, rig.hip.y + 0.35, rig.hip.z + 1.25);
-      camera.lookAt(rig.hip.x, rig.hip.y + 0.15, rig.hip.z - 0.15);
+    if (close || o.side) {
+      camera.position.set(rig.hip.x - 4.2, rig.hip.y + 0.25, rig.hip.z + 0.15);
+      camera.lookAt(rig.hip.x, rig.hip.y + 0.05, rig.hip.z - 0.05);
     } else {
-      camera.position.set(-6.2, camY + 0.95, focusZ + 1.45);
-      camera.lookAt(0.05, camY + 0.15, focusZ - 0.2);
+      const dist = portrait ? 8.6 : 9.4;
+      camera.position.set(-dist * 0.86, camY + 0.15, focusZ + dist * 0.22);
+      camera.lookAt(0.15, camY - 0.72, focusZ - 0.25);
     }
     camera.up.set(0, 1, 0);
 

@@ -388,7 +388,7 @@ function applyShot(name) {
   const mid = FX.HOLDS[holdNear(60)];
   state.intro = 0; state.settle = 1; state.mode = "play"; state.catches = 4;
   state.attached = true; state.descending = false; state.crown = false; state.lost = [];
-  const scenic = { base: 10, mid: 60, storm: 120, gale: FX.HOLDS[n - 1].y * 0.9, hang: 28, charge: 36, flight: 48, swing: 48, descend: 70 };
+  const scenic = { base: 10, mid: 90, storm: 150, gale: FX.HOLDS[n - 1].y * 0.92, hang: 28, charge: 36, flight: 48, swing: 55, descend: 70 };
   if (scenic[name] != null && name !== "ending" && name !== "choices" && name !== "summit") {
     state.holdIndex = holdNear(scenic[name]);
     state.origin = state.holdIndex;
@@ -417,10 +417,16 @@ function applyShot(name) {
   camY = state.y; focusZ = state.z;
 }
 function pinShot() {
-  if (shotName !== "flight" && shotName !== "swing") return;
   const h = FX.HOLDS[state.holdIndex];
-  state.attached = false; state.mode = "play";
-  state.vy = 9.5; state.vz = -0.4; state.y = h.y + 1.15; state.z = h.z + 0.42;
+  if (shotName === "flight" || shotName === "swing") {
+    state.attached = false; state.mode = "play";
+    state.vy = 9.5; state.vz = -0.4; state.y = h.y + 1.15; state.z = h.z + 0.42;
+  } else if (shotName === "charge") {
+    state.attached = true; state.mode = "play"; state.holding = true;
+    state.holdT = 0.32;
+    state.y = h.y - 0.85;
+    state.z = h.z + 0.08;
+  }
 }
 
 function frame(now) {
@@ -490,6 +496,7 @@ function frame(now) {
     camY: camY,
     focusZ: focusZ,
     close: shotName === "swing",
+    side: shotName === "charge" || shotName === "flight" || shotName === "swing",
   });
   syncUI(raw);
   requestAnimationFrame(frame);
