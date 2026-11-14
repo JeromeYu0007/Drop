@@ -1,5 +1,5 @@
 /* Release budget and local runtime-asset closure.
- * The 10 MB requirement applies to downloaded resources, not JS heap or VRAM.
+ * The 5 MB requirement applies to downloaded resources, not JS heap or VRAM.
  * node test/budget.js [--json] [--check-cache] [--stage _site]
  * --stage builds or updates a directory containing only this runtime closure.
  */
@@ -10,7 +10,7 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const zlib = require("node:zlib");
 const ROOT = path.resolve(__dirname, "..");
-const LIMIT = 10_000_000;
+const LIMIT = 5_000_000;
 
 function localReference(reference, owner) {
   const ref = reference.trim();

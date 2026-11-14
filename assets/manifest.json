@@ -1,0 +1,480 @@
+{
+  "version": 2,
+  "license": "Mixed: CC0-1.0 source assets and generated project artwork",
+  "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "providerLicenseUrl": "https://polyhaven.com/license",
+  "retrievedOn": "2026-11-14",
+  "imageBytes": 4069620,
+  "imageCount": 12,
+  "notes": [
+    "Every image is used by the game; no padding or unused source images are included.",
+    "Color images use sRGB; normal and roughness maps use NoColorSpace.",
+    "Normals are the official OpenGL +Y maps.",
+    "The small sky environment uses the same official tone-mapped panorama; it is LDR, not an HDR file.",
+    "Original downloads and API response caches are not part of the game package.",
+    "The 11 original Poly Haven maps are resized and compressed without creative image edits. alpine-panorama.webp is new project-specific generated artwork, not a photograph or a CC0 source asset."
+  ],
+  "assets": [
+    {
+      "path": "assets/rock-albedo.webp",
+      "bytes": 1408096,
+      "sha256": "ecda6f4374ea6744539c8909d882b9ada06d50ee7cc932f0518a36d73325c164",
+      "width": 3072,
+      "height": 3072,
+      "mimeType": "image/webp",
+      "colorSpace": "srgb",
+      "purpose": "rock base color",
+      "license": "CC0-1.0",
+      "source": {
+        "assetId": "rock_face_03",
+        "name": "Rock Face 03",
+        "page": "https://polyhaven.com/a/rock_face_03",
+        "authors": {
+          "Dario Barresi": "Photography",
+          "Rico Cilliers": "Processing"
+        },
+        "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/4k/rock_face_03/rock_face_03_diff_4k.jpg",
+        "bytes": 15319503,
+        "md5": "50105980b509029b9040f43b1f6ddc71",
+        "md5Verified": true,
+        "map": "Diffuse",
+        "resolution": "4k",
+        "format": "jpg",
+        "scannedDimensionsMillimeters": [
+          2699.9995708465576,
+          2699.9995708465576
+        ]
+      },
+      "processing": {
+        "encoder": "Pillow/libwebp",
+        "format": "WebP lossy",
+        "quality": 76,
+        "method": 6,
+        "resizeFilter": "Lanczos",
+        "colorGrading": "none"
+      }
+    },
+    {
+      "path": "assets/rock-normal.webp",
+      "bytes": 1144742,
+      "sha256": "3277f89fd843c0c0adcb0b9230a6bd3a26603fa7ff82379fb0de5b8d38374ff4",
+      "width": 2048,
+      "height": 2048,
+      "mimeType": "image/webp",
+      "colorSpace": "none",
+      "purpose": "rock tangent-space normal",
+      "license": "CC0-1.0",
+      "source": {
+        "assetId": "rock_face_03",
+        "name": "Rock Face 03",
+        "page": "https://polyhaven.com/a/rock_face_03",
+        "authors": {
+          "Dario Barresi": "Photography",
+          "Rico Cilliers": "Processing"
+        },
+        "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/2k/rock_face_03/rock_face_03_nor_gl_2k.png",
+        "bytes": 23159678,
+        "md5": "6f2f635fb9890cb545806dfb4fc9f50a",
+        "md5Verified": true,
+        "map": "nor_gl",
+        "resolution": "2k",
+        "format": "png",
+        "scannedDimensionsMillimeters": [
+          2699.9995708465576,
+          2699.9995708465576
+        ]
+      },
+      "processing": {
+        "encoder": "Pillow/libwebp",
+        "format": "WebP lossy",
+        "quality": 82,
+        "method": 6,
+        "resizeFilter": "Lanczos",
+        "colorGrading": "none"
+      },
+      "normalConvention": "OpenGL tangent-space +Y; do not apply sRGB decoding"
+    },
+    {
+      "path": "assets/rock-roughness.webp",
+      "bytes": 168304,
+      "sha256": "19614f916360cedc66433931bae245e98f8e88e264f2374427812c75c75808ee",
+      "width": 1024,
+      "height": 1024,
+      "mimeType": "image/webp",
+      "colorSpace": "none",
+      "purpose": "rock roughness",
+      "license": "CC0-1.0",
+      "source": {
+        "assetId": "rock_face_03",
+        "name": "Rock Face 03",
+        "page": "https://polyhaven.com/a/rock_face_03",
+        "authors": {
+          "Dario Barresi": "Photography",
+          "Rico Cilliers": "Processing"
+        },
+        "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/2k/rock_face_03/rock_face_03_rough_2k.png",
+        "bytes": 7453585,
+        "md5": "f33027a425e7143cc41ece4135215c6d",
+        "md5Verified": true,
+        "map": "Rough",
+        "resolution": "2k",
+        "format": "png",
+        "scannedDimensionsMillimeters": [
+          2699.9995708465576,
+          2699.9995708465576
+        ]
+      },
+      "processing": {
+        "encoder": "Pillow/libwebp",
+        "format": "WebP lossy",
+        "quality": 86,
+        "method": 6,
+        "resizeFilter": "Lanczos",
+        "colorGrading": "none",
+        "bitDepthConversion": "Source 16-bit grayscale is divided by 257 and rounded before 8-bit encoding; values are not clamped from 16-bit to 8-bit."
+      },
+      "channel": "R=G=B roughness; suitable for Three.js roughnessMap G channel"
+    },
+    {
+      "path": "assets/cloth-albedo.webp",
+      "bytes": 197784,
+      "sha256": "0beda072e056bb36b10902a8e3989b3255f86d3180a494a265dcea18ffef6a27",
+      "width": 1024,
+      "height": 1024,
+      "mimeType": "image/webp",
+      "colorSpace": "srgb",
+      "purpose": "neutral woven garment base color",
+      "license": "CC0-1.0",
+      "source": {
+        "assetId": "denim_fabric_05",
+        "name": "Denim Fabric 05",
+        "page": "https://polyhaven.com/a/denim_fabric_05",
+        "authors": {
+          "colormass": "Photography",
+          "Rico Cilliers": "Processing"
+        },
+        "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/denim_fabric_05/denim_fabric_05_diff_1k.png",
+        "bytes": 5823146,
+        "md5": "22d91b3e73e61e7b3f826c211768ccd9",
+        "md5Verified": true,
+        "map": "Diffuse",
+        "resolution": "1k",
+        "format": "png",
+        "scannedDimensionsMillimeters": [
+          270.1520343364256,
+          271.49999141693115
+        ]
+      },
+      "processing": {
+        "encoder": "Pillow/libwebp",
+        "format": "WebP lossy",
+        "quality": 80,
+        "method": 6,
+        "resizeFilter": "Lanczos",
+        "colorGrading": "none"
+      }
+    },
+    {
+      "path": "assets/cloth-normal.webp",
+      "bytes": 315588,
+      "sha256": "07faf83580e96e3d06502ace65c7ba574c9b7843e914c4a94ed14136414a15a7",
+      "width": 1024,
+      "height": 1024,
+      "mimeType": "image/webp",
+      "colorSpace": "none",
+      "purpose": "woven garment tangent-space normal",
+      "license": "CC0-1.0",
+      "source": {
+        "assetId": "denim_fabric_05",
+        "name": "Denim Fabric 05",
+        "page": "https://polyhaven.com/a/denim_fabric_05",
+        "authors": {
+          "colormass": "Photography",
+          "Rico Cilliers": "Processing"
+        },
+        "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/denim_fabric_05/denim_fabric_05_nor_gl_1k.png",
+        "bytes": 5908049,
+        "md5": "7044fee4042858f9d4d8489c91a6141c",
+        "md5Verified": true,
+        "map": "nor_gl",
+        "resolution": "1k",
+        "format": "png",
+        "scannedDimensionsMillimeters": [
+          270.1520343364256,
+          271.49999141693115
+        ]
+      },
+      "processing": {
+        "encoder": "Pillow/libwebp",
+        "format": "WebP lossy",
+        "quality": 82,
+        "method": 6,
+        "resizeFilter": "Lanczos",
+        "colorGrading": "none"
+      },
+      "normalConvention": "OpenGL tangent-space +Y; do not apply sRGB decoding"
+    },
+    {
+      "path": "assets/cloth-roughness.webp",
+      "bytes": 54070,
+      "sha256": "d8eee0c736bc54ea91108ed2d2438ca7d0265b2117e12cf1d9605eb99fd17289",
+      "width": 512,
+      "height": 512,
+      "mimeType": "image/webp",
+      "colorSpace": "none",
+      "purpose": "woven garment roughness",
+      "license": "CC0-1.0",
+      "source": {
+        "assetId": "denim_fabric_05",
+        "name": "Denim Fabric 05",
+        "page": "https://polyhaven.com/a/denim_fabric_05",
+        "authors": {
+          "colormass": "Photography",
+          "Rico Cilliers": "Processing"
+        },
+        "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/denim_fabric_05/denim_fabric_05_rough_1k.png",
+        "bytes": 2007496,
+        "md5": "9f861f9e414014f075cbee616347bef9",
+        "md5Verified": true,
+        "map": "Rough",
+        "resolution": "1k",
+        "format": "png",
+        "scannedDimensionsMillimeters": [
+          270.1520343364256,
+          271.49999141693115
+        ]
+      },
+      "processing": {
+        "encoder": "Pillow/libwebp",
+        "format": "WebP lossy",
+        "quality": 85,
+        "method": 6,
+        "resizeFilter": "Lanczos",
+        "colorGrading": "none",
+        "bitDepthConversion": "Source 16-bit grayscale is divided by 257 and rounded before 8-bit encoding; values are not clamped from 16-bit to 8-bit."
+      },
+      "channel": "R=G=B roughness; suitable for Three.js roughnessMap G channel"
+    },
+    {
+      "path": "assets/leather-albedo.webp",
+      "bytes": 56942,
+      "sha256": "53c9042f95cb97ef6e1b028abb29ea670ab614ad252a742ea44317a1ab13496c",
+      "width": 512,
+      "height": 512,
+      "mimeType": "image/webp",
+      "colorSpace": "srgb",
+      "purpose": "leather boot and glove base color",
+      "license": "CC0-1.0",
+      "source": {
+        "assetId": "brown_leather",
+        "name": "Brown Leather",
+        "page": "https://polyhaven.com/a/brown_leather",
+        "authors": {
+          "Rob Tuytel": "All"
+        },
+        "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/brown_leather/brown_leather_albedo_1k.png",
+        "bytes": 1819288,
+        "md5": "5b135b9fb7e8ff79dd9e9887abfe8bc2",
+        "md5Verified": true,
+        "map": "Diffuse",
+        "resolution": "1k",
+        "format": "png",
+        "scannedDimensionsMillimeters": [
+          400.0000059604645,
+          400.00003576278687
+        ]
+      },
+      "processing": {
+        "encoder": "Pillow/libwebp",
+        "format": "WebP lossy",
+        "quality": 90,
+        "method": 6,
+        "resizeFilter": "Lanczos",
+        "colorGrading": "none"
+      }
+    },
+    {
+      "path": "assets/leather-normal.webp",
+      "bytes": 242272,
+      "sha256": "0c404950d0513b29f37bf8f0bc56d7f613cbd2664b9fe294770e1ec927fc5d4a",
+      "width": 1024,
+      "height": 1024,
+      "mimeType": "image/webp",
+      "colorSpace": "none",
+      "purpose": "leather tangent-space normal",
+      "license": "CC0-1.0",
+      "source": {
+        "assetId": "brown_leather",
+        "name": "Brown Leather",
+        "page": "https://polyhaven.com/a/brown_leather",
+        "authors": {
+          "Rob Tuytel": "All"
+        },
+        "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/brown_leather/brown_leather_nor_gl_1k.png",
+        "bytes": 1925895,
+        "md5": "dce9f0828b9dd7c3fb560f6c27b7c6d0",
+        "md5Verified": true,
+        "map": "nor_gl",
+        "resolution": "1k",
+        "format": "png",
+        "scannedDimensionsMillimeters": [
+          400.0000059604645,
+          400.00003576278687
+        ]
+      },
+      "processing": {
+        "encoder": "Pillow/libwebp",
+        "format": "WebP lossy",
+        "quality": 86,
+        "method": 6,
+        "resizeFilter": "Lanczos",
+        "colorGrading": "none"
+      },
+      "normalConvention": "OpenGL tangent-space +Y; do not apply sRGB decoding"
+    },
+    {
+      "path": "assets/leather-roughness.webp",
+      "bytes": 117838,
+      "sha256": "a72253f8ccee4b2ab31ebfe4c4e9b137154a29a450e6ace917807a438d1fcc5e",
+      "width": 512,
+      "height": 512,
+      "mimeType": "image/webp",
+      "colorSpace": "none",
+      "purpose": "leather roughness",
+      "license": "CC0-1.0",
+      "source": {
+        "assetId": "brown_leather",
+        "name": "Brown Leather",
+        "page": "https://polyhaven.com/a/brown_leather",
+        "authors": {
+          "Rob Tuytel": "All"
+        },
+        "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/brown_leather/brown_leather_rough_1k.png",
+        "bytes": 959330,
+        "md5": "0b8b2c76bbccb6811987f631d3ed4219",
+        "md5Verified": true,
+        "map": "Rough",
+        "resolution": "1k",
+        "format": "png",
+        "scannedDimensionsMillimeters": [
+          400.0000059604645,
+          400.00003576278687
+        ]
+      },
+      "processing": {
+        "encoder": "Pillow/libwebp",
+        "format": "WebP lossy",
+        "quality": 85,
+        "method": 6,
+        "resizeFilter": "Lanczos",
+        "colorGrading": "none"
+      },
+      "channel": "R=G=B roughness; suitable for Three.js roughnessMap G channel"
+    },
+    {
+      "path": "assets/sky-clouds.webp",
+      "bytes": 156422,
+      "sha256": "4a431428c69e3a30951e332f3db4ce7c3a843cea0f837325a39ee81cedfa5757",
+      "width": 4096,
+      "height": 2048,
+      "mimeType": "image/webp",
+      "colorSpace": "srgb",
+      "purpose": "equirectangular visible cloud sky",
+      "license": "CC0-1.0",
+      "source": {
+        "assetId": "kloofendal_overcast_puresky",
+        "name": "Kloofendal Overcast (Pure Sky)",
+        "page": "https://polyhaven.com/a/kloofendal_overcast_puresky",
+        "authors": {
+          "Greg Zaal": "All"
+        },
+        "url": "https://dl.polyhaven.org/file/ph-assets/HDRIs/extra/Tonemapped%20JPG/kloofendal_overcast_puresky.jpg",
+        "bytes": 16892196,
+        "md5": "61b14cf4deed54ca8bd1a0c3314f8a21",
+        "md5Verified": true,
+        "map": "tonemapped",
+        "resolution": null,
+        "format": "jpg"
+      },
+      "processing": {
+        "encoder": "Pillow/libwebp",
+        "format": "WebP lossy",
+        "quality": 92,
+        "method": 6,
+        "resizeFilter": "Lanczos",
+        "colorGrading": "none"
+      }
+    },
+    {
+      "path": "assets/sky-environment.webp",
+      "bytes": 6236,
+      "sha256": "edfbd2fc2982a818a8e12d26ac6e21c22529e378ac4db8f2b247185297957795",
+      "width": 512,
+      "height": 256,
+      "mimeType": "image/webp",
+      "colorSpace": "srgb",
+      "purpose": "equirectangular source for a 128px PMREM cube",
+      "license": "CC0-1.0",
+      "source": {
+        "assetId": "kloofendal_overcast_puresky",
+        "name": "Kloofendal Overcast (Pure Sky)",
+        "page": "https://polyhaven.com/a/kloofendal_overcast_puresky",
+        "authors": {
+          "Greg Zaal": "All"
+        },
+        "url": "https://dl.polyhaven.org/file/ph-assets/HDRIs/extra/Tonemapped%20JPG/kloofendal_overcast_puresky.jpg",
+        "bytes": 16892196,
+        "md5": "61b14cf4deed54ca8bd1a0c3314f8a21",
+        "md5Verified": true,
+        "map": "tonemapped",
+        "resolution": null,
+        "format": "jpg"
+      },
+      "processing": {
+        "encoder": "Pillow/libwebp",
+        "format": "WebP lossy",
+        "quality": 90,
+        "method": 6,
+        "resizeFilter": "Lanczos",
+        "colorGrading": "none"
+      }
+    },
+    {
+      "path": "assets/alpine-panorama.webp",
+      "bytes": 201326,
+      "sha256": "e0c5ac11521eb74c6fb4d63f37b9f3e6804e24d31967b252f8e18ddf2a0b4daf",
+      "width": 2172,
+      "height": 724,
+      "mimeType": "image/webp",
+      "colorSpace": "srgb",
+      "purpose": "Photographic-style alpine mountain background matte for a finite azimuth/elevation plate; not an equirectangular panorama",
+      "license": "Generated for Drop using OpenAI image generation; not a CC0 source asset",
+      "licenseUrl": "https://openai.com/policies/terms-of-use/",
+      "source": {
+        "provider": "OpenAI image generation",
+        "generatedOn": "2026-11-14",
+        "generatedFor": "Drop",
+        "sourceType": "AI-generated game background artwork",
+        "sourceWidth": 2172,
+        "sourceHeight": 724,
+        "sha256": "d51e582c992608b291255de6c11d4162c719a24c36d275771541703865e86874",
+        "promptSummary": "Wide photographic-style view across a deep alpine valley toward broad layered granite and slate massifs with snow-filled gullies, cold overcast sky, and valley clouds; no people, buildings or fantasy needle spires.",
+        "notARealLocation": true
+      },
+      "processing": {
+        "encoder": "Pillow/libwebp",
+        "format": "WebP lossy",
+        "quality": 84,
+        "method": 6,
+        "resized": false,
+        "colorGrading": "none"
+      },
+      "mapping": {
+        "projection": "finite planar/azimuth-elevation matte, aspect ratio 3:1",
+        "mainMassif": "right half",
+        "skyBlend": "top 12 percent",
+        "repeat": false
+      }
+    }
+  ]
+}

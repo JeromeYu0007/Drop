@@ -1,20 +1,19 @@
-/* Procedural mountain world. Textures are baked from deterministic noise at boot;
- * no downloaded images, fonts, models or environment maps. */
+/* Alpine environment: measured play surfaces, photographic CC0 rock / sky,
+ * an original alpine panorama and weather. See assets/CREDITS.txt. */
 (function () {
   'use strict';
   const clamp=(v,a,b)=>Math.max(a,Math.min(b,v)), mix=(a,b,t)=>a+(b-a)*t;
   const smooth=t=>{t=clamp(t,0,1);return t*t*(3-2*t);};
   const hash=(x,y=0)=>{let n=Math.imul(x|0,374761393)+Math.imul(y|0,668265263);n=Math.imul(n^(n>>>13),1274126177);return ((n^(n>>>16))>>>0)/4294967295;};
   function noise(x,y,period=0){const ix=Math.floor(x),iy=Math.floor(y),fx=x-ix,fy=y-iy,u=fx*fx*(3-2*fx),v=fy*fy*(3-2*fy);const h=(a,b)=>hash(period?((a%period)+period)%period:a,period?((b%period)+period)%period:b);return mix(mix(h(ix,iy),h(ix+1,iy),u),mix(h(ix,iy+1),h(ix+1,iy+1),u),v);}
-  function fbm(x,y,octaves=5){let sum=0,weight=.5;for(let i=0;i<octaves;i++){sum+=noise(x,y)*weight;x=x*2.03+13.1;y=y*2.03+7.7;weight*=.5;}return sum;}
 
   function create({THREE,FX,scene,renderer,quality=2}) {
     let q=quality;
-    const top=FX.HOLDS[FX.HOLDS.length-1].y, root=new THREE.Group();root.name='procedural mountain world';scene.add(root);
-    const resources={geometries:new Set(),materials:new Set(),textures:new Set()}, cliffBands=[],ranges=[],mistLayers=[],holdLights=[];
+    const top=FX.HOLDS[FX.HOLDS.length-1].y, root=new THREE.Group();root.name='alpine mountain world';scene.add(root);
+    const resources={geometries:new Set(),materials:new Set(),textures:new Set()}, cliffBands=[],mistLayers=[],holdLights=[];
     const geo=g=>{resources.geometries.add(g);return g;}, mat=m=>{resources.materials.add(m);return m;};
     const add=(geometry,material,parent=root)=>{const m=new THREE.Mesh(geo(geometry),material);parent.add(m);return m;};
-    const uniforms={uRock:{value:null},uRockNormal:{value:null},uWet:{value:0},uTop:{value:top},uQuality:{value:q},uFlash:{value:0}};
+    const uniforms={uRock:{value:null},uRockAlbedo:{value:null},uRockNormal:{value:null},uRockRoughness:{value:null},uPhoto:{value:0},uWet:{value:0},uTop:{value:top},uQuality:{value:q},uFlash:{value:0}};
 
     function bakeRock(){
       const size=512, heights=new Float32Array(size*size),cracks=new Float32Array(size*size),field=new Uint8Array(size*size*4),normal=new Uint8Array(size*size*4);
@@ -60,42 +59,56 @@
       return make(cloud,256);
     }
     const atmosphereTexture=bakeRock();
-    const rock=mat(new THREE.MeshStandardMaterial({color:0xffffff,roughness:.91,metalness:.035,vertexColors:true,side:THREE.DoubleSide}));
+    // Keep deterministic fallbacks while local images stream; the play surface
+    // and all collision vertices are independent of material loading.
+    uniforms.uRockAlbedo.value=uniforms.uRock.value;uniforms.uRockRoughness.value=uniforms.uRock.value;
+    let envTarget=null,stats,disposed=false,skySource=null,envSource=null,envReady=false;
+    const loader=new THREE.TextureLoader();
+    const trackTexture=(texture,srgb=false,repeat=true)=>{texture.colorSpace=srgb?THREE.SRGBColorSpace:THREE.NoColorSpace;texture.wrapS=texture.wrapT=repeat?THREE.RepeatWrapping:THREE.ClampToEdgeWrapping;texture.anisotropy=Math.min(8,renderer.capabilities.getMaxAnisotropy());resources.textures.add(texture);return texture;};
+    const imageLoaded=()=>{if(stats){stats.textureCount=resources.textures.size+(envTarget?1:0);stats.imageTextureBytes=0;for(const texture of resources.textures){const image=texture.image;if(image&&!image.data&&image.width&&image.height)stats.imageTextureBytes+=image.width*image.height*4*(texture.generateMipmaps?4/3:1);}}};
+    trackTexture(loader.load('assets/rock-albedo.webp',texture=>{if(disposed){texture.dispose();return;}uniforms.uRockAlbedo.value=texture;uniforms.uPhoto.value=1;imageLoaded();}),true);
+    trackTexture(loader.load('assets/rock-normal.webp',texture=>{if(disposed){texture.dispose();return;}uniforms.uRockNormal.value=texture;imageLoaded();}));
+    trackTexture(loader.load('assets/rock-roughness.webp',texture=>{if(disposed){texture.dispose();return;}uniforms.uRockRoughness.value=texture;imageLoaded();}));
+    const rock=mat(new THREE.MeshStandardMaterial({color:0xffffff,roughness:.88,metalness:.018,vertexColors:true,side:THREE.DoubleSide,envMapIntensity:.5}));
     rock.onBeforeCompile=shader=>{
       Object.assign(shader.uniforms,uniforms);
       shader.vertexShader=shader.vertexShader.replace('#include <common>','#include <common>\nvarying vec3 vRockWorld;varying vec3 vRockN;')
         .replace('#include <beginnormal_vertex>','#include <beginnormal_vertex>\nvRockN=normalize(mat3(modelMatrix)*objectNormal);')
         .replace('#include <worldpos_vertex>','#include <worldpos_vertex>\nvRockWorld=(modelMatrix*vec4(transformed,1.)).xyz;');
       shader.fragmentShader=shader.fragmentShader.replace('#include <common>',`#include <common>
-        varying vec3 vRockWorld;varying vec3 vRockN;uniform sampler2D uRock,uRockNormal;uniform float uWet,uTop,uQuality,uFlash;
-        vec3 rBlend; vec3 rPosition; float wetness; float rockSnow;
+        varying vec3 vRockWorld;varying vec3 vRockN;
+        uniform sampler2D uRock,uRockAlbedo,uRockNormal,uRockRoughness;uniform float uPhoto,uWet,uTop,uQuality,uFlash;
+        vec3 rBlend;vec3 rPosition;float wetness;float rockSnow;float stoneRoughness;
         vec4 rockSample(sampler2D tex,vec3 p,vec3 w){if(uQuality<.5){if(w.x>w.y&&w.x>w.z)return texture2D(tex,p.zy);if(w.y>w.z)return texture2D(tex,p.xz);return texture2D(tex,p.xy);}return texture2D(tex,p.zy)*w.x+texture2D(tex,p.xz)*w.y+texture2D(tex,p.xy)*w.z;}
       `).replace('#include <color_fragment>',`#include <color_fragment>
-        vec3 wn=normalize(vRockN);rBlend=pow(abs(wn),vec3(6.));rBlend/=max(.001,dot(rBlend,vec3(1.)));
-        rPosition=vRockWorld*.19;rPosition.y+=vRockWorld.z*.027;
-        vec3 rotated=vec3(rPosition.x*.73+rPosition.z*.44,rPosition.y*.71-rPosition.z*.19,rPosition.z*.73-rPosition.x*.44);
-        vec4 stone=rockSample(uRock,rPosition,rBlend);if(uQuality>.5)stone=mix(stone,rockSample(uRock,rotated+vec3(.17,.51,.32),rBlend),.32);
-        vec4 macro=rockSample(uRock,rPosition*.113+vec3(.27,.41,.18),rBlend);
-        vec3 slate=mix(vec3(.105,.112,.112),vec3(.205,.201,.181),smoothstep(.17,.82,stone.r));
-        slate=mix(slate,vec3(.155,.128,.098),smoothstep(.60,.82,macro.a)*.36);
-        slate*=1.-stone.b*.30;
-        slate*=.79+macro.r*.50;
-        float quartz=smoothstep(.75,.91,stone.a)*smoothstep(.50,.77,stone.r);slate+=vec3(.085,.09,.085)*quartz;
-        wetness=uWet*smoothstep(.40,.69,texture2D(uRock,vRockWorld.zy*vec2(.11,.018)).r)*.78;
-        slate*=1.-wetness*.48;
-        rockSnow=smoothstep(uTop*.54,uTop*.9,vRockWorld.y)*smoothstep(.18,.66,wn.y)*smoothstep(.16,.62,macro.r);
-        slate=mix(slate,vec3(.53,.59,.61),rockSnow*.94);
-        diffuseColor.rgb*=slate*(1.+uFlash*.13);
+        vec3 wn=normalize(vRockN);rBlend=pow(abs(wn),vec3(5.));rBlend/=max(.001,dot(rBlend,vec3(1.)));
+        // A tile is 2.6 metres: hairline fractures stay small enough to read as
+        // stone grain beside a hand, rather than a painted repeating cliff.
+        rPosition=vRockWorld*.38;rPosition.y+=vRockWorld.z*.031;
+        vec4 macro=rockSample(uRock,vRockWorld*.033+vec3(.27,.41,.18),rBlend);
+        vec3 stone=rockSample(uRockAlbedo,rPosition,rBlend).rgb;
+        float luminance=dot(stone,vec3(.2126,.7152,.0722));stone=mix(stone,vec3(luminance),.39)*vec3(.85,.92,.98);
+        vec3 fallback=mix(vec3(.11,.125,.13),vec3(.22,.23,.23),macro.r);
+        vec3 slate=mix(fallback,stone,uPhoto);
+        // Broad veins and seepage are independent of the photographic tile.
+        slate*=.78+macro.a*.4;
+        float runoff=texture2D(uRock,vRockWorld.zy*vec2(.16,.014)+vec2(.19,.31)).a;
+        wetness=uWet*smoothstep(.29,.68,runoff)*.92;
+        slate*=1.-wetness*.38;
+        rockSnow=smoothstep(uTop*.44,uTop*.89,vRockWorld.y)*smoothstep(.10,.62,wn.y)*smoothstep(.15,.53,macro.r);
+        slate=mix(slate,vec3(.57,.64,.68),rockSnow*.96);
+        stoneRoughness=rockSample(uRockRoughness,rPosition,rBlend).r;
+        diffuseColor.rgb*=slate*(1.+uFlash*.1);
       `).replace('#include <normal_fragment_begin>',`#include <normal_fragment_begin>
         vec3 nx=vec3(0.),ny=vec3(0.),nz=vec3(0.);
         if(uQuality<.5){if(rBlend.x>rBlend.y&&rBlend.x>rBlend.z)nx=texture2D(uRockNormal,rPosition.zy).xyz*2.-1.;else if(rBlend.y>rBlend.z)ny=texture2D(uRockNormal,rPosition.xz).xyz*2.-1.;else nz=texture2D(uRockNormal,rPosition.xy).xyz*2.-1.;}
         else{nx=texture2D(uRockNormal,rPosition.zy).xyz*2.-1.;ny=texture2D(uRockNormal,rPosition.xz).xyz*2.-1.;nz=texture2D(uRockNormal,rPosition.xy).xyz*2.-1.;}
         vec3 detail=vec3(0.,nx.y,nx.x)*rBlend.x+vec3(ny.x,0.,ny.y)*rBlend.y+vec3(nz.x,nz.y,0.)*rBlend.z;
-        normal=normalize(normal+mat3(viewMatrix)*detail*(.12-rockSnow*.08));
-      `).replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\nroughnessFactor=clamp(.89-wetness*.56+rockSnow*.06,.25,1.);');
+        normal=normalize(normal+mat3(viewMatrix)*detail*(.48-rockSnow*.36));
+      `).replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\nroughnessFactor=clamp(mix(.88,stoneRoughness,uPhoto)-wetness*.42+rockSnow*.14,.24,.98);');
     };
-    rock.customProgramCacheKey=()=> 'drop-geology-v5';
-    const rockLow=mat(new THREE.MeshLambertMaterial({color:0xffffff,vertexColors:true,side:THREE.DoubleSide}));rockLow.onBeforeCompile=rock.onBeforeCompile;rockLow.customProgramCacheKey=()=> 'drop-geology-low-v5';
+    rock.customProgramCacheKey=()=> 'drop-photo-geology-v6';
+    const rockLow=mat(new THREE.MeshLambertMaterial({color:0xffffff,vertexColors:true,side:THREE.DoubleSide}));rockLow.onBeforeCompile=rock.onBeforeCompile;rockLow.customProgramCacheKey=()=> 'drop-photo-geology-low-v6';
 
     function indexedBands(positions,indices,colors,bandHeight=24){
       const full=geo(new THREE.BufferGeometry());full.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));full.setIndex(indices);full.computeVertexNormals();
@@ -126,13 +139,13 @@
         if(Math.hypot(ay*bz-az*by,az*bx-ax*bz,ax*by-ay*bx)>.000001)ind.push(data.indices[i],data.indices[i+1],data.indices[i+2]);}
       indexedBands(p,ind,data.colors);
       let prev=-Infinity;for(let r=0;r<allRows;r++){const i=r*width*3;if(p[i+1]>prev+.0001){rows.push([p[i],p[i+1],p[i+2]]);prev=p[i+1];}}
-      const side=[],si=[],depth=34;
+      const side=[],si=[],depth=48;
       // The playable front stays fixed. Behind it the ridge drops away into
       // an irregular shoulder, with one shared boundary for wall and summit.
       const sidePoint=(a,t,crestWeight)=>{
         const [x,y,z]=a,fade=smooth(t/.15),fault=(noise(y*.18,t*9)-.5)*.34+(noise(y*.62,t*20)-.5)*.08;
         const edge=mix(Math.exp(-t*14),1,smooth((y-top-1.5)/1.1)),backProfile=.65+(noise(y*.065,t*7)-.5)*.85;
-        const relief=(1-Math.abs(noise(y*.14+t*.3,t*13)*2-1))*.76;
+        const relief=(1-Math.abs(noise(y*.14+t*.3,t*13)*2-1))*.76+(noise(y*.38+t*2,t*29)-.5)*.19;
         const shoulder=(-t*5.2+Math.sin(t*7+x*.62)*.65*fade)*crestWeight;
         return [x-t*1.45-fault*fade-relief*fade,y+Math.sin(t*18+y*.04)*.045*fade+shoulder,mix(backProfile,z,edge)-t*17];
       };
@@ -158,12 +171,13 @@
     }
     makeCliff();
 
-    const hemi=new THREE.HemisphereLight(0x8fa5b1,0x27231e,.36);root.add(hemi);
-    const moon=new THREE.DirectionalLight(0xc8dce8,2.15);moon.castShadow=true;moon.shadow.mapSize.set(1024,1024);Object.assign(moon.shadow.camera,{near:1,far:64,left:-11,right:11,top:13,bottom:-13});moon.shadow.bias=-.0008;moon.shadow.normalBias=.075;moon.shadow.radius=2;root.add(moon,moon.target);
+    const hemi=new THREE.HemisphereLight(0x9eafbf,0x292821,.40);root.add(hemi);
+    const moon=new THREE.DirectionalLight(0xc8dce8,2.15);moon.castShadow=true;moon.shadow.mapSize.set(2048,2048);Object.assign(moon.shadow.camera,{near:1,far:64,left:-11,right:11,top:13,bottom:-13});moon.shadow.bias=-.0008;moon.shadow.normalBias=.035;moon.shadow.radius=2;root.add(moon,moon.target);
     const rim=new THREE.DirectionalLight(0xe5c59c,.72);root.add(rim,rim.target);
     const fill=new THREE.DirectionalLight(0x9ab0bb,.17);root.add(fill,fill.target);
     scene.fog=new THREE.FogExp2(0x1c3547,.006);
-    // A tiny, generated sky reflection gives metal and wet cloth a real environment.
+    // The photograph supplies broad cloud highlights in wet stone, metal and
+    // cloth. A tiny deterministic reflection works while it is loading.
     const envPixels=new Uint8Array(128*64*4);
     for(let y=0;y<64;y++)for(let x=0;x<128;x++){
       const altitude=Math.cos((y+.5)/64*Math.PI),horizon=Math.exp(-Math.abs(altitude)*5);
@@ -173,123 +187,108 @@
       envPixels[o]+=key*105;envPixels[o+1]+=key*115;envPixels[o+2]+=key*120;
     }
     const canRenderHalf=renderer.capabilities.isWebGL2?renderer.extensions.has('EXT_color_buffer_float'):(renderer.extensions.has('OES_texture_half_float')&&renderer.extensions.has('OES_texture_half_float_linear')&&renderer.extensions.has('EXT_color_buffer_half_float'));
-    let envTarget=null,stats,disposed=false;
     function rebuildEnvironment(){
       if(disposed)return;
       const previous=envTarget;envTarget=null;
       if(previous&&scene.environment===previous.texture)scene.environment=null;
       if(canRenderHalf){
-        const source=new THREE.DataTexture(envPixels,128,64,THREE.RGBAFormat);source.needsUpdate=true;source.mapping=THREE.EquirectangularReflectionMapping;
+        const source=envReady?envSource:new THREE.DataTexture(envPixels,128,64,THREE.RGBAFormat);source.needsUpdate=true;source.mapping=THREE.EquirectangularReflectionMapping;
         const pmrem=new THREE.PMREMGenerator(renderer);
         try{envTarget=pmrem.fromEquirectangular(source);scene.environment=envTarget.texture;}
-        finally{pmrem.dispose();source.dispose();}
+        finally{pmrem.dispose();if(source!==envSource)source.dispose();}
       }
       if(previous)previous.dispose();
-      if(stats){stats.textureCount=envTarget?4:3;stats.environmentTextureBytes=envTarget?envTarget.width*envTarget.height*8:0;}
+      if(stats){stats.textureCount=resources.textures.size+(envTarget?1:0);stats.environmentTextureBytes=envTarget?envTarget.width*envTarget.height*8:0;}
     }
     rebuildEnvironment();
 
-    const skyU={uDetail:{value:atmosphereTexture},uTime:{value:0},uStorm:{value:0},uAlt:{value:0},uFlash:{value:0}};
+    const skyU={uDetail:{value:atmosphereTexture},uSky:{value:atmosphereTexture},uAlpine:{value:atmosphereTexture},uAlpinePhoto:{value:0},uPhoto:{value:0},uTime:{value:0},uStorm:{value:0},uAlt:{value:0},uFlash:{value:0}};
     const skyMat=mat(new THREE.ShaderMaterial({side:THREE.BackSide,depthWrite:false,uniforms:skyU,vertexShader:'varying vec3 vD;void main(){vD=(modelMatrix*vec4(position,1.)).xyz-cameraPosition;gl_Position=projectionMatrix*viewMatrix*vec4(vD+cameraPosition,1.);}',fragmentShader:`
-      varying vec3 vD;uniform sampler2D uDetail;uniform float uTime,uStorm,uAlt,uFlash;
-      float h(vec2 p){vec3 q=fract(vec3(p.xyx)*.1031);q+=dot(q,q.yzx+33.33);return fract((q.x+q.y)*q.z);}
-      void main(){vec3 d=normalize(vD);float v=smoothstep(-.1,.7,d.y);
-        vec3 horizon=mix(vec3(.05,.085,.112),vec3(.038,.062,.092),uAlt),zenith=vec3(.008,.018,.038);vec3 c=mix(horizon,zenith,v);
-        vec3 md=normalize(vec3(1.,.23,-.10));float m=dot(d,md);float halo=pow(max(0.,m),60.);c+=vec3(.17,.22,.25)*halo*.16;
-        float disc=smoothstep(.99993,.99995,m);float maria=texture2D(uDetail,mat2(.8,.6,-.6,.8)*(d.zy-md.zy)*24.+vec2(.37,.59)).r;c+=vec3(.64,.73,.78)*disc*(.64+maria*.36);
-        float stars=pow(h(floor(d.xz/(d.y+.8)*1300.)),360.);c+=stars*.13*smoothstep(.12,.55,d.y)*(1.-uStorm);
-        vec2 uv=d.xz/(abs(d.y)+.32)*.21+vec2(uTime*.00065,uTime*.00019);
-        float clouds=texture2D(uDetail,uv).r*.65+texture2D(uDetail,uv*2.1+.2).r*.35;
-        clouds=smoothstep(.37,.69,clouds)*smoothstep(-.13,.2,d.y);
-        c=mix(c,vec3(.032,.055,.075)+halo*.035,clouds*(.38+uStorm*.45));c+=vec3(.13,.19,.24)*uFlash;
+      varying vec3 vD;uniform sampler2D uDetail,uSky,uAlpine;uniform float uPhoto,uAlpinePhoto,uTime,uStorm,uAlt,uFlash;
+      void main(){vec3 d=normalize(vD);float altitude=smoothstep(-.12,.75,d.y);
+        vec3 clear=mix(vec3(.18,.24,.29),vec3(.028,.072,.13),altitude);
+        vec2 sphere=vec2(atan(d.z,d.x)*.15915494+.68,asin(clamp(d.y,-1.,1.))*.31830989+.5);
+        vec3 photograph=texture2D(uSky,sphere).rgb;
+        photograph=mix(photograph,vec3(dot(photograph,vec3(.2126,.7152,.0722))),.16)*vec3(.58,.69,.79);
+        vec3 c=mix(clear,photograph,uPhoto*(.56+uStorm*.42));
+        // A finite, original 3:1 matte uses a perspective projection with the
+        // same 3:1 UV ratio. It is not stretched into an equirectangular sky.
+        vec3 forward=normalize(vec3(1.,0.,-.2)),right=normalize(vec3(.2,0.,1.));
+        float depth=max(.15,dot(d,forward));
+        vec2 plateUV=vec2(dot(d,right)/depth*.45+.61,d.y/depth*1.35+.566+uAlt*.025);
+        vec3 alpine=texture2D(uAlpine,clamp(plateUV,vec2(0.),vec2(1.))).rgb*vec3(.70,.77,.84);
+        float border=smoothstep(0.,.025,plateUV.x)*(1.-smoothstep(.975,1.,plateUV.x));
+        border*=1.-smoothstep(.96,1.02,plateUV.y);
+        float valleyVeil=(1.-smoothstep(.03,.19,plateUV.y))*.16+uStorm*.58;
+        alpine=mix(alpine,vec3(.12,.16,.195),valleyVeil);
+        c=mix(c,alpine,uAlpinePhoto*border);
+        // A low, moving cloud deck has a separate horizon from the high sky.
+        vec2 uv=d.xz/(abs(d.y)+.24)*.23+vec2(uTime*(.0005+uStorm*.0012),uTime*.00012);
+        float clouds=texture2D(uDetail,uv).r*.68+texture2D(uDetail,uv*2.3+.17).r*.32;
+        float cloudMask=smoothstep(.52-uStorm*.19,.70-uStorm*.12,clouds)*smoothstep(-.15,.18,d.y);
+        vec3 stormCloud=mix(vec3(.055,.075,.095),vec3(.095,.12,.145),clouds);
+        c=mix(c,stormCloud,cloudMask*(.1+uStorm*.84));
+        float horizon=exp(-abs(d.y+.025)*10.);c=mix(c,vec3(.14,.18,.21),horizon*uStorm*.46);
+        c*=1.-uStorm*.31;c+=vec3(.18,.23,.28)*uFlash;
         gl_FragColor=vec4(c,1.);}` }));
-    const sky=add(new THREE.SphereGeometry(500,20,10),skyMat);sky.frustumCulled=false;
+    const sky=add(new THREE.SphereGeometry(500,28,16),skyMat);sky.frustumCulled=false;
+    skySource=trackTexture(loader.load('assets/sky-clouds.webp',texture=>{
+      if(disposed){texture.dispose();return;}skyU.uSky.value=texture;skyU.uPhoto.value=1;imageLoaded();
+    }),true,false);skySource.wrapS=THREE.RepeatWrapping;
+    trackTexture(loader.load('assets/alpine-panorama.webp',texture=>{
+      if(disposed){texture.dispose();return;}skyU.uAlpine.value=texture;skyU.uAlpinePhoto.value=1;imageLoaded();
+    }),true,false);
+    envSource=trackTexture(loader.load('assets/sky-environment.webp',texture=>{
+      if(disposed){texture.dispose();return;}envReady=true;rebuildEnvironment();imageLoaded();
+    }),true,false);
 
-    function terrainHeight(z,x,seed){
-      const warpedZ=z+(noise(x*.07+seed*13,z*.014)-.5)*17,warpedX=x+(noise(z*.04,x*.03+seed*2)-.5)*7;
-      let mountain=0;
-      for(let i=0;i<8;i++){
-        const cz=-210+i*61+(hash(i,seed*9)-.5)*28,cx=22+hash(i*3,seed*7)*26,wz=26+hash(i*5,seed*31)*27,wx=22+hash(i*11,seed)*12;
-        const dz=(warpedZ-cz)/wz,dx=(warpedX-cx)/wx,distance=Math.hypot(dz,dx),height=34+hash(i*7,seed*17)*37;
-        const angle=Math.atan2(dz,dx),branches=3+i%2,spine=Math.pow(.5+.5*Math.cos(angle*branches+hash(i,seed)*6.28+distance*.6),2);
-        const ridge=1-.29*smooth(distance/.18)*(1-spine);
-        mountain=Math.max(mountain,height*Math.pow(Math.max(0,1-distance),1.02+hash(i,seed+2)*.3)*ridge);
-      }
-      const ridge=1-Math.abs(2*noise(z*.055+x*.018,x*.085+seed*13)-1);
-      const gullies=Math.pow(1-ridge,2);
-      return mountain*(1.-gullies*.15)+(fbm(z*.13+seed*21,x*.17,3)-.35)*Math.min(3,mountain*.08);
-    }
-    const mountainRoot=new THREE.Group();root.add(mountainRoot);
-    const rangeMat=mat(new THREE.MeshStandardMaterial({color:0xffffff,roughness:1,vertexColors:true,side:THREE.DoubleSide}));
-    rangeMat.onBeforeCompile=shader=>{
-      shader.uniforms.uRock={value:atmosphereTexture};
-      shader.vertexShader=shader.vertexShader.replace('#include <common>','#include <common>\nvarying vec3 vRange;varying vec3 vRangeN;').replace('#include <begin_vertex>','#include <begin_vertex>\nvRange=position;vRangeN=normal;');
-      shader.fragmentShader=shader.fragmentShader.replace('#include <common>','#include <common>\nuniform sampler2D uRock;varying vec3 vRange;varying vec3 vRangeN;')
-        .replace('#include <color_fragment>',`#include <color_fragment>
-          vec4 erosion=texture2D(uRock,vRange.zy*vec2(.035,.028)+vRange.x*.002);
-          diffuseColor.rgb*=.7+erosion.r*.5;
-          float snow=smoothstep(29.,48.,vRange.y+erosion.r*8.)*smoothstep(.18,.58,vRangeN.y);
-          diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.45,.51,.54),snow*.9);
-        `);
-    };
-    const rangeLow=mat(new THREE.MeshLambertMaterial({color:0xffffff,vertexColors:true,side:THREE.DoubleSide}));rangeLow.onBeforeCompile=rangeMat.onBeforeCompile;
-    for(let layer=0;layer<4;layer++){
-      const nx=36,nz=260,pos=[],colors=[],ix=[];
-      for(let x=0;x<=nx;x++)for(let z=0;z<=nz;z++){
-        const px=x/nx*70,pz=(z/nz-.5)*370,py=terrainHeight(pz,px,layer+1);
-        pos.push(px,py,pz);const variation=.81+noise(pz*.13,px*.13)*.19;
-        const base=new THREE.Color().setRGB(.095+layer*.012,.12+layer*.015,.13+layer*.019);colors.push(base.r*variation,base.g*variation,base.b*variation);
-        if(x<nx&&z<nz){const a=x*(nz+1)+z;ix.push(a,a+1,a+nz+1,a+1,a+nz+2,a+nz+1);}}
-      // Extend the finite terrain perimeter below the camera's entire view.
-      // Shared top vertices keep the foot continuous; the original peaks stay
-      // untouched and the skirt remains in this mesh/material/draw call.
-      const perimeter=[];
-      for(let z=0;z<=nz;z++)perimeter.push(z);
-      for(let x=1;x<=nx;x++)perimeter.push(x*(nz+1)+nz);
-      for(let z=nz-1;z>=0;z--)perimeter.push(nx*(nz+1)+z);
-      for(let x=nx-1;x>0;x--)perimeter.push(x*(nz+1));
-      const skirtStart=pos.length/3;
-      for(const index of perimeter){const o=index*3;pos.push(pos[o],-220,pos[o+2]);colors.push(colors[o],colors[o+1],colors[o+2]);}
-      for(let i=0;i<perimeter.length;i++){const next=(i+1)%perimeter.length,a=perimeter[i],b=skirtStart+i,c=perimeter[next],d=skirtStart+next;ix.push(a,b,c,c,b,d);}
-      const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));g.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));g.setIndex(ix);g.computeVertexNormals();
-      const m=add(g,rangeMat,mountainRoot);m.position.set(36+layer*49,-44-layer*5,30+layer*24);m.rotation.y=-.14-layer*.12;ranges.push(m);
-    }
+    // The alpine matte supplies all distant landforms. Nearby procedural
+    // shoulders flatten its valleys, so depth here comes from moving cloud
+    // layers rather than additional silhouette geometry.
     const mistMat=mat(new THREE.ShaderMaterial({transparent:true,depthWrite:false,side:THREE.DoubleSide,uniforms:{uMap:{value:atmosphereTexture},uTime:{value:0},uStorm:{value:0}},vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',fragmentShader:`uniform sampler2D uMap;uniform float uTime,uStorm;varying vec2 vUv;
-      void main(){vec2 uv=vec2(vUv.x*.75+uTime*.00055,vUv.y*.23);float n=texture2D(uMap,uv).r;float band=pow(max(0.,sin(vUv.y*3.14159)),2.);float alpha=band*(.012+n*.045+uStorm*.023);gl_FragColor=vec4(.10,.155,.185,alpha);}` }));
-    for(let i=0;i<3;i++){const m=add(new THREE.PlaneGeometry(360,23+i*9),mistMat);m.rotation.y=-Math.PI/2;m.position.set(25+i*47,-12-i*5,50);m.userData.offset=-12-i*5;mistLayers.push(m);}
+      void main(){vec2 uv=vec2(vUv.x*1.5+uTime*(.0007+uStorm*.0014),vUv.y*.45);float n=texture2D(uMap,uv).r;float wisps=texture2D(uMap,uv*3.1+vec2(uTime*.0002,0.)).r;float band=pow(max(0.,sin(vUv.y*3.14159)),2.);float cloud=smoothstep(.28,.64,n*.72+wisps*.28);float alpha=band*cloud*(.065+uStorm*.20);vec3 c=mix(vec3(.145,.185,.215),vec3(.10,.14,.18),uStorm);gl_FragColor=vec4(c,alpha);}` }));
+    for(let i=0;i<4;i++){const m=add(new THREE.PlaneGeometry(460,15+i*4),mistMat);m.rotation.y=-Math.PI/2;m.position.set(30+i*49,-36+i*3,50);m.userData.offset=-36+i*3;mistLayers.push(m);}
 
     const h=FX.HOLDS[FX.HOLDS.length-1],gate=new THREE.Group();gate.position.set(.10,h.y+.035,h.z-.12);root.add(gate);
-    const gateStone=mat(new THREE.MeshStandardMaterial({color:0x424844,roughness:.94})),gateEdge=mat(new THREE.MeshStandardMaterial({color:0x605c4c,roughness:.82}));
+    const gateStone=mat(rock.clone());gateStone.vertexColors=false;gateStone.onBeforeCompile=rock.onBeforeCompile;gateStone.customProgramCacheKey=()=> 'drop-photo-gateway-v6';
+    const gateEdge=mat(new THREE.MeshStandardMaterial({color:0x5b6059,roughness:.84}));
+    const dressedStone=(w,h,d)=>{
+      const cut=.018,shape=new THREE.Shape();shape.moveTo(-w/2+cut,-h/2);shape.lineTo(w/2-cut,-h/2);shape.lineTo(w/2,-h/2+cut);shape.lineTo(w/2,h/2-cut);shape.lineTo(w/2-cut,h/2);shape.lineTo(-w/2+cut,h/2);shape.lineTo(-w/2,h/2-cut);shape.lineTo(-w/2,-h/2+cut);shape.closePath();
+      const geometry=new THREE.ExtrudeGeometry(shape,{depth:d-.026,steps:1,bevelEnabled:true,bevelThickness:.013,bevelSize:.008,bevelSegments:1,curveSegments:1});geometry.translate(0,0,-d/2+.013);return geometry;
+    };
     const gateDoor=mat(new THREE.MeshBasicMaterial({color:new THREE.Color(2.4,1.65,.76),side:THREE.DoubleSide}));
     const doorway=add(new THREE.PlaneGeometry(.73,2.04),gateDoor,gate);doorway.rotation.y=Math.PI/2;doorway.position.set(.055,1.04,0);
     for(let side of [-1,1])for(let j=0;j<5;j++){
-      const stone=add(new THREE.BoxGeometry(.26,.43,.18),gateStone,gate);stone.position.set(0,.22+j*.43,side*.46);stone.rotation.x=(hash(j+side*8)-.5)*.06;stone.castShadow=stone.receiveShadow=true;
+      const stone=add(dressedStone(.26,.43,.18),gateStone,gate);stone.position.set(0,.22+j*.43,side*.46);stone.rotation.x=(hash(j+side*8)-.5)*.06;stone.castShadow=stone.receiveShadow=true;
       const worn=add(new THREE.BoxGeometry(.045,.41,.025),gateEdge,gate);worn.position.set(-.144,.22+j*.43,side*.37);
     }
-    const lintel=add(new THREE.BoxGeometry(.29,.20,1.12),gateStone,gate);lintel.position.y=2.2;lintel.castShadow=true;
+    const lintel=add(dressedStone(.29,.20,1.12),gateStone,gate);lintel.position.y=2.2;lintel.castShadow=true;
     const threshold=add(new THREE.BoxGeometry(.75,.10,1.12),gateStone,gate);threshold.position.set(-.2,.04,0);threshold.receiveShadow=true;
     const warm=new THREE.PointLight(0xffbe72,2.1,7,2);warm.position.set(-.55,h.y+1.12,h.z+.16);root.add(warm);
 
     function setQuality(next){q=clamp(Math.round(next),0,2);uniforms.uQuality.value=q;moon.castShadow=q>0;renderer.shadowMap.enabled=q>0;
-      const size=q===2?1024:512;if(moon.shadow.mapSize.x!==size){moon.shadow.mapSize.set(size,size);if(moon.shadow.map){moon.shadow.map.dispose();moon.shadow.map=null;}}
-      cliffBands.forEach(m=>m.material=q===0?rockLow:rock);ranges.forEach((m,i)=>{m.visible=q>0||i===0||i===2;m.material=q===0?rangeLow:rangeMat;});mistLayers.forEach((m,i)=>m.visible=q>0||i===1);
+      const size=q===2?2048:1024;if(moon.shadow.mapSize.x!==size){moon.shadow.mapSize.set(size,size);if(moon.shadow.map){moon.shadow.map.dispose();moon.shadow.map=null;}}
+      cliffBands.forEach(m=>m.material=q===0?rockLow:rock);mistLayers.forEach((m,i)=>m.visible=q>0||i===1||i===2);
     }
     function update(o){
-      const {state,camY,focusZ}=o,alt=o.alt||0,gale=o.gale||0,flash=o.flash||0;
+      const {state,camY,focusZ}=o,alt=o.alt||0,gale=clamp(o.gale||0,0,1),flash=o.flash||0;
       uniforms.uWet.value=o.wet||0;uniforms.uFlash.value=flash;
       sky.position.set(0,camY,focusZ);skyU.uTime.value=state.time;skyU.uStorm.value=gale;skyU.uAlt.value=alt;skyU.uFlash.value=flash;
-      mountainRoot.position.set(0,camY-alt*19,focusZ*.12);
-      mistMat.uniforms.uTime.value=state.time;mistMat.uniforms.uStorm.value=gale;mistLayers.forEach((m,i)=>{m.position.y=camY+m.userData.offset-alt*10+Math.sin(state.time*.035+i)*1.2;m.position.z=focusZ*.15+50;});
-      scene.fog.color.setRGB(.035+flash*.06,.064+flash*.08,.086+flash*.10);scene.fog.density=.0035+gale*.0012;
-      moon.position.set(-13,camY+17,focusZ+11);moon.target.position.set(0,camY,focusZ-1);moon.intensity=1.8+flash*2.6;
-      rim.position.set(7,camY+9,focusZ+8);rim.target.position.set(0,camY,focusZ);rim.intensity=.65+flash*.5;
-      fill.position.set(-12,camY+3,focusZ-3);fill.target.position.set(0,camY,focusZ);
+      mistMat.uniforms.uTime.value=state.time;mistMat.uniforms.uStorm.value=gale;mistLayers.forEach((m,i)=>{m.position.y=camY+m.userData.offset-alt*8+gale*8+Math.sin(state.time*.035+i)*1.2;m.position.z=focusZ*.15+50;});
+      // Four ascent stages visibly close the sky and soften the directional key.
+      // Local holds retain contrast while distant valleys disappear into spindrift.
+      scene.fog.color.setRGB(.12-gale*.037+flash*.09,.16-gale*.042+flash*.11,.195-gale*.044+flash*.13);scene.fog.density=.0026+gale*.0075;
+      moon.position.set(-13,camY+17,focusZ+11);moon.target.position.set(0,camY,focusZ-1);moon.intensity=2.25-gale*1.25+flash*3.2;
+      moon.color.setRGB(1-gale*.24,.94-gale*.11,.86+gale*.11);
+      rim.position.set(7,camY+9,focusZ+8);rim.target.position.set(0,camY,focusZ);rim.intensity=.84-gale*.57+flash*.5;
+      hemi.intensity=.40+gale*.10;
+      fill.position.set(-12,camY+3,focusZ-3);fill.target.position.set(0,camY,focusZ);fill.intensity=.17+gale*.16;
       cliffBands.forEach(m=>m.visible=Math.abs(m.userData.bandY-camY)<42||m.userData.bandY>top);
       holdLights.forEach((m,i)=>{m.material.opacity=state.armed&&i===state.holdIndex+(state.descending?-1:1)?.6:0;});
       warm.intensity=2.1+Math.sin(state.time*.8)*.09;
     }
     function dispose(){disposed=true;if(envTarget){if(scene.environment===envTarget.texture)scene.environment=null;envTarget.dispose();}root.traverse(o=>{if(o.isLight&&o.shadow&&o.shadow.map)o.shadow.map.dispose();});for(const g of resources.geometries)g.dispose();for(const m of resources.materials)m.dispose();for(const t of resources.textures)t.dispose();scene.remove(root);}
-    stats={proceduralTextureBytes:(512*512*4*2+256*256*4)*4/3,textureCount:envTarget?4:3,environmentTextureBytes:envTarget?envTarget.width*envTarget.height*8:0,geometries:resources.geometries.size,materials:resources.materials.size,vertices:0,triangles:0,lineSegments:0};
+    stats={imageTextureBytes:0,proceduralTextureBytes:(512*512*4*2+256*256*4)*4/3,textureCount:resources.textures.size+(envTarget?1:0),environmentTextureBytes:envTarget?envTarget.width*envTarget.height*8:0,geometries:resources.geometries.size,materials:resources.materials.size,vertices:0,triangles:0,lineSegments:0};
     for(const g of resources.geometries)if(g.attributes.position)stats.vertices+=g.attributes.position.count;
     root.traverse(o=>{if(!o.geometry)return;const g=o.geometry,count=g.index?g.index.count:g.attributes.position?g.attributes.position.count:0;if(o.isMesh)stats.triangles+=count/3;else if(o.isLineSegments)stats.lineSegments+=count/2;});
     setQuality(q);

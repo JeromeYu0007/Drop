@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#07080c">
-<meta name="description" content="放下。按住蓄力，松开。">
+<meta name="description" content="放下。按住蓄力，松手跃起，靠近岩点时再次按住抓握。背包里的四件旧物，你会带到哪里？">
 <title>放下</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect fill='%2307080c' width='32' height='32'/%3E%3Cpath d='M7 27 L16 5 L25 27' fill='none' stroke='%23f3efe6' stroke-width='1.2'/%3E%3C/svg%3E">
 <style>
@@ -26,7 +26,7 @@
   }
   button:hover, button:focus-visible { opacity: 1; color: #fff4dc; }
   button:focus-visible { outline: 1px solid var(--gold); outline-offset: 4px; }
-  #bar button, #pack.show button, #ending.show button, #endChoices button, #resume.show button { pointer-events: auto; }
+  #bar button, #pack.show button, #ending.show button, #endChoices button, #resume.show button, #climbControls.show button { pointer-events: auto; }
   #pack:not(.show), #ending:not(.show) { visibility: hidden; }
   #pack:not(.show), #pack:not(.show) *, #ending:not(.show), #ending:not(.show) * { pointer-events: none !important; }
   #bar {
@@ -54,8 +54,18 @@
   #prologue.show, #prologue.show p { opacity: 1; }
   #prologue p:nth-of-type(2) { transition-delay: .3s; }
   #prologue p:nth-of-type(3) { transition-delay: .65s; }
-  #hint { bottom: calc(6.5vh + env(safe-area-inset-bottom)); width: min(88vw, 440px); margin: 0; font-size: 12px; line-height: 1.9; letter-spacing: .14em; white-space: pre-line; color: rgba(238,230,213,.72); opacity: 0; transition: opacity .4s ease; }
+  #hint { bottom: calc(110px + env(safe-area-inset-bottom)); width: min(88vw, 440px); margin: 0; font-size: 12px; line-height: 1.9; letter-spacing: .14em; white-space: pre-line; color: rgba(238,230,213,.84); opacity: 0; transition: opacity .4s ease; }
   #hint::before { content: ""; display: block; width: 22px; height: 1px; margin: 0 auto 12px; background: rgba(219,197,157,.55); }
+  #climbControls { position: absolute; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom)); transform: translateX(-50%); width: 248px; opacity: 0; visibility: hidden; transition: opacity .3s; text-align: center; }
+  #climbControls.show { opacity: 1; visibility: visible; }
+  #climbStatus { display: flex; justify-content: center; gap: 14px; margin: 0 0 9px; font-size: 10px; line-height: 1.5; letter-spacing: .12em; color: rgba(238,230,213,.72); text-shadow: 0 1px 8px #03080d; }
+  #weatherStatus::before { content: ""; display: inline-block; width: 3px; height: 3px; margin-right: 7px; vertical-align: 2px; background: currentColor; border-radius: 50%; }
+  #directionChoices { display: flex; gap: 8px; }
+  #directionChoices button { flex: 1; min-height: 48px; padding: 11px 12px; border: 1px solid rgba(222,208,181,.22); border-radius: 3px; background: rgba(7,14,19,.70); backdrop-filter: blur(10px); font-size: 12px; letter-spacing: .12em; opacity: .75; }
+  #directionChoices button[aria-pressed="true"] { color: #f4dfb5; background: rgba(47,42,32,.84); border-color: rgba(224,193,139,.64); opacity: 1; }
+  #directionChoices button:disabled { cursor: default; opacity: .36; }
+  #directionChoices button[aria-pressed="true"]:disabled { opacity: .64; }
+  #directionChoices .arrow { margin-right: 6px; font: 16px/1 system-ui, sans-serif; }
   #whisper { top: 17vh; width: min(82vw, 460px); margin: 0; font-size: clamp(15px, 2.1vh, 19px); letter-spacing: .12em; line-height: 1.9; opacity: 0; }
   #meter { position: absolute; right: calc(19px + env(safe-area-inset-right)); top: 28vh; bottom: 24vh; width: 56px; opacity: .7; transition: opacity .7s; }
   #meter .track { position: absolute; right: 6px; top: 0; bottom: 0; width: 1px; background: linear-gradient(transparent, rgba(230,222,202,.32) 8%, rgba(230,222,202,.18) 92%, transparent); }
@@ -93,7 +103,7 @@
   #resume button { min-height: 54px; padding: 16px 28px; background: rgba(9,17,23,.94); border: 1px solid rgba(229,207,168,.3); letter-spacing: .2em; }
   #resume button:disabled { opacity: .5; cursor: default; }
   #resume p { color: var(--dim); font-size: 12px; letter-spacing: .12em; }
-  body.paused #pack, body.paused #ending, body.paused #prologue { visibility: hidden; }
+  body.paused #pack, body.paused #ending, body.paused #prologue, body.paused #climbControls { visibility: hidden; }
   body.paused #hint, body.paused #whisper { opacity: 0 !important; }
   @media (min-width: 1000px) { #pack { left: 60%; } }
   @media (max-height: 600px) and (min-aspect-ratio: 4/5) {
@@ -115,7 +125,9 @@
     #ending::before { margin-bottom: 16px; }
     #passage { font-size: 15px; line-height: 1.85; }
     #endChoices { margin-top: 1.2em; }
-    #hint { bottom: 5vh; font-size: 11px; }
+    #climbControls { bottom: calc(10px + env(safe-area-inset-bottom)); }
+    #climbStatus { margin-bottom: 5px; }
+    #hint { bottom: calc(87px + env(safe-area-inset-bottom)); font-size: 11px; }
     #hint::before { display: none; }
   }
   @media (max-aspect-ratio: 4/5) {
@@ -143,7 +155,7 @@
 </style>
 </head>
 <body>
-<canvas id="c" tabindex="0" aria-label="放下。按住空格蓄力，松开发力。"></canvas>
+<canvas id="c" tabindex="0" aria-label="放下。按住空格蓄力，松手向上。靠近岩点时再次按住抓握。抓稳后用 W、S 或上下方向键切换攀登方向。"></canvas>
 <div id="ui">
   <div id="bar">
     <button id="mute" type="button">声</button>
@@ -152,10 +164,17 @@
   <div id="prologue"><h1>放下</h1><span class="subtitle">LET GO</span></div>
   <p id="hint"></p>
   <p id="whisper"></p>
+  <nav id="climbControls" aria-label="攀登方向">
+    <p id="climbStatus"><span id="loadStatus"></span><span id="weatherStatus"></span></p>
+    <div id="directionChoices">
+      <button id="directionUp" type="button" aria-pressed="true" aria-keyshortcuts="W ArrowUp" title="上攀 · W / ↑"><span class="arrow" aria-hidden="true">↑</span>上攀</button>
+      <button id="directionDown" type="button" aria-pressed="false" aria-keyshortcuts="S ArrowDown" title="下放 · S / ↓" disabled><span class="arrow" aria-hidden="true">↓</span>下放</button>
+    </div>
+  </nav>
   <div id="meter" aria-hidden="true"><div class="track"></div><div id="bestMark"></div><div id="nowMark"><b id="alt"></b></div></div>
   <section id="pack">
     <h2>背包</h2>
-    <p id="packNote">放下一件，攀登会轻一些。</p>
+    <p id="packNote">风越来越强。背包越重，发力和回稳越慢。</p>
     <div id="packItems"></div>
     <button id="packKeep" type="button">继续</button>
   </section>
@@ -171,10 +190,10 @@
 </div>
 <script src="vendor/three.min.js?v=c3b026a"></script>
 <script src="surface.js?v=4ddfebd43c6c"></script>
-<script src="game.js?v=cb126a8f37f5"></script>
-<script src="world.js?v=71da76665f33"></script>
-<script src="character.js?v=97f87cf3793a"></script>
-<script src="render.js?v=94bb0c2f19ed"></script>
+<script src="game.js?v=cfc568d51ea6"></script>
+<script src="world.js?v=2c17b7f690ad"></script>
+<script src="character.js?v=34d4b14a3290"></script>
+<script src="render.js?v=43829711cdec"></script>
 <script>
 "use strict";
 const FX = window.Fangxia;
@@ -192,6 +211,11 @@ const ui = {
   prologue: document.getElementById("prologue"),
   hint: document.getElementById("hint"),
   whisper: document.getElementById("whisper"),
+  controls: document.getElementById("climbControls"),
+  directionUp: document.getElementById("directionUp"),
+  directionDown: document.getElementById("directionDown"),
+  loadStatus: document.getElementById("loadStatus"),
+  weatherStatus: document.getElementById("weatherStatus"),
   mute: document.getElementById("mute"),
   restart: document.getElementById("restart"),
   pack: document.getElementById("pack"),
@@ -237,9 +261,9 @@ if (live) FXRender.setQuality(quality);
 let camY = 12, focusZ = 0;
 const state = FX.createState();
 let holding = false;
-let wantKeep = false, wantDrop = "", wantRetrieve = false, restartPulse = false;
+let wantKeep = false, wantDrop = "", wantRetrieve = false, wantDirection = "", restartPulse = false;
 let acc = 0, last = 0;
-let lastDescending = false, directionHintT = 0;
+let lastDescending = false, directionHintT = 0, lastDropped = 0, recoveredHintT = 0;
 let prologueLeft = shot ? 0 : 7.2;
 let slowSeconds = 0;
 let flash = 0, flashCooldown = 4.5;
@@ -247,21 +271,23 @@ let activePointer = null, keyHeld = false;
 let contextLost = false, pausedNeedsRender = false;
 let paused = false, sessionClock = 0, packSignature = "", sessionActive = false;
 const SESSION_KEY = "fangxia-session-v2";
-const SESSION_SCHEMA = 3;
+const SESSION_SCHEMA = 4;
 const routeVersion = FX.HOLDS.map(function (h) { return [h.y, h.z, h.k].join(":"); }).join("|");
 function cancelCharge() {
+  FX.cancelCharge(state);
   if (activePointer !== null && canvas.hasPointerCapture(activePointer)) canvas.releasePointerCapture(activePointer);
   holding = false; keyHeld = false; activePointer = null;
   state.holding = false; state.prevHolding = false; state.holdT = 0;
+  if ("grabT" in state) state.grabT = -1;
   state.armed = false; state.dots = [];
-  wantKeep = false; wantDrop = ""; wantRetrieve = false;
+  wantKeep = false; wantDrop = ""; wantRetrieve = false; wantDirection = "";
 }
 function saveSession() {
   if (shot || restartPulse) return;
   try {
     sessionActive = sessionActive || state.launches > 0 || state.holdIndex > 0 || state.mask !== 15 || state.lost.length > 0 || state.mode !== "play";
     if (!sessionActive) { localStorage.removeItem(SESSION_KEY); return; }
-    const snapshot = Object.assign({}, state, { dots: [], sfx: [], holding: false, prevHolding: false, holdT: 0, armed: false });
+    const snapshot = Object.assign({}, state, { dots: [], sfx: [], holding: false, prevHolding: false, holdT: 0, armed: false, grabT: -1 });
     localStorage.setItem(SESSION_KEY, JSON.stringify({ schema: SESSION_SCHEMA, route: routeVersion, state: snapshot }));
   } catch (e) {}
 }
@@ -272,17 +298,20 @@ function restoreSession() {
     if (!entry || entry.route !== routeVersion || !entry.state) return false;
     const v = entry.state;
     if (!["play", "ledge", "drop", "ending", "impact"].includes(v.mode) || !Number.isInteger(v.holdIndex) || v.holdIndex < 0 || v.holdIndex >= FX.HOLDS.length || !Number.isInteger(v.origin) || v.origin < 0 || v.origin >= FX.HOLDS.length || !Number.isInteger(v.mask) || v.mask < 0 || v.mask > 15 || !Array.isArray(v.lost)) return false;
-    // Preserve interrupted runs from the previous direction/physics schema.
-    // Return weather used to share the descending flag; an empty recovery list
-    // now means climbing up again, without clearing that weather history.
+    // Retain old runs; direction is now the player's choice, independent of
+    // whether there are still memories to retrieve.
     if (entry.schema == null) {
       if (!("returning" in v)) v.returning = !!v.descending;
-      if (v.descending && v.lost.length === 0) { v.descending = false; v.returning = true; }
       if (!("launchBody" in v)) v.launchBody = null;
       if (!("launchY" in v)) v.launchY = v.y;
       if (!("launchZ" in v)) v.launchZ = v.z;
-    } else if (entry.schema !== SESSION_SCHEMA) return false;
+    } else if (entry.schema !== 3 && entry.schema !== SESSION_SCHEMA) return false;
+    if (entry.schema == null || entry.schema === 3) {
+      v.grabT = -1;
+      v.catchPose = null;
+    }
     if (v.launchBody !== null && (typeof v.launchBody !== "object" || Array.isArray(v.launchBody) || Object.keys(v.launchBody).length !== 5 || !["hipY", "hipZ", "theta", "hipFlex", "kneeFlex"].every(function (key) { return Number.isFinite(v.launchBody[key]); }))) return false;
+    if (v.catchPose !== null && (typeof v.catchPose !== "object" || Array.isArray(v.catchPose) || Object.keys(v.catchPose).length !== 5 || !["sy", "sz", "theta", "hipFlex", "kneeFlex"].every(function (key) { return Number.isFinite(v.catchPose[key]); }))) return false;
     for (const key of Object.keys(state)) {
       const initial = state[key];
       if (typeof initial === "number" && !Number.isFinite(v[key])) return false;
@@ -502,24 +531,41 @@ function memoryGlyph(kind) {
 function syncUI(dt) {
   const dropped = state.lost && state.lost.length;
   if (state.descending !== lastDescending) {
-    directionHintT = state.descending ? 5.5 : state.returning && !dropped ? 4.5 : 0;
+    directionHintT = 5.5;
     lastDescending = state.descending;
-    canvas.setAttribute("aria-label", state.descending ? "放下。按住空格稳住身体，松手向下。每次下放都需重新按住、松开。" : "放下。按住空格蓄力，松手向上。");
+    canvas.setAttribute("aria-label", "放下。" + (state.descending ? "按住空格稳住身体，松手向下。每次下放都需重新按住、松开。" : "按住空格蓄力，松手向上。") + "靠近岩点时再次按住抓握。抓稳后用 W、S 或上下方向键切换攀登方向。");
   }
   directionHintT = Math.max(0, directionHintT - dt);
+  if (lastDropped > 0 && !dropped && state.returning) recoveredHintT = 6;
+  lastDropped = dropped;
+  recoveredHintT = Math.max(0, recoveredHintT - dt);
   if (!shot && prologueLeft > 0) {
     prologueLeft -= dt;
     ui.prologue.classList.add("show");
     if (holding) prologueLeft = Math.min(prologueLeft, 0.4);
   } else ui.prologue.classList.remove("show");
-  const resetDownGrip = state.descending && state.attached && state.needUp && holding;
-  const showHint = state.mode === "play" && !paused && (state.catches < 2 || directionHintT > 0 || resetDownGrip || state.crown && !state.descending);
+  const resetGrip = state.attached && state.needUp && holding;
+  const showHint = state.mode === "play" && !paused && (state.catches < 2 || directionHintT > 0 || recoveredHintT > 0 || resetGrip || !state.attached || state.crown);
   ui.hint.style.opacity = showHint ? "0.8" : "0";
-  if (resetDownGrip) ui.hint.textContent = "已经抓稳，先松手\n再次按住、松开才会继续下放";
-  else if (state.descending) ui.hint.textContent = state.attached ? "按住稳住身体，松手向下\n让弧线接近下方岩点" : "下坠时按住，伸手抓住岩点";
-  else if (state.crown) ui.hint.textContent = "按住，再松手\n走进门里的光";
-  else if (directionHintT > 0 && state.returning && !dropped) ui.hint.textContent = "已经捡回，继续向上\n按住蓄力，松手跃起";
-  else ui.hint.textContent = state.attached ? (holding ? "感受摆动\n弧线接近岩点时松开" : "按住蓄力，松手跃起\n让弧线接近下一处岩点") : "下坠时按住，伸手抓住岩点";
+  if (!state.attached) {
+    if (holding && FX.gripActive && FX.gripActive(state)) ui.hint.textContent = "正在伸手\n只有够到岩点才能抓住";
+    else if (holding) ui.hint.textContent = "松开，再次伸手\n靠近岩点时再按住抓握";
+    else ui.hint.textContent = "靠近岩点时再按住抓握\n错过岩点会继续坠落";
+  } else if (resetGrip) ui.hint.textContent = "已经抓稳，先松手\n再次按住、松开才会继续" + (state.descending ? "下放" : "上攀");
+  else if (recoveredHintT > 0) ui.hint.textContent = "已全部拾回，可切换上攀\n方向由你决定";
+  else if (state.crown) ui.hint.textContent = "按住，再松手，走进门里的光\n也可以选择下放，回到岩壁";
+  else if (state.descending) ui.hint.textContent = "按住稳住身体，松手向下\n靠近岩点时再按住抓握";
+  else ui.hint.textContent = holding ? "感受摆动，选择松手时机\n跃起后，靠近岩点时再按住抓握" : "按住蓄力，松手跃起\n靠近岩点时再按住抓握";
+  ui.controls.classList.toggle("show", state.mode === "play" && !paused && prologueLeft <= 0);
+  const canTurn = !paused && state.mode === "play" && state.attached;
+  ui.directionUp.disabled = !canTurn || state.crown || state.holdIndex >= FX.HOLDS.length - 1;
+  ui.directionDown.disabled = !canTurn || state.holdIndex === 0;
+  ui.directionUp.setAttribute("aria-pressed", String(!state.descending));
+  ui.directionDown.setAttribute("aria-pressed", String(state.descending));
+  const burden = FX.weight01(state.mask);
+  ui.loadStatus.textContent = burden > .8 ? "重负 · 发力慢" : burden > .45 ? "仍有重负" : burden > .05 ? "背包渐轻" : "轻装 · 回稳快";
+  const conditions = FX.weatherAt(state.y, state.returning);
+  ui.weatherStatus.textContent = ["微风", "风起", "浓雾", "风雨", "暴风雪"][conditions.stage];
   const showPack = state.mode === "ledge" && state.settle >= .9;
   ui.pack.classList.toggle("show", showPack);
   const signature = showPack ? String(state.mask) : "";
@@ -594,7 +640,7 @@ ui.mute.addEventListener("click", function (e) {
 function restartRun(e) {
   e.stopPropagation(); cancelCharge(); setPaused(false);
   restartPulse = true; sessionActive = false; prologueLeft = 0; packSignature = "";
-  flash = 0; flashCooldown = 4.5; directionHintT = 0;
+  flash = 0; flashCooldown = 4.5; directionHintT = 0; recoveredHintT = 0; lastDropped = 0;
   try { localStorage.removeItem(SESSION_KEY); } catch (err) {}
   focusGame();
 }
@@ -603,6 +649,20 @@ ui.again.addEventListener("click", restartRun);
 ui.retrieve.addEventListener("click", function (e) { e.stopPropagation(); if (!paused) { cancelCharge(); wantRetrieve = true; focusGame(); } });
 ui.packKeep.addEventListener("click", function (e) { e.stopPropagation(); if (!paused) { wantKeep = true; focusGame(); } });
 ui.resumePlay.addEventListener("click", function (e) { e.stopPropagation(); wakeAudio(); setPaused(false); focusGame(); });
+function selectDirection(direction) {
+  if (paused || state.mode !== "play" || !state.attached) return;
+  if (direction === "down" ? state.holdIndex === 0 : state.crown || state.holdIndex >= FX.HOLDS.length - 1) return;
+  if (direction === (wantDirection || (state.descending ? "down" : "up")) && !state.crown) { focusGame(); return; }
+  // Cancel the physical gesture before submitting the direction pulse. Its
+  // later pointer/key release must never launch along the new curve.
+  cancelCharge();
+  wantDirection = direction;
+  directionHintT = 5.5;
+  prologueLeft = Math.min(prologueLeft, .45);
+  focusGame();
+}
+ui.directionUp.addEventListener("click", function (e) { e.stopPropagation(); selectDirection("up"); });
+ui.directionDown.addEventListener("click", function (e) { e.stopPropagation(); selectDirection("down"); });
 function down(e) {
   if (paused || activePointer !== null || (e.pointerType === "mouse" && e.button !== 0)) return;
   activePointer = e.pointerId;
@@ -624,6 +684,12 @@ addEventListener("keydown", function (e) {
   if (e.code === "Escape" && !e.repeat) {
     e.preventDefault(); setPaused(!paused);
     if (!paused) focusGame();
+    return;
+  }
+  if (["KeyW", "ArrowUp", "KeyS", "ArrowDown"].includes(e.code)) {
+    if (e.repeat || paused || e.ctrlKey || e.metaKey || e.altKey || (e.target.closest && e.target.closest("input, textarea, select, [contenteditable=true]"))) return;
+    e.preventDefault();
+    selectDirection(e.code === "KeyW" || e.code === "ArrowUp" ? "up" : "down");
     return;
   }
   if (e.code !== "Space" || e.repeat || paused || (e.target.closest && e.target.closest("button"))) return;
@@ -731,7 +797,7 @@ function frame(now) {
 
   const focus = state.mode === "ledge" || state.mode === "drop";
   if (!paused && shotName !== "flight" && shotName !== "swing") acc += raw * (focus ? 0.46 : 1);
-  const input = { holding: holding, restart: restartPulse, keep: wantKeep, dropKind: wantDrop, retrieve: wantRetrieve, freezeIntro: shot };
+  const input = { holding: holding, restart: restartPulse, keep: wantKeep, dropKind: wantDrop, retrieve: wantRetrieve, direction: wantDirection, freezeIntro: shot };
   let n = 0;
   const sounds = [];
   while (acc >= 1 / 120 && n < 8) {
@@ -739,9 +805,9 @@ function frame(now) {
     if (state.sfx) sounds.push.apply(sounds, state.sfx);
     acc -= 1 / 120;
     n++;
-    input.restart = false; input.keep = false; input.dropKind = ""; input.retrieve = false;
+    input.restart = false; input.keep = false; input.dropKind = ""; input.retrieve = false; input.direction = "";
   }
-  if (n > 0) { restartPulse = false; wantKeep = false; wantDrop = ""; wantRetrieve = false; }
+  if (n > 0) { restartPulse = false; wantKeep = false; wantDrop = ""; wantRetrieve = false; wantDirection = ""; }
   pinShot();
   if (!paused && FX.updateGuide(state)) sounds.push("arm");
   playSfx(sounds);
@@ -753,8 +819,8 @@ function frame(now) {
 
   const top = FX.HOLDS[FX.HOLDS.length - 1].y;
   const altN = clamp01((state.y - 8) / Math.max(20, top - 8));
-  const forecast = FX.gustForecast(state.time, state.y, state.mask, state.returning || state.descending);
-  const weather = FX.weatherAt(state.y, state.returning || state.descending);
+  const forecast = FX.gustForecast(state.time, state.y, state.mask, state.returning);
+  const weather = FX.weatherAt(state.y, state.returning);
   const storm = clamp01(Number.isFinite(state.stormVis) ? state.stormVis : weather.intensity);
   const gale = clamp01((storm - .1) / .9);
   const wet = clamp01(storm * .8 + gale * .35);

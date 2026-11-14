@@ -100,7 +100,7 @@ function distinctGestures() {
     const s = downState(mask, i, 8.1);
     const first = P.plan(s, -1);
     assert(first, `downward plan at ${i}, mask${mask}`);
-    const move = P.execute(s, first.release);
+    const move = P.execute(s, first);
     assert(move.launched && move.landed && move.delta === -1, "one release catches the next lower hold");
     assert.equal(s.needUp, true, "catch requires a new gesture before another launch");
     const caught = s.holdIndex, launches = s.launches;
@@ -115,7 +115,7 @@ function distinctGestures() {
     P.ready(s);
     const second = P.plan(s, -1);
     assert(second, "a fresh press can plan the next downward move");
-    const next = P.execute(s, second.release);
+    const next = P.execute(s, second);
     assert(next.launched && next.landed && next.delta === -1);
     assert.equal(s.launches, launches + 1);
   }
@@ -139,26 +139,63 @@ function pickups() {
   P.tick(s, { holding: true });
   assert.equal(s.lost.length, 0);
   assert.equal(s.mask, 15);
-  assert.equal(s.descending, false, "the final pickup selects re-ascent");
-  assert.equal(s.returning, true, "changing direction does not remove the return weather");
-  assert.equal(s.needUp, true, "the old downward gesture cannot turn into an upward launch");
+  assert.equal(s.descending, true, "the final pickup preserves the player's chosen direction");
+  assert.equal(s.returning, true, "picking up items does not remove return weather");
   const launches = s.launches;
+  P.tick(s, { direction: "up", holding: true });
+  assert.equal(s.descending, false, "the player explicitly selects re-ascent");
+  assert.equal(s.needUp, true, "switching direction consumes the old held gesture");
   tickFor(s, 3, true);
   assert.equal(s.launches, launches);
   assert.equal(s.holdT, 0);
   P.ready(s);
   const up = P.plan(s, 1);
   assert(up, "re-ascent is reachable after the final pickup");
-  assert(P.execute(s, up.release).delta > 0);
-  console.log("PASS multiple pickups, automatic return to upward control, and preserved weather");
+  assert(P.execute(s, up).delta > 0);
+  console.log("PASS pickups preserve direction; explicit re-ascent preserves return weather");
+}
+
+function directionChanges() {
+  for (const mask of [0, 15]) for (const index of [1, 12, 28, 44, 46]) {
+    const s = P.fresh(mask, index); s.returning = true; s.restSeen = 0xffffffff;
+    const launches = s.launches;
+    for (const value of ["down", "up", "down", "up"]) {
+      P.tick(s, { direction: value, holding: true });
+      assert.equal(s.descending, value === "down", `direction switch at ${index}`);
+      assert.equal(s.attached, true, "switching direction never launches");
+      assert.equal(s.launches, launches);
+      assert.equal(s.holdT, 0, "switching clears the previous charge");
+      tickFor(s, .5, true);
+      assert.equal(s.holdT, 0, "held direction-change input requires release before charging");
+      assert.equal(s.returning, true, "weather exposure is independent of selected direction");
+      P.ready(s);
+      tickFor(s, .4, true);
+      assert(s.holdT > .2, "fresh gesture charges the selected direction");
+    }
+  }
+  const s = P.fresh(15, 18); s.restSeen = 0xffffffff;
+  P.direction(s, -1);
+  const down = P.plan(s, -1);
+  assert(down, "explicit downward move is reachable");
+  while (s.holdT + 1e-7 < down.release) P.tick(s, { holding: true });
+  P.tick(s, { holding: false });
+  assert.equal(s.attached, false);
+  P.tick(s, { direction: "up", holding: false });
+  assert.equal(s.descending, true, "airborne direction input cannot rewrite a launched trajectory");
+  P.finishFlight(s, 18, 4, null, down.grabAt);
+  assert.equal(s.holdIndex, 17);
+  P.direction(s, 1);
+  const up = P.plan(s, 1);
+  assert(up && P.execute(s, up).delta === 1, "can climb back immediately after descending");
+  console.log("PASS direction switching at ordinary holds and summit; fresh gestures and no airborne rewrite");
 }
 
 function restChoices() {
   for (const kind of FX.ORDER) for (const action of ["keep", "drop"]) {
     const h = FX.HOLDS.find(hold => hold.k === kind), s = P.fresh(15, h.i - 1);
-    s.attached = false; s.flightT = 1;
-    s.y = h.y + .2; s.z = h.z; s.vy = -1;
-    P.tick(s, { holding: true });
+    const approach = P.plan(s, 1);
+    assert(approach, `${kind}: reachable approach`);
+    P.execute(s, approach);
     assert.equal(s.holdIndex, h.i, `${kind}: catch arrives at the pack decision`);
     assert.equal(s.mode, "ledge");
     tickFor(s, .4, true);
@@ -179,8 +216,8 @@ function restChoices() {
 
 function main() {
   const started = performance.now();
-  selection(); separatedCurves(); noAutomaticDescent(); distinctGestures(); pickups(); restChoices();
+  selection(); separatedCurves(); noAutomaticDescent(); distinctGestures(); pickups(); directionChanges(); restChoices();
   console.log(`PASS descent contracts (${((performance.now() - started) / 1000).toFixed(1)}s)`);
 }
 if (require.main === module) main();
-module.exports = { downState, selection, separatedCurves, noAutomaticDescent, distinctGestures, pickups, restChoices, main };
+module.exports = { downState, selection, separatedCurves, noAutomaticDescent, distinctGestures, pickups, directionChanges, restChoices, main };

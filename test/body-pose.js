@@ -65,8 +65,12 @@ function attachedAndStations() {
     for (const h of FX.HOLDS) {
       if (h.k === "summit") continue;
       const s = Pilot.fresh(mask, h.i);
-      // Include late turnover, when the shoulder crosses the gripping hands.
-      for (const t of [0, .30, .65, 1.0, 1.2, 1.65, 2.2]) {
+      // Sweep the hollow/compression and turnover extrema for both weights;
+      // identical clock times miss the heavy pack's delayed knee drive.
+      const params=FX.params(mask);
+      const phases=[0,.22,.34,.46,.52,.58,.635,.69,.745,.80,.88,.96,1.04,1.12,1.24,1.37,1.425,1.48,1.55,1.62,1.84];
+      const times=[0,...phases.map(p=>params.preload+p*Math.PI/params.omega)];
+      for (const t of times) {
         s.holding = t > 0; s.holdT = t;
         const p = Render.computePose(s);
         skeleton(p, `attached/${mask}/${h.i}/${t}`);
@@ -100,6 +104,23 @@ function attachedAndStations() {
   }
 }
 
+function inertialFlight() {
+  // A nearby grip, falling velocity, or reach input may alter an arm pose but
+  // must never pull the body's centre away from its released trajectory.
+  for(const mask of [0,15])for(const from of [8,23,43]){
+    const s=Pilot.fresh(mask,from),h=FX.HOLDS[from];
+    s.attached=false;s.launchY=h.y-1.1;s.launchZ=h.z+.2;
+    s.launchBody={hipY:h.y-.12,hipZ:h.z+.49,theta:.32,hipFlex:-.18,kneeFlex:.55};
+    for(const t of [0,.08,.22,.6,1.2])for(const vy of [12,0,-12])for(const holding of [false,true]){
+      s.flightT=t;s.time=t;s.y=h.y+vy*t;s.z=h.z+.15;s.vy=vy;s.vz=-.5;s.holding=holding;s.grabT=holding?.10:-1;
+      const p=FX.bodyFrame(s);
+      close(p.hip.y-s.y,s.launchBody.hipY-s.launchY,"airborne pelvis retains release y offset");
+      close(p.hip.z-s.z,s.launchBody.hipZ-s.launchZ,"airborne pelvis retains release z offset");
+      skeleton(Render.computePose(s),`inertia/${mask}/${from}/${t}/${vy}/${holding}`);
+    }
+  }
+}
+
 function realFlights() {
   const fixtures = [];
   for (const from of [8, 14, 23, 43]) {
@@ -130,6 +151,16 @@ function realFlights() {
 function summitAndReturn() {
   const h = FX.HOLDS.at(-1);
   for (const mask of [0, 15]) {
+    // A real arriving pose is different from an already standing fixture.
+    // Follow the capture through the whole mantle, including wrist release.
+    const arrival=Pilot.fresh(mask,h.i-1),schedule=Pilot.plan(arrival,1);
+    assert.ok(schedule,"summit must have a real manual reach schedule");
+    Render.resetPoseHistory();
+    const result=Pilot.execute(arrival,schedule,()=>livePose(arrival,`summit approach/${mask}`));
+    assert.ok(result.landed&&arrival.holdIndex===h.i,"summit approach did not catch the lip");
+    for(let i=0;i<150;i++){
+      Pilot.tick(arrival,{holding:false});livePose(arrival,`real summit mantle/${mask}/${i}`);
+    }
     const s = Pilot.fresh(mask, h.i);
     s.mode = "ending";
     s.lost = [{ kind: "trophy", bit: FX.ITEMS.trophy.bit, hold: 8, y: FX.HOLDS[8].y, z: FX.HOLDS[8].z }];
@@ -165,6 +196,7 @@ function summitAndReturn() {
 
 for (const name of ["surfaceZ", "chargeFrame", "bodyFrame", "flightArms"]) assert.equal(typeof FX[name], "function", `${name} must be a shared physics/render API`);
 attachedAndStations();
+inertialFlight();
 realFlights();
 summitAndReturn();
 console.log(`Body pose: ${poses} poses, ${samples} volume samples; maximum penetration ${Math.max(0, deepest.depth * 100).toFixed(2)}cm (${deepest.part}).`);

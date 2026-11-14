@@ -1,0 +1,57 @@
+Drop material and sky credits
+=============================
+
+These locally hosted assets are derived from Poly Haven photographs/scans.
+All Poly Haven source assets are CC0 1.0, allowing commercial use and redistribution.
+The additional generated alpine matte is described separately below.
+No attribution is required by CC0; credit is retained here for provenance.
+
+Provider asset license: https://polyhaven.com/license
+CC0 1.0: https://creativecommons.org/publicdomain/zero/1.0/
+Poly Haven states: "Our assets are all licensed as CC0" and permits use,
+modification and redistribution, including in commercial products.
+
+Rock Face 03 — Dario Barresi (Photography), Rico Cilliers (Processing)
+https://polyhaven.com/a/rock_face_03
+Used for the cliff and stone albedo, OpenGL normal and roughness maps.
+The photographed area is approximately 2.7 m square.
+
+Denim Fabric 05 — colormass (Photography), Rico Cilliers (Processing)
+https://polyhaven.com/a/denim_fabric_05
+Used for neutral garment albedo, OpenGL normal and roughness maps.
+The photographed area is approximately 270 by 271.5 mm.
+
+Brown Leather — Rob Tuytel
+https://polyhaven.com/a/brown_leather
+Used for boot/glove leather albedo, OpenGL normal and roughness maps.
+The photographed area is approximately 400 mm square.
+
+Kloofendal Overcast (Pure Sky) — Greg Zaal
+https://polyhaven.com/a/kloofendal_overcast_puresky
+The official tone-mapped panorama supplies both the visible sky and a smaller
+reflection source. It contains no landscape, buildings or trees. The lighting
+source is LDR; the game does not ship an HDR decoder or a second panorama.
+
+Processing
+----------
+For the Poly Haven maps, Lanczos resampling and WebP compression use the
+original source images without adding new patterns or fictional details.
+No padding or extra unused images are included.
+Original map MD5 values were verified against the official Poly Haven API.
+16-bit roughness sources were scaled to 8-bit before encoding, preserving
+roughness values. Color maps are sRGB; normal/roughness are linear data.
+The original downloads remain outside the repository. manifest.json lists
+exact source URLs, authors, input checksums, transformations, output sizes,
+output SHA-256 values, dimensions and render color-space requirements.
+
+Generated alpine background
+---------------------------
+alpine-panorama.webp is original project-specific AI-generated artwork made
+with OpenAI image generation on 2026-11-14. It is not a photograph, does not
+represent a named real location, and is not claimed as a CC0 source asset.
+It depicts broad alpine massifs, snow gullies and valley clouds for the distant
+background. Original image: 2172 by 724 pixels; only WebP encoding is applied.
+The finite 3:1 matte is not a 360-degree equirectangular environment map.
+OpenAI terms: https://openai.com/policies/terms-of-use/
+
+All image files together: 4069620 bytes.

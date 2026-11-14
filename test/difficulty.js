@@ -5,6 +5,7 @@
 "use strict";
 const assert = require("node:assert/strict");
 const FX = require("../game.js");
+const P = require("./pilot.js"), W = require("./windows.js");
 const DT = 1 / 120;
 const REPRESENTATIVES = [3, 13, 24, 35, 43];
 const WIND_TIMES = [0, 7, 19];
@@ -23,14 +24,9 @@ function fresh(mask, index, time) {
 }
 
 function releaseAndLand(held) {
-  const s = copy(held), launches = s.launches;
-  tick(s, false);
-  if (s.launches === launches) return { state: s, launched: false, delta: 0 };
-  for (let frame = 0; frame < 4 / DT && !s.attached && s.mode === "play"; frame++) {
-    // Reach on the fall, exactly as a player may do; this does not inject a catch.
-    tick(s, s.vy < 0);
-  }
-  return { state: s, launched: true, delta: s.attached && s.mode !== "impact" ? s.holdIndex - held.holdIndex : 0 };
+  const route = P.trial(held, 1);
+  if (!route) return { launched: true, delta: 0 };
+  return { launched: true, delta: 1, plan: { release: held.holdT, direction: 1, ...route } };
 }
 
 function runs(samples, key) {
@@ -54,7 +50,7 @@ function scan(mask, index, phase, stopAfterWindow = 0) {
     assert(held.attached && held.mode === "play", "holding alone must not launch or drop the climber");
     if (frame % 2 || held.holdT <= .16) continue;
     const result = releaseAndLand(held);
-    samples.push({ t: held.holdT, next: result.delta === 1, progress: result.delta > 0 });
+    samples.push({ t: held.holdT, next: result.delta === 1, progress: result.delta > 0, plan: result.plan || null });
     if (result.delta === 1) {
       if (runStart === null) runStart = held.holdT;
       if (stopAfterWindow && held.holdT - runStart + 1e-7 >= stopAfterWindow) { stopped = true; break; }
@@ -62,8 +58,10 @@ function scan(mask, index, phase, stopAfterWindow = 0) {
   }
   const next = runs(samples, "next"), progress = runs(samples, "progress");
   const longest = rs => rs.reduce((a, b) => b.span > a.span ? b : a, { a: 0, b: 0, span: 0 });
-  return { index, stage: FX.stageAt(FX.HOLDS[index].y), mask, phase, completeScan: !stopped,
-    nextWindows: next, firstNext: next[0] || null, widestNext: longest(next), widestProgress: longest(progress) };
+  const central = next.length ? (next[0].a + next[0].b) / 2 : 0;
+  const centralSample = samples.filter(x => x.next).reduce((a, b) => !a || Math.abs(b.t - central) < Math.abs(a.t - central) ? b : a, null);
+  return { centerPlan: centralSample && centralSample.plan, index, stage: FX.stageAt(FX.HOLDS[index].y), mask, phase, completeScan: !stopped,
+    firstPlan: (samples.find(x => x.next) || {}).plan || null, nextWindows: next, firstNext: next[0] || null, widestNext: longest(next), widestProgress: longest(progress) };
 }
 
 function routeReachability() {
@@ -88,10 +86,8 @@ function readyAfterCatch(mask, measured) {
   assert(measured.firstNext, "settling fixture must have a reachable next hold");
   // Reuse an actually sampled release; averaging two successful frames could
   // invent an untested frame while contact behavior is being tuned.
-  const release = measured.firstNext.a;
-  const held = fresh(mask, measured.index, measured.phase);
-  while (held.holdT + 1e-8 < release) tick(held, true);
-  const result = releaseAndLand(held), s = result.state;
+  const s = fresh(mask, measured.index, measured.phase);
+  const result = P.execute(s, measured.firstPlan);
   assert(result.delta > 0, "settling measurement must begin with a real upward catch");
   const contactTime = s.time;
   for (let frame = 0; frame < 2 / DT; frame++) {
@@ -114,7 +110,9 @@ function measure() {
     const packs = MASKS.map(mask => {
       const windows = samples.filter(x => x.index === index && x.mask === mask);
       const wind = Array.from({ length: 601 }, (_, i) => FX.wind(i * .1, y, mask, false));
-      return { mask, meanWindow: mean(windows.map(x => x.widestNext.span)), minWindow: Math.min(...windows.map(x => x.widestNext.span)),
+      const central = windows.find(x => x.phase === WIND_TIMES[0]);
+      const reach = central && central.centerPlan ? W.reachWindow(fresh(mask, index, central.phase), central.centerPlan) : { span: 0 };
+      return { mask, reachWindow: reach.span, meanWindow: mean(windows.map(x => x.widestNext.span)), minWindow: Math.min(...windows.map(x => x.widestNext.span)),
         firstRelease: mean(windows.map(x => x.firstNext ? x.firstNext.a : NaN)),
         windRms: Math.sqrt(mean(wind.map(x => x * x))), maxWind: Math.max(...wind.map(Math.abs)) };
     });
@@ -144,9 +142,17 @@ function validate(report) {
     assert(s.meanWindow <= stages[i - 1].meanWindow + DT * 2, "later stage has a materially wider actual release window");
   });
   assert(stages[4].meanWindow < stages[0].meanWindow * .8, "final act must require materially more precise release timing than the opening");
+  const emptyRelease = mean(stages.map(s => s.packs.find(p => p.mask === 0).meanWindow));
+  const fullRelease = mean(stages.map(s => s.packs.find(p => p.mask === 15).meanWindow));
+  assert(fullRelease <= emptyRelease * .85, "full pack must require materially more precise release timing across the route");
+  for (const stage of stages) {
+    const empty = stage.packs.find(p => p.mask === 0), full = stage.packs.find(p => p.mask === 15);
+    assert(full.windRms > empty.windRms * 1.5, "heavy load must increase actual lateral wind disturbance");
+    for (const pack of stage.packs) assert(pack.reachWindow + DT >= .05, "a deliberate reach needs a usable real timing window");
+  }
   const empty = burden.find(x => x.mask === 0), full = burden.find(x => x.mask === 15);
   assert(full.charge10 > empty.charge10 + .1 && full.charge90 > empty.charge90 + .35, "heavy pack must build force perceptibly later");
-  assert(full.readyAfterCatch > empty.readyAfterCatch + .25 && full.readyAfterCatch > .5 && empty.readyAfterCatch < .5,
+  assert(full.readyAfterCatch > empty.readyAfterCatch + .25 && full.readyAfterCatch > .8 && empty.readyAfterCatch < .9,
     "heavy pack must take noticeably longer to recover after a real catch");
 }
 

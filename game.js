@@ -14,12 +14,12 @@
   let windEnabled = true;
   // Light pack charges and swings faster. A heavy pack is slower, never unreachable.
   const TUNE = {
-    omega: [3.55, 2.72],
+    omega: [3.55, 2.38],
     amp: [1.30, 0.98],
     maxSpeed: [20.6, 15.2],
     aimScale: [0.86, 0.70],
-    chargeRate: [2.65, 1.18],
-    windMul: [0.70, 1.15],
+    chargeRate: [2.65, 1.02],
+    windMul: [0.65, 1.60],
   };
 
   // Four acts with breathers, changing wall slope, and a short exposed crown.
@@ -151,10 +151,10 @@
   const UI = {
     titleZh: "放下",
     titleEn: "LET GO",
-    hintZh: "按住蓄力，弧线碰到岩点再松开",
-    hintEn: "Hold. Release when the arc meets the hold.",
-    hintFallZh: "下坠时按住，也许还能抓住",
-    hintFallEn: "Hold as you fall. You may still catch.",
+    hintZh: "按住蓄力，松手跃起；靠近岩点时再按住抓握",
+    hintEn: "Hold to build force. Release to jump. Press again near a hold to grip.",
+    hintFallZh: "靠近岩点时再次按住；伸手太早会错过抓握",
+    hintFallEn: "Time a fresh reach near the rock. An early reach expires.",
     packZh: "背包",
     packEn: "Pack",
     carryZh: "继续",
@@ -210,8 +210,8 @@
       grav: mix(0.86, 1.26, k),
       stamina: mix(8.4, 4.8, k),
       sway: mix(0.03, 0.2, k),
-      preload: mix(0.04, 0.20, k),
-      settleDuration: mix(0.36, 0.90, k),
+      preload: mix(0.04, 0.30, k),
+      settleDuration: mix(0.76, 1.22, k),
     };
   }
   function grav(mask) {
@@ -224,9 +224,9 @@
     return stage;
   }
   function weatherAt(y, returning) {
-    const stage = stageAt(y), intensity = [0.10, 0.28, 0.48, 0.71, 0.94][stage];
+    const stage = stageAt(y), intensity = [0.04, 0.25, 0.52, 0.80, 1.0][stage];
     return { stage: stage, intensity: Math.min(1, intensity + (returning ? .10 : 0)),
-      windScale: [0.16, 0.38, 0.70, 1.05, 1.40][stage] * (returning ? 1.12 : 1) };
+      windScale: [0.16, 0.60, 1.05, 1.65, 2.25][stage] * (returning ? 1.12 : 1) };
   }
   function stormOf(mask, y, returning) {
     return weatherAt(y == null ? HOLDS[0].y : y, returning).intensity;
@@ -299,14 +299,17 @@
   }
   function surfaceZ(x, y) { return solidWorld().surfaceZ(x, y); }
   const BODY = { torso: .53, upperArm: .36, forearm: .34, thigh: .42, shin: .41 };
+  // Grip-fixed muscle-up: active hang, long backswing, a compact hollow,
+  // explosive hip extension, chest turnover, then a straight-arm push. The
+  // knees arrive after the hips instead of the entire doll rotating at once.
   const KIP = [
-    [0,-.675,.17,.05,0,.07],[.24,-.630,.29,.33,.02,.08],
-    [.49,-.510,.47,.72,.02,.10],[.65,-.405,.40,.36,-.95,1.20],
-    [.79,-.150,.40,.07,-.60,.95],[.97,.290,.34,.32,-.20,.70],
-    [1.12,.470,.28,.27,-.17,.58],[1.27,-.120,.37,.23,.20,.38],
-    [1.39,-.470,.45,.50,.15,.16],[1.49,-.110,.37,.15,-.60,.95],
-    [1.62,.330,.29,.30,-.18,.68],[1.82,.430,.26,.28,-.18,.58],
-    [2.12,.470,.28,.27,-.17,.58],
+    [0,-.674,.17,.065,-.025,.11],[.22,-.635,.28,.34,.08,.09],
+    [.46,-.490,.49,.82,-.13,.11],[.58,-.445,.51,.70,-.96,1.40],
+    [.69,-.335,.49,.47,-1.16,1.58],[.80,-.080,.44,.19,-.66,1.06],
+    [.96,.295,.34,.34,-.18,.55],[1.12,.470,.28,.27,-.12,.34],
+    [1.24,.050,.36,.30,.08,.25],[1.37,-.460,.47,.68,-.08,.13],
+    [1.48,-.290,.47,.44,-1.04,1.40],[1.62,.330,.30,.32,-.20,.64],
+    [1.84,.440,.27,.28,-.13,.38],[2.12,.470,.28,.27,-.12,.34],
   ];
   function sampleKip(phase) {
     let i=0; while(i<KIP.length-2 && phase>KIP[i+1][0])i++;
@@ -338,37 +341,6 @@
       hipZ:h.z+.035+p.sz+Math.sin(p.theta)*BODY.torso,
       theta:p.theta,hipFlex:p.hipFlex,kneeFlex:p.kneeFlex};
   }
-  // Reaching is a continuous physical pose, not a yes/no predicted catch.
-  // A trajectory can just miss a grip after brushing the rock. Its body must
-  // release that reach smoothly instead of losing a large hip correction in
-  // one tick. Blend nearby grips; a closest-target switch cannot move the root.
-  function forecastBodyContact(s) {
-    const origin=HOLDS[s.origin],t=Math.max(0,s.flightT||0),speed=Math.abs(s.vy||0);
-    const band=clamp(speed*.20,.85,3.0),age=smooth(t/.08);
-    let sum=0,none=1,anchorY=0,anchorZ=0,best=null,bestWeight=0,exact=null;
-    for(const h of HOLDS){
-      const d=Math.hypot(s.y-h.y,s.z-h.z);
-      const radius=catchRadius(h,true,!!s.descending);
-      if(d>=radius+band)continue;
-      // A far sideways miss must not drag the whole body toward every lip it
-      // passes. Within the real grab radius this factor is exactly one.
-      let eligible=1-smooth((Math.abs(s.z-h.z)-radius)/.6);
-      if(h.i===s.origin)eligible*=smooth((t-.16)/.18);
-      if(h.i===s.origin||(origin&&h.y<origin.y-.25))eligible*=1-smooth(((s.vy||0)-.6)/3);
-      const near=(1-smooth((d-radius)/band))*eligible*age,weight=near*near;
-      if(weight<=1e-8)continue;
-      none*=1-weight;
-      // Odds weighting is continuous between neighbouring lips, and makes a
-      // reachable grip dominate completely at contact instead of averaging it
-      // with the next rock and shifting the body at the actual catch.
-      if(weight>1-1e-8)exact={x:0,y:h.y+.035,z:h.z+.035};
-      const odds=weight/Math.max(1e-8,1-weight);
-      sum+=odds;anchorY+=(h.y+.035)*odds;anchorZ+=(h.z+.035)*odds;
-      if(weight>bestWeight){bestWeight=weight;best={hold:h,index:h.i,eta:Math.max(0,d-radius)/Math.max(1,speed)};}
-    }
-    if(!best)return null;
-    return {...best,weight:1-none,grip:exact||{x:0,y:anchorY/sum,z:anchorZ/sum},before:{y:s.y,z:s.z}};
-  }
   const solvedBodies = new WeakMap();
   function bodyFrame(s) {
     const cached = solvedBodies.get(s);
@@ -377,52 +349,53 @@
   }
   function freeBodyFrame(s) {
     const t=Math.max(0,s.flightT||0),start=s.launchBody,down=!!s.downLaunch;
-    const extend=smooth(t/(down?.40:.38)),fade=1-smooth(t/(down?.40:.38));
-    const ascending=smooth(clamp((s.vy+1)/2,0,1));
-    const pitch=mix(.12,clamp((s.vz||0)*.022,-.12,.26),ascending);
-    let theta=start?mix(start.theta,pitch,extend):pitch;
+    const w=weight01(s.mask),extend=smooth(t/(down?.48:.42+w*.16));
+    const ascending=smooth(clamp(((s.vy||0)+1)/3,0,1));
+    const pitch=mix(.18,clamp(.14+(s.vz||0)*.012,-.08,.28),ascending);
+    const theta=start?mix(start.theta,pitch,extend):pitch;
     const dy=start?start.hipY-s.launchY:-.96,dz=start?start.hipZ-s.launchZ:.34;
-    const targetY=down?-.96:-.43-Math.cos(theta)*BODY.torso+.60*clamp((s.vy||0)/5,-1,1);
-    let hip={x:0,y:s.y+mix(targetY,dy,fade),z:s.z+mix(.33+Math.sin(theta)*BODY.torso,dz,fade)};
-    let hipFlex=start?mix(start.hipFlex,.07,extend):.07;
-    let kneeFlex=start?mix(start.kneeFlex,mix(.42,.22,ascending),extend):mix(.42,.22,ascending);
-    let contact=null;
-    const predicted=forecastBodyContact(s);
-    if(predicted){
-      const weight=predicted.weight,sy=-.43,grip=predicted.grip;
-      const catchY=grip.y+sy-Math.cos(.20)*BODY.torso;
-      const catchZ=grip.z+.33+Math.sin(.20)*BODY.torso;
-      // A missed lip may be metres behind a fast-falling body. Bound the
-      // preparatory trunk correction smoothly; arms can reach, but the body
-      // must not stop in mid-air then whip back to its ballistic trajectory.
-      const reachY=catchY-hip.y,reachZ=catchZ-hip.z;
-      const reachScale=1/Math.sqrt(1+(reachY*reachY+reachZ*reachZ)/1.44);
-      hip.y+=reachY*reachScale*weight;hip.z+=reachZ*reachScale*weight;
-      theta=mix(theta,.20,weight);hipFlex=mix(hipFlex,0,weight);kneeFlex=mix(kneeFlex,.65,weight);
-      contact={...predicted,weight:weight,sy:sy,grip:grip};
-    }
-    return {hip:hip,theta:theta,hipFlex:hipFlex,kneeFlex:kneeFlex,contact:contact};
+    // The release captures a real body position. Keep that inertial offset:
+    // replacing it with a catch pose in flight used to lower the pelvis by
+    // more than a metre, then pull it toward whatever rock was nearby.
+    const hip={x:0,y:s.y+dy,z:s.z+dz};
+    const recoil=down?0:Math.sin(Math.PI*clamp(t/(.54+w*.14),0,1))**2;
+    const hipFlex=(start?mix(start.hipFlex,-.12,extend):-.12)-.38*recoil;
+    const kneeFlex=(start?mix(start.kneeFlex,.42,extend):.42)+.64*recoil;
+    return {hip:hip,theta:theta,hipFlex:hipFlex,kneeFlex:kneeFlex,contact:null};
   }
   function flightArms(s, frame) {
     const r=frame||bodyFrame(s),p=r.hip,up={y:Math.cos(r.theta),z:-Math.sin(r.theta)},back={y:Math.sin(r.theta),z:Math.cos(r.theta)},out={};
-    const start=s.launchBody,origin=HOLDS[s.origin],extend=smooth((s.flightT||0)/.32);
+    const start=s.launchBody,origin=HOLDS[s.origin],extend=smooth((s.flightT||0)/(.30+weight01(s.mask)*.10));
+    const candidate=catchCandidate(s,r),window=gripWindow(s);
+    const grabT=s.grabT==null?-1:s.grabT;
+    // An attempt is a short, visible reach and recovery. It never translates
+    // the pelvis; the catching hand has to meet the rock on its own trajectory.
+    const attempt=grabT<0?0:smooth(grabT/.10)*(1-smooth((grabT-window)/.12));
     for(const side of ['L','R']){
       const sign=side==='L'?-1:1,sh={x:sign*.17,y:p.y+up.y*BODY.torso,z:p.z+up.z*BODY.torso};
-      const ty=up.y*.43-back.y*.33,tz=up.z*.43-back.z*.33;
+      const ty=up.y*.16-back.y*.29,tz=up.z*.16-back.z*.29;
       let hand={x:sh.x+sign*.025,y:sh.y+ty,z:sh.z+tz};
       if(start&&origin){
         const fy=origin.y+.035-(start.hipY+Math.cos(start.theta)*BODY.torso),fz=origin.z+.035-(start.hipZ-Math.sin(start.theta)*BODY.torso);
-        if(s.downLaunch){hand={x:sh.x,y:sh.y+fy,z:sh.z+fz};}
-        else{
-          const a0=Math.atan2(fy,-fz);let a1=Math.atan2(ty,-tz);
-          while(a1-a0>Math.PI)a1-=Math.PI*2;while(a1-a0<-Math.PI)a1+=Math.PI*2;
-          const angle=mix(a0,a1,extend),radius=mix(Math.hypot(fy,fz),Math.hypot(ty,tz),extend);
-          hand={x:sh.x+sign*.025*extend,y:sh.y+Math.sin(angle)*radius,z:sh.z-Math.cos(angle)*radius};
-        }
+        const a0=Math.atan2(fy,-fz);let a1=Math.atan2(ty,-tz);
+        while(a1-a0>Math.PI)a1-=Math.PI*2;while(a1-a0<-Math.PI)a1+=Math.PI*2;
+        const angle=mix(a0,a1,extend),radius=mix(Math.hypot(fy,fz),Math.hypot(ty,tz),extend);
+        hand={x:sh.x+sign*.025*extend,y:sh.y+Math.sin(angle)*radius,z:sh.z-Math.cos(angle)*radius};
       }
-      if(r.contact){
-        const w=r.contact.weight;
-        hand.x=mix(hand.x,sh.x,w);hand.y=mix(hand.y,sh.y-r.contact.sy,w);hand.z=mix(hand.z,sh.z-.33,w);
+      if(attempt>0){
+        const grip=candidate&&candidate.grip;
+        const target=grip?{y:grip.y-sh.y,z:grip.z-sh.z}:{y:up.y*.59-back.y*.27,z:up.z*.59-back.z*.27};
+        // Orient the arm before the hand enters contact range. Waiting until
+        // the final 65 cm made the wrist whip sideways during fast ascents.
+        const reach=grip?1-smooth((Math.hypot(target.y,target.z)-1.25)/1.15):1;
+        const targetY=mix(up.y*.59-back.y*.27,target.y,reach),targetZ=mix(up.z*.59-back.z*.27,target.z,reach);
+        const a0=Math.atan2(hand.y-sh.y,-(hand.z-sh.z));let a1=Math.atan2(targetY,-targetZ);
+        while(a1-a0>Math.PI)a1-=Math.PI*2;while(a1-a0<-Math.PI)a1+=Math.PI*2;
+        // Keep a small elbow bend while reaching so the arm can absorb load
+        // without crossing the singular, perfectly straight IK configuration.
+        // The last centimetre of the .69 m grip range is the wrapping fingers.
+        const angle=mix(a0,a1,attempt),radius=mix(Math.hypot(hand.y-sh.y,hand.z-sh.z),Math.min(.68,Math.hypot(targetY,targetZ)),attempt);
+        hand={x:mix(hand.x,sh.x,attempt),y:sh.y+Math.sin(angle)*radius,z:sh.z-Math.cos(angle)*radius};
       }
       let dx=hand.x-sh.x,dy=hand.y-sh.y,dz=hand.z-sh.z,len=Math.hypot(dx,dy,dz);
       if(len>.697){dx*=.697/len;dy*=.697/len;dz*=.697/len;len=.697;hand={x:sh.x+dx,y:sh.y+dy,z:sh.z+dz};}
@@ -437,7 +410,7 @@
     const r=frame||bodyFrame(s),p=r.hip,up={y:Math.cos(r.theta),z:-Math.sin(r.theta)},back={y:Math.sin(r.theta),z:Math.cos(r.theta)};
     const point=(x,y,z)=>({x:x,y:p.y+up.y*y+back.y*z,z:p.z+up.z*y+back.z*z});
     const shoulder=point(0,BODY.torso,0),head=point(0,BODY.torso+.23,-.02),parts=[];
-    const add=(a,b,radius,kind)=>parts.push({a:a,b:b,r:radius,kind:kind});
+    const add=(a,b,radius,kind,endRadius=radius)=>parts.push({a:a,b:b,r:radius,endRadius,kind:kind});
     add(point(0,0,0),shoulder,.15,'torso');add(point(0,.75,-.02),point(0,.78,-.02),.145,'head');
     add(point(0,.205,.207),point(0,.425,.207),mix(.16,.195,weight01(s.mask)),'pack');
     const arms=flightArms(s,r);
@@ -451,37 +424,37 @@
       const side=sign<0?'L':'R',sh=arms['sh'+side],elbow=arms['elbow'+side],hand=arms['hand'+side];
       add(sh,elbow,.094,'upperArm');
       const cuff={x:mix(elbow.x,hand.x,.86),y:mix(elbow.y,hand.y,.86),z:mix(elbow.z,hand.z,.86)};
-      add(elbow,cuff,.080,'forearm');
+      add(elbow,cuff,.080,'forearm',.048);
     }
     return parts;
   }
   function resolveBody(s) {
     if (s.attached) return false;
-    // Articulate once, then translate the whole volume. Re-forecasting a catch
-    // during projection would pull the wrists back into the same rock.
-    const world = solidWorld(), frame = freeBodyFrame(s), parts = bodyCapsules(s, frame);
-    let push = 0, contactY = s.y;
-    for (const part of parts) {
-      const n = Math.max(1, Math.ceil(Math.hypot(part.b.y-part.a.y,part.b.z-part.a.z)/.075));
-      for (let i = 0; i <= n; i++) {
-        const t = i/n, y = mix(part.a.y,part.b.y,t), z = mix(part.a.z,part.b.z,t);
-        // A 6mm skin covers the curved intervals between section samples.
-        for (const off of [-.94,-.70,0,.70,.94]) {
-          const cy = y + off*part.r, depth = world.envelopeZ(cy) + part.r*Math.sqrt(1-off*off) + .006 - z;
-          if (depth > push) { push = depth; contactY = cy; }
+    // Recompute the reaching arms after projection: their hands remain aimed
+    // at the real grip while the torso moves out of solid rock.
+    const world = solidWorld(), frame = freeBodyFrame(s);
+    let totalPush = 0;
+    for (let pass = 0; pass < 3; pass++) {
+      const parts = bodyCapsules(s, frame);
+      let push = 0;
+      for (const part of parts) {
+        const n = Math.max(1, Math.ceil(Math.hypot(part.b.y-part.a.y,part.b.z-part.a.z)/.045));
+        for (let i = 0; i <= n; i++) {
+          const t=i/n,y=mix(part.a.y,part.b.y,t),z=mix(part.a.z,part.b.z,t),r=mix(part.r,part.endRadius,t);
+          for (const off of [-.95,-.80,-.50,0,.50,.80,.95]) {
+            const depth=world.envelopeZ(y+off*r)+r*Math.sqrt(1-off*off)+.010-z;
+            push=Math.max(push,depth);
+          }
         }
       }
+      if (push <= 0) break;
+      s.z += push+.002; frame.hip.z += push+.002; totalPush += push+.002;
     }
-    if (push > 0) {
-      s.z += push+.002; frame.hip.z += push+.002;
-      // This is an actively driven climbing pose. Projection constrains the
-      // actual displacement, while vz/vy retain the intended launch effort.
-      // A sleeve grazing the departure lip must not erase inward drive for the
-      // rest of the jump once the body has cleared that lip.
-      s.shake=Math.max(s.shake||0,Math.min(.22,push*.4));
-    }
+    // Contact constrains displacement; it must not turn into a spring toward
+    // the wall or erase the intended launch drive after a sleeve brushes it.
+    s.shake=Math.max(s.shake||0,Math.min(.22,totalPush*.4));
     solvedBodies.set(s, { frame: frame, time: s.time, flightT: s.flightT, y:s.y, z:s.z, vy:s.vy, vz:s.vz });
-    return push > 0;
+    return totalPush > 0;
   }
 
   function sampleRelease(mask, t, y) {
@@ -493,7 +466,7 @@
     const aim = clamp(angle * p.aimScale, -1.25, 1.25);
     // Drive peaks as the body comes over the grip. A mistimed release loses
     // useful lift; later exposed sections require a more precise turnover.
-    const strokeWidth = [1.65, 1.40, 1.18, .90, .78][stageAt(y == null ? HOLDS[0].y : y)];
+    const strokeWidth = [1.65, 1.40, 1.18, .90, .78][stageAt(y == null ? HOLDS[0].y : y)] * mix(1, .55, weight01(mask));
     const efficiency = .34 + .66 * Math.exp(-Math.pow(Math.sin(p.omega * active) / strokeWidth, 2));
     const speed = p.maxSpeed * (0.34 + 0.66 * smooth(charge)) * efficiency;
     return {
@@ -540,6 +513,42 @@
     return i + 1 < HOLDS.length ? i + 1 : -1;
   }
 
+  function gripWindow(s) {
+    const origin = HOLDS[s.origin] || HOLDS[0];
+    return [.48, .43, .39, .34, .30][stageAt(origin.y)] - .08 * weight01(s.mask);
+  }
+  function gripActive(s) {
+    return !s.attached && s.mode === "play" && s.holding && s.grabT >= .10 && s.grabT <= gripWindow(s);
+  }
+  function cancelCharge(s) {
+    if (s.attached && s.mode === "play" && !s.crown && s.holdT > 0) {
+      const f = chargeFrame(s.mask,s.holdT,s.time,HOLDS[s.holdIndex].y,s.descending);
+      s.catchPose = {sy:f.sy,sz:f.sz,theta:f.theta,hipFlex:f.hipFlex,kneeFlex:f.kneeFlex};
+      s.settle = 0;
+    }
+    s.holdT = 0;
+  }
+  // Only hands can catch a lip. Neither this query nor a reaching arm changes
+  // the body's trajectory; callers may also inspect geometry without pressing.
+  function catchCandidate(s, frame) {
+    if (s.attached) return null;
+    const r = frame || bodyFrame(s), origin = HOLDS[s.origin];
+    const sy = r.hip.y + Math.cos(r.theta) * BODY.torso;
+    const sz = r.hip.z - Math.sin(r.theta) * BODY.torso;
+    let best = null;
+    for (const h of HOLDS) {
+      if (h.i === s.origin && s.flightT < .34) continue;
+      if (s.vy > .6 && origin && (h.i === s.origin || h.y < origin.y - .25)) continue;
+      const grip = {x:0, y:h.y + .035, z:h.z + .035};
+      const distance = Math.hypot(sy - grip.y, sz - grip.z);
+      if (distance > 2.6 || best && distance >= best.distance) continue;
+      const canCatchSpeed = Math.hypot(s.vy, s.vz) <= 18 - 3.5 * weight01(s.mask);
+      best = {hold:h, index:h.i, grip, distance, reachable:distance <= .69,
+        canCatchSpeed, eligible:true, near:1-smooth((distance-.69)/.65)};
+    }
+    return best;
+  }
+
   function createState() {
     const h = HOLDS[0];
     return {
@@ -557,6 +566,8 @@
       flightT: 0,
       downLaunch: false,
       launchBody: null,
+      catchPose: null,
+      grabT: -1,
       launchY: h.y - L,
       launchZ: h.z,
       origin: 0,
@@ -635,18 +646,10 @@
     const count = Math.max(1, Math.ceil(speed * dt / .075));
     const sub = dt / count;
     for (let i = 0; i < count; i++) {
-      s.vz += wind(s.time, s.y, s.mask, !!(s.returning || s.descending)) * sub;
+      s.vz += wind(s.time, s.y, s.mask, !!s.returning) * sub;
       s.vy -= grav(s.mask) * sub;
       s.vz *= Math.max(0, 1 - DRAG * sub);
       s.vy *= Math.max(0, 1 - DRAG * sub);
-      const origin = HOLDS[s.origin];
-      const missedDown = !s.downLaunch || !origin || s.y < origin.y - 5.2;
-      if (s.vy < 0 && missedDown) {
-        const contact = faceZ(s.y) + BODY_R + .12;
-        const exposure = clamp(((origin ? origin.y : s.y) - 40) / Math.max(40, SUMMIT_Y - 40), 0, 1);
-        s.vz += (clamp((contact - s.z) * mix(8, 7.2, exposure), -48, 48) - s.vz * 5) * sub;
-        if (s.z <= contact + .5) s.vy = Math.max(s.vy, -14.5);
-      }
       s.z += s.vz * sub;
       s.y += s.vy * sub;
       resolveBody(s);
@@ -685,15 +688,15 @@
     const dots = [], dt = 1 / 120;
     for (let i = 0; i < 168; i++) {
       ghost.time += dt; ghost.flightT += dt;
-      const oldY = ghost.y, oldZ = ghost.z;
       integrateFlight(ghost, dt);
-      if (i % 12 === 0) dots.push({ y: ghost.y, z: ghost.z });
-      if (target) {
-        const dy = ghost.y - oldY, dz = ghost.z - oldZ;
-        const f = clamp(((target.y-oldY)*dy+(target.z-oldZ)*dz)/(dy*dy+dz*dz||1),0,1);
-        minD = Math.min(minD, Math.hypot(oldY+f*dy-target.y,oldZ+f*dz-target.z));
+      const frame = bodyFrame(ghost);
+      const sy = frame.hip.y + Math.cos(frame.theta)*BODY.torso;
+      const sz = frame.hip.z - Math.sin(frame.theta)*BODY.torso;
+      if (i % 12 === 0) dots.push({ y: sy, z: sz });
+      if (target && Math.hypot(ghost.vy,ghost.vz) <= 18-3.5*weight01(mask)) {
+        minD = Math.min(minD, Math.hypot(sy-target.y-.035,sz-target.z-.035));
       }
-      if (ghost.vy < 0 && ghost.y < (target ? target.y : hold.y) - 1.5) break;
+      if (ghost.vy < 0 && sy < (target ? target.y : hold.y) - 1.5) break;
     }
     return { minD: minD, dots: dots, st: st };
   }
@@ -710,7 +713,7 @@
     const hit = arcMin(s.mask, s.holdT, h, target, s.time, s.descending, s.returning);
     const was = s.armed;
     s.dots = hit.dots; s.aimD = hit.minD;
-    s.armed = hit.minD < catchRadius(target, false, s.descending);
+    s.armed = hit.minD < .69;
     return s.armed && !was;
   }
 
@@ -736,11 +739,15 @@
   }
 
   function catchHold(s, index) {
-    const h = HOLDS[index];
+    const h = HOLDS[index], frame = bodyFrame(s);
+    s.catchPose = {sy:frame.hip.y+Math.cos(frame.theta)*BODY.torso-h.y-.035,
+      sz:frame.hip.z-Math.sin(frame.theta)*BODY.torso-h.z-.035,
+      theta:frame.theta,hipFlex:frame.hipFlex,kneeFlex:frame.kneeFlex};
+    s.grabT = -1;
     s.attached = true;
     s.holdIndex = index;
     s.holdT = 0;
-    s.settle = 0.15;
+    s.settle = 0;
     s.needUp = true;
     s.lock = .08;
     s.vy = 0;
@@ -786,6 +793,8 @@
   function launch(s) {
     const h = HOLDS[s.holdIndex], st = releaseSample(s);
     s.launchBody = launchBodyFor(s);
+    s.catchPose = null;
+    s.grabT = -1;
     s.attached = false;
     s.y = s.launchY = h.y + st.offY;
     s.z = s.launchZ = h.z + st.offZ;
@@ -826,10 +835,6 @@
       s.revealT = 0;
       s.sfx.push("pickup");
     }
-    if (s.descending && s.returning && s.lost.length === 0) {
-      s.descending = false; s.needUp = true; s.holdT = 0;
-      s.prevHolding = false; s.holding = false; s.lock = .2;
-    }
   }
 
   function dropItem(s, kind) {
@@ -853,7 +858,6 @@
     s.mode = "play";
     s.attached = true;
     s.holdT = 0;
-    s.settle = 1;
     s.prevHolding = false;
     s.holding = false;
     s.pressT = 0;
@@ -882,6 +886,8 @@
     s.origin = 0;
     s.downLaunch = false;
     s.launchBody = null;
+    s.catchPose = null;
+    s.grabT = -1;
     s.launchY = h.y - L;
     s.launchZ = h.z;
     s.returning = false;
@@ -936,7 +942,7 @@
     let holding = !!input.holding;
     let released = s.prevHolding && !holding;
     s.time += dt;
-    const stormTarget = stormOf(s.mask, s.attached ? HOLDS[s.holdIndex].y : s.y, s.returning || s.descending);
+    const stormTarget = stormOf(s.mask, s.attached ? HOLDS[s.holdIndex].y : s.y, s.returning);
     if (s.attached) s.settle = Math.min(1, s.settle + dt / params(s.mask).settleDuration);
     if (s.stormVis == null) s.stormVis = stormTarget;
     s.stormVis += (stormTarget - s.stormVis) * (1 - Math.exp(-dt * 1.8));
@@ -996,6 +1002,8 @@
         s.mode = "play";
         s.endingT = 0;
         s.crown = false;
+        s.catchPose = null;
+        s.grabT = -1;
         s.descending = true;
         s.returning = true;
         s.needUp = true;
@@ -1056,6 +1064,23 @@
       return s;
     }
 
+    // Direction is chosen while securely attached and consumes the current
+    // gesture. Releasing the direction button must never launch the climber.
+    if (s.attached && (input.direction === "up" || input.direction === "down")) {
+      const down = input.direction === "down";
+      if ((!down || s.holdIndex > 0) && (down || !s.crown)) {
+        cancelCharge(s);
+        if (s.crown && down) {
+          s.crown = false; s.returning = true; s.settle = 0;
+          s.y = HOLDS[s.holdIndex].y - L; s.z = HOLDS[s.holdIndex].z;
+          s.catchPose = null;
+        }
+        s.descending = down; s.holdT = 0; s.grabT = -1;
+        s.holding = false; s.prevHolding = false; s.needUp = true;
+        s.lock = Math.max(s.lock, .18); s.dots = []; s.armed = false;
+        return s;
+      }
+    }
     // play
     if (s.crown && s.attached && input.choice === "door" && HOLDS[s.holdIndex].k === "summit") {
       beginEnding(s);
@@ -1101,34 +1126,14 @@
     } else {
       s.flightT += dt;
       s.armed = false;
-      const oldY = s.y, oldZ = s.z;
+      if (holding && !s.prevHolding) s.grabT = 0;
+      else if (s.grabT >= 0) s.grabT += dt;
       const sp = integrateFlight(s, dt);
-      if (sp > 0.8) s.angle = Math.atan2(-s.vz, s.vy);
-      if (s.crown && s.vy > -2 && Math.hypot(s.z - GATE.z, s.y - GATE.y) < 1.05) {
-        beginEnding(s);
+      if (sp > .8) s.angle = Math.atan2(-s.vz, s.vy);
+      const candidate = catchCandidate(s);
+      if (gripActive(s) && candidate && candidate.reachable && candidate.canCatchSpeed) {
+        catchHold(s, candidate.index);
       }
-
-      let caught = -1;
-      let bestD = 1e9;
-      const reaching = holding && s.flightT > 0.14;
-      const origin = HOLDS[s.origin];
-      for (let i = 0; i < HOLDS.length; i++) {
-        if (i === s.origin && s.flightT < 0.34) continue;
-        const hd = HOLDS[i];
-        // Still rising: the hold you came from, and anything below it, is not a catch.
-        if (s.vy > 0.6 && (i === s.origin || hd.y < origin.y - 0.25)) continue;
-        const r = catchRadius(hd, reaching, s.descending && s.vy < 0);
-        // Sweep the frame segment so a reachable hold cannot be skipped by
-        // a fast fall between physics samples.
-        const dy = s.y - oldY, dz = s.z - oldZ;
-        const f = clamp(((hd.y - oldY) * dy + (hd.z - oldZ) * dz) / (dy * dy + dz * dz || 1), 0, 1);
-        const d = Math.hypot(oldZ + dz * f - hd.z, oldY + dy * f - hd.y);
-        if (d < r && d < bestD) {
-          bestD = d;
-          caught = i;
-        }
-      }
-      if (caught >= 0) catchHold(s, caught);
 
       if (!s.attached) {
         const ni = nextIndex(s.origin);
@@ -1537,6 +1542,10 @@
     G: G,
     CATCH: CATCH,
     catchRadius: catchRadius,
+    gripWindow: gripWindow,
+    gripActive: gripActive,
+    cancelCharge: cancelCharge,
+    catchCandidate: catchCandidate,
     GATE: GATE,
     SUMMIT_Y: SUMMIT_Y,
     HOLDS: HOLDS,

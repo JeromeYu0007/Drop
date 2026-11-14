@@ -1,68 +1,119 @@
-/* Misses sampled just outside the pilot's successful release window.
- * The departure hold is a valid reachable hold under the game's catch rule.
- * Report it separately: strict lower catches / all failed-to-advance moves;
- * any saved move / all failed-to-advance moves; and lower catches after the
- * falling body has actually passed below the departure hold's catch band.
- * Never silently count an origin catch as a lower catch. */
+/* Manual grip contracts. A missed launch is allowed to fail: this suite never
+ * requires a rescue percentage. Geometry, fresh input and a finite reach window
+ * must all agree before a catch can stop a fall. */
+"use strict";
 const assert = require("node:assert/strict");
-const FX = require("../game.js");
-const P = require("./pilot.js");
-const PHASES = [0.4, 8.1, 23.4, 47.7];
-const OFFSETS = [0.08, 0.16, 0.24];
+const FX = require("../game.js"), P = require("./pilot.js");
+const HOLDS = [3, 13, 24, 35, 43, 45], PHASES = [.4, 23.4], OFFSETS = [-.18, .18];
+function noHomingOrDistantCatch() {
+  for (const mask of [0, 15]) {
+    const s = P.fresh(mask, 24);
+    Object.assign(s, { attached: false, crown: false, flightT: 1, y: FX.HOLDS[24].y,
+      z: FX.HOLDS[24].z + 8, vy: -4, vz: 0, grabT: -1 });
+    const z = s.z;
+    for (let n = 0; n < 15; n++) P.tick(s, { holding: true });
+    assert.equal(s.attached, false, "an active reach cannot grab a distant cliff");
+    assert(FX.gripActive(s), "distant-catch fixture actually has an active reach");
+    assert(Math.abs(s.z - z) < .03, "falling bodies must not accelerate sideways toward the cliff");
+    assert(Math.abs(s.vz) < .3, "horizontal motion contains wind and drag, no wall-homing spring");
+  }
+}
+function finiteReach() {
+  for (const mask of [0, 15]) {
+    const s = P.fresh(mask, 43);
+    Object.assign(s, { attached: false, crown: false, flightT: 1, y: 500, z: 30,
+      vy: 0, vz: 0, grabT: -1, prevHolding: false });
+    let activeFrames = 0;
+    for (let frame = 0; frame < 120; frame++) {
+      P.tick(s, { holding: true });
+      if (FX.gripActive(s)) activeFrames++;
+    }
+    assert(activeFrames >= 12 && activeFrames < 65, "reach window is usable but expires during a continuous hold");
+    assert.equal(FX.gripActive(s), false);
+    for (let frame = 0; frame < 30; frame++) P.tick(s, { holding: true });
+    assert.equal(FX.gripActive(s), false, "continued holding cannot silently renew an expired reach");
+    P.tick(s, { holding: false });
+    for (let frame = 0; frame < 15; frame++) P.tick(s, { holding: true });
+    assert(FX.gripActive(s), "release then a fresh press opens another deliberate reach");
+  }
+}
+function compareGestures() {
+  const rows = [];
+  for (const mask of [0, 15]) for (const i of HOLDS) {
+    const original = P.fresh(mask, i), plan = P.plan(original, 1);
+    assert(plan, `reachable fixture ${i}/${mask}`);
+    const active = P.copy(original), passive = P.copy(original), late = P.copy(original);
+    const catchResult = P.execute(active, plan);
+    assert(catchResult.landed && catchResult.delta === 1, "a correctly timed second press catches a reachable hold");
+    let belowTargetAt = null;
+    P.execute(passive, plan, flight => {
+      if (!flight.attached && flight.vy < 0 && belowTargetAt === null &&
+          FX.bodyFrame(flight).hip.y + 1.23 < FX.HOLDS[i + 1].y) belowTargetAt = flight.flightT;
+    }, { reach: false });
+    assert.equal(passive.catches, original.catches, "hands-off flight never attaches to a passing hold");
+    assert.equal(passive.mode, "impact", "without another press the same flight ends in a real fall");
+    assert(belowTargetAt !== null, "the passive trajectory genuinely passes below the target");
+    P.execute(late, plan, null, { grabAt: belowTargetAt });
+    assert(late.holdIndex <= i || late.mode === "impact", "pressing after passing the target cannot retroactively catch it");
+    rows.push({ i, mask, release: +plan.release.toFixed(3), grabAt: +plan.grabAt.toFixed(3),
+      active: active.holdIndex, passiveFalls: passive.falls, lateHold: late.holdIndex, lateFalls: late.falls });
+  }
+  return rows;
+}
+function deliberateRetry() {
+  function run(retry) {
+    const s = P.fresh(0, 13);
+    while (s.holdT + 1e-7 < 1.25) P.tick(s, { holding: true });
+    P.tick(s, { holding: false });
+    let expired = false, presses = 0, previouslyHeld = false;
+    for (let frame = 0; frame < 12 / P.DT && !s.attached && s.mode === "play"; frame++) {
+      const holding = s.flightT >= .05 && s.flightT < .55 || retry && s.flightT >= .85;
+      if (holding && !previouslyHeld) presses++;
+      P.tick(s, { holding });
+      if (s.flightT > .5 && s.flightT < .55 && !FX.gripActive(s)) expired = true;
+      previouslyHeld = holding;
+    }
+    return { s, expired, presses };
+  }
+  const noRetry = run(false), retry = run(true);
+  assert(noRetry.expired && retry.expired, "the first failed reach genuinely expires before the retry");
+  assert.equal(noRetry.s.mode, "impact", "an expired first reach does not automatically rescue the fall");
+  assert.equal(retry.presses, 2, "the rescue needs release followed by a second airborne press");
+  assert.equal(retry.s.attached, true, "a deliberate, correctly timed retry can catch during a fall");
+  assert.equal(retry.s.holdIndex, 13, "the retry catches a genuinely reachable grip");
+  assert.equal(retry.s.falls, 0);
+  console.log("PASS a failed reach can be rescued by explicitly releasing and pressing again");
+}
 
 function measure() {
   const rows = [];
-  for (let i = 1; i < FX.HOLDS.length - 1; i++) {
-    if (FX.HOLDS[i].y <= 20) continue;
-    let missed = 0, lower = 0, same = 0, ground = 0, noLaunch = 0, advanced = 0;
-    let passedOrigin = 0, lowerAfterPassing = 0;
-    const drops = [];
-    for (const mask of [0, 15]) for (const phase of PHASES) {
-      const base = P.fresh(mask, i, phase);
-      const p = P.plan(base, 1);
-      assert.ok(p, `no launch plan at ${i}, mask ${mask}, phase ${phase}`);
-      const times = OFFSETS.flatMap(d => [Math.max(0.18, p.a - d), p.b + d]);
-      for (const t of times) {
-        const s = P.copy(base);
-        let passed = false;
-        const result = P.execute(s, t, flight => {
-          if (!flight.attached && flight.vy < 0 && flight.y < FX.HOLDS[i].y - 1.4) passed = true;
-        });
-        if (!result.launched) { noLaunch++; continue; }
-        if (s.attached && s.holdIndex > i) { advanced++; continue; }
-        missed++;
-        if (passed) passedOrigin++;
-        if (s.attached && s.holdIndex < i && s.falls === 0) {
-          lower++; drops.push(i - s.holdIndex);
-          if (passed) lowerAfterPassing++;
-        } else if (s.attached && s.holdIndex === i && s.falls === 0) same++;
-        else ground++;
-      }
+  for (const i of HOLDS) for (const mask of [0, 15]) for (const phase of PHASES) {
+    const base = P.fresh(mask, i, phase), plan = P.plan(base, 1);
+    assert(plan, `release-error fixture ${i}/${mask}/${phase}`);
+    for (const offset of OFFSETS) {
+      const s = P.copy(base);
+      // Preserve the planned reach time. An erroneous release does not receive
+      // another oracle search or repeated automatic catch attempts.
+      const result = P.execute(s, { ...plan, release: plan.release + offset });
+      rows.push({ i, mask, phase, offset, advanced: result.landed && result.delta > 0,
+        lower: result.landed && result.delta < 0, same: result.landed && result.delta === 0, ground: s.mode === "impact" });
     }
-    rows.push({ i, y: FX.HOLDS[i].y, missed, lower, same, ground, advanced, noLaunch, passedOrigin, lowerAfterPassing,
-      rate: missed ? lower / missed : 0,
-      savedRate: missed ? (lower + same) / missed : 0,
-      conditionalLowerRate: passedOrigin ? lowerAfterPassing / passedOrigin : null,
-      meanHoldsLost: drops.length ? drops.reduce((a, b) => a + b, 0) / drops.length : 0,
-      maxHoldsLost: drops.length ? Math.max(...drops) : 0 });
   }
   return rows;
 }
 function main() {
-  const t = performance.now();
-  const rows = measure();
-  for (const r of rows) console.log(`${r.i.toString().padStart(2)} ${r.y.toFixed(1).padStart(5)}m lower ${r.lower}/${r.missed} ${(r.rate * 100).toFixed(1)}% same ${r.same} saved ${(r.savedRate * 100).toFixed(1)}% passed-origin ${r.lowerAfterPassing}/${r.passedOrigin} ground ${r.ground} loss ${r.meanHoldsLost.toFixed(1)}/${r.maxHoldsLost}`);
-  const failed = rows.filter(r => !r.missed || r.savedRate < 0.6 || (r.passedOrigin && r.conditionalLowerRate < 0.6));
-  const total = rows.reduce((a, r) => ({ missed: a.missed + r.missed, lower: a.lower + r.lower, same: a.same + r.same,
-    passedOrigin: a.passedOrigin + r.passedOrigin, lowerAfterPassing: a.lowerAfterPassing + r.lowerAfterPassing, ground: a.ground + r.ground }),
-  { missed: 0, lower: 0, same: 0, ground: 0, passedOrigin: 0, lowerAfterPassing: 0 });
-  console.log(JSON.stringify({ sample: "two pack extremes, four wind phases, ±80/160/240ms outside successful windows", ...total,
-    strictLowerRecoveryRate: total.lower / total.missed, anyHoldRecoveryRate: (total.lower + total.same) / total.missed,
-    afterPassingOriginRecoveryRate: total.passedOrigin ? total.lowerAfterPassing / total.passedOrigin : null,
-    failedHolds: failed.map(r => r.i), wallSeconds: +((performance.now() - t) / 1000).toFixed(1) }));
-  assert.equal(failed.length, 0, `${failed.length} holds below 60% any-hold or passed-origin recovery: ${failed.map(r => r.i).join(",")}`);
-  console.log("PASS recovery");
+  const started = performance.now();
+  noHomingOrDistantCatch(); finiteReach(); deliberateRetry();
+  const contracts = compareGestures(), rows = measure();
+  const counts = rows.reduce((out, row) => {
+    for (const key of ["advanced", "lower", "same", "ground"]) if (row[key]) out[key]++;
+    return out;
+  }, { advanced: 0, lower: 0, same: 0, ground: 0 });
+  assert(counts.ground > 0, "meaningful release mistakes must sometimes produce a real fall");
+  console.log("GRIP_CONTRACTS", JSON.stringify(contracts));
+  console.log("RELEASE_ERRORS", JSON.stringify({ note: "Six holds × empty/full × two wind phases × ±180ms. Diagnostic sample, no required rescue rate.", ...counts }));
+  console.log(`PASS active, finite, geometric grip contracts (${((performance.now() - started) / 1000).toFixed(1)}s)`);
   return rows;
 }
 if (require.main === module) main();
-module.exports = { measure, PHASES, OFFSETS };
+module.exports = { main, measure, noHomingOrDistantCatch, finiteReach, compareGestures, deliberateRetry, PHASES, OFFSETS };

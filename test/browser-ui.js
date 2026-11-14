@@ -18,7 +18,8 @@ async function main() {
   const server = http.createServer((req, res) => {
     const name = new URL(req.url, "http://localhost").pathname.replace(/^\//, "") || "index.html";
     if (!sources.has(name)) { res.writeHead(404); res.end(); return; }
-    res.setHeader("Content-Type", name.endsWith(".js") ? "text/javascript" : "text/html; charset=utf-8");
+    const types = { ".js": "text/javascript", ".webp": "image/webp", ".jpg": "image/jpeg", ".png": "image/png", ".html": "text/html; charset=utf-8" };
+    res.setHeader("Content-Type", types[path.extname(name)] || "application/octet-stream");
     res.end(sources.get(name));
   });
   await new Promise((resolve, reject) => {
@@ -80,6 +81,58 @@ async function main() {
     assert(audio.gain !== null && audio.gain < .001);
     console.log("PASS mute silences wind and effects", audio);
 
+    phase = "direction controls cancel held input and remain reversible";
+    await page.evaluate(() => {
+      cancelCharge();
+      const s = __fx.state, h = Fangxia.HOLDS[4];
+      Object.assign(s, Fangxia.createState(), {
+        intro: 0, catches: 4, launches: 3, holdIndex: h.i, origin: h.i,
+        y: h.y - Fangxia.L, z: h.z, attached: true, mode: "play",
+      });
+      prologueLeft = 0;
+    });
+    await page.waitForFunction(() => document.querySelector("#climbControls").classList.contains("show"));
+    for (const selector of ["#directionUp", "#directionDown"]) {
+      const bounds = await page.locator(selector).boundingBox();
+      assert(bounds && bounds.width >= 44 && bounds.height >= 44 && bounds.y + bounds.height <= 844, selector + " is a visible mobile touch target");
+    }
+    await page.keyboard.down("Space");
+    await page.waitForFunction(() => __fx.state.holding && __fx.state.holdT > .12);
+    await page.locator("#directionDown").click();
+    await page.waitForFunction(() => __fx.state.descending && !__fx.state.holding);
+    await page.keyboard.up("Space");
+    await page.waitForTimeout(150);
+    const directionChange = await page.evaluate(() => ({ launches: __fx.state.launches, attached: __fx.state.attached, returning: __fx.state.returning, holdT: __fx.state.holdT }));
+    assert.deepEqual(directionChange, { launches: 3, attached: true, returning: false, holdT: 0 }, "changing direction consumes an old held gesture without adding return weather");
+    assert.equal(await page.locator("#directionDown").getAttribute("aria-pressed"), "true");
+    await page.locator("#directionUp").click();
+    await page.waitForFunction(() => !__fx.state.descending);
+    for (const [key, descending] of [["ArrowDown", true], ["KeyW", false], ["KeyS", true], ["ArrowUp", false]]) {
+      await page.keyboard.press(key);
+      await page.waitForFunction(expected => __fx.state.descending === expected, descending);
+      assert.equal(await page.evaluate(() => __fx.state.launches), 3, key + " only selects direction");
+    }
+    // Neither a key pressed in the air nor a disabled button may queue a turn
+    // for a later catch. Holding direction is not a movement gesture.
+    await page.evaluate(() => {
+      const s = __fx.state;
+      Object.assign(s, { attached: false, flightT: .4, y: s.y + 12, z: s.z + 3, vy: 1, vz: 0 });
+    });
+    await page.waitForFunction(() => document.querySelector("#directionDown").disabled && document.querySelector("#directionUp").disabled);
+    await page.keyboard.press("ArrowDown");
+    assert.equal(await page.evaluate(() => __fx.state.descending), false, "airborne input cannot change the flight direction");
+    assert.match(await page.locator("#hint").textContent(), /靠近岩点时再按住抓握/);
+    await page.evaluate(() => {
+      cancelCharge();
+      Object.assign(__fx.state, Fangxia.createState(), { intro: 0 });
+      prologueLeft = 0;
+    });
+    await page.waitForFunction(() => document.querySelector("#directionDown").disabled && !document.querySelector("#directionUp").disabled);
+    await page.keyboard.press("KeyS");
+    assert.equal(await page.evaluate(() => __fx.state.descending), false, "the ground has no lower direction");
+    assert.equal(await page.evaluate(() => wantDirection), "", "airborne direction input does not survive a later catch");
+    console.log("PASS reversible touch/keyboard directions; held input cancellation; air and ground guards", directionChange);
+
     // Exercise the actual ending button and keyboard handlers. The guide must
     // come from the page's render loop, without a test calling updateGuide().
     phase = "ending selects independent descent controls";
@@ -111,16 +164,20 @@ async function main() {
       const s = __fx.state;
       return s.attached && s.settle > .9 && !s.lock && !s.needUp;
     }, null, { timeout: 15000 });
+    await page.addScriptTag({ content: fs.readFileSync(path.join(__dirname, "pilot.js"), "utf8") });
+    const descentPlan = await page.evaluate(() => DropPilot.plan(__fx.state, -1));
+    assert(descentPlan, "the top descent has a two-gesture route");
     await page.keyboard.down("Space");
-    await page.waitForFunction(() => {
+    await page.waitForFunction(release => {
       const s = __fx.state, h = Fangxia.HOLDS[s.holdIndex];
-      return s.holding && s.holdT > .25 && s.armed && s.aimD < .35 && s.dots.some(p => p.y < h.y - 2);
-    }, null, { timeout: 15000 });
+      return s.holding && s.holdT >= release && s.dots.some(p => p.y < h.y - 2);
+    }, descentPlan.release, { timeout: 15000 });
     assert.equal(await page.evaluate(() => __fx.state.launches), 0, "holding the descent curve cannot release automatically");
     await page.keyboard.up("Space");
     await page.waitForFunction(() => __fx.state.launches === 1 && !__fx.state.attached, null, { timeout: 10000 });
-    // Reach through the catch, then keep the same physical key down. A catch
+    // Reach near the lower hold, then keep the same physical key down. A catch
     // must consume that gesture rather than starting another automatic drop.
+    await page.waitForFunction(grabAt => !__fx.state.attached && __fx.state.flightT >= grabAt, descentPlan.grabAt, { timeout: 10000 });
     await page.keyboard.down("Space");
     await page.waitForFunction(origin => __fx.state.attached && __fx.state.holdIndex < origin, selected.index, { timeout: 15000 });
     const caught = await page.evaluate(() => ({ index: __fx.state.holdIndex, time: __fx.state.time, launches: __fx.state.launches, falls: __fx.state.falls }));
@@ -143,13 +200,22 @@ async function main() {
     const packIndex = await page.evaluate(() => {
       const s = __fx.state, h = Fangxia.HOLDS.find(h => h.k === "letter");
       const left = Fangxia.HOLDS.find(h => h.k === "trophy");
-      Object.assign(s, Fangxia.createState(), {
-        intro: 0, catches: 19, launches: 20, mask: 11,
-        holdIndex: h.i - 1, origin: h.i - 1, attached: false,
-        flightT: 1, y: h.y + .2, z: h.z, vy: -1,
-        holding: true, prevHolding: true,
+      // Build the airborne fixture by replaying a real launch and timed reach.
+      // A hand-marked torso position may be outside the actual shoulder reach,
+      // especially during the preparation frames before the hand can close.
+      const flight = DropPilot.fresh(11, h.i - 1);
+      Object.assign(flight, {
+        catches: 19, launches: 19,
         lost: [{ kind: "trophy", bit: 4, y: left.y - 1.8, z: left.z, hold: left.i }],
       });
+      const plan = DropPilot.plan(flight, 1);
+      if (!plan) throw new Error("second rest point has no deliberate release/reach plan");
+      for (let n = 0; flight.holdT + 1e-7 < plan.release && n < 720; n++) DropPilot.tick(flight, { holding: true });
+      DropPilot.tick(flight, { holding: false });
+      for (let n = 0; flight.flightT + 1e-7 < plan.grabAt && !flight.attached && n < 720; n++) DropPilot.tick(flight, { holding: false });
+      DropPilot.tick(flight, { holding: true });
+      if (flight.attached || !flight.holding || flight.grabT < 0 || flight.launches !== 20) throw new Error("rest fixture must still be airborne at the start of its real reach gesture");
+      Object.assign(s, flight);
       return h.i;
     });
     await page.waitForFunction(index => __fx.state.mode === "ledge" && __fx.state.holdIndex === index, packIndex, { timeout: 10000 });
@@ -184,7 +250,7 @@ async function main() {
     phase = "background pause and safe input reset";
     await page.evaluate(() => {
       const s = __fx.state, h = Fangxia.HOLDS[4];
-      Object.assign(s, Fangxia.createState(), { mode: "play", intro: 0, holdIndex: 4, origin: 4, attached: true, y: h.y - 1, z: h.z, holdT: 1, holding: true, prevHolding: true, launches: 3, mask: 15, lost: [] });
+      Object.assign(s, Fangxia.createState(), { mode: "play", intro: 0, holdIndex: 4, origin: 4, attached: true, descending: true, y: h.y - 1, z: h.z, holdT: 1, holding: true, prevHolding: true, launches: 3, mask: 15, lost: [] });
       holding = true;
       window.pauseDraws = 0;
       const draw = FXRender.draw;
@@ -205,12 +271,30 @@ async function main() {
     phase = "reload";
     await page.reload();
     await page.waitForTimeout(200);
-    const restored = await page.evaluate(() => ({ paused: __fx.paused, y: __fx.state.y, index: __fx.state.holdIndex, launches: __fx.state.launches }));
+    const restored = await page.evaluate(() => ({ paused: __fx.paused, y: __fx.state.y, index: __fx.state.holdIndex, launches: __fx.state.launches, descending: __fx.state.descending }));
     assert(restored.paused, "restore awaits a deliberate resume gesture");
     assert.equal(restored.y, saved.y);
     assert.equal(restored.index, saved.holdIndex);
     assert.equal(restored.launches, saved.launches);
+    assert.equal(restored.descending, saved.descending, "resume preserves the chosen direction even without lost items");
     console.log("PASS reload restores exact interrupted position", restored);
+
+    await page.evaluate(() => sessionStorage.setItem("drop-test-old-session", "1"));
+    await page.addInitScript(() => {
+      if (sessionStorage.getItem("drop-test-old-session") !== "1") return;
+      sessionStorage.removeItem("drop-test-old-session");
+      const entry = JSON.parse(localStorage.getItem("fangxia-session-v2"));
+      entry.schema = 3;
+      delete entry.state.grabT;
+      delete entry.state.catchPose;
+      localStorage.setItem("fangxia-session-v2", JSON.stringify(entry));
+    });
+    phase = "migrate previous session without losing direction";
+    await page.reload();
+    await page.waitForFunction(() => __fx.paused);
+    const migrated = await page.evaluate(() => ({ index: __fx.state.holdIndex, descending: __fx.state.descending, grabT: __fx.state.grabT, catchPose: __fx.state.catchPose }));
+    assert.deepEqual(migrated, { index: saved.holdIndex, descending: true, grabT: -1, catchPose: null });
+    console.log("PASS previous session migrates with no stale grip gesture", migrated);
 
     // Invalid persisted state must be discarded instead of poisoning physics.
     // pagehide correctly saves the live state; inject after that save, before
@@ -249,6 +333,11 @@ async function main() {
 
     // A short landscape viewport still exposes every memory choice and Continue.
     await page.setViewportSize({ width: 844, height: 390 });
+    await page.waitForFunction(() => document.querySelector("#climbControls").classList.contains("show"));
+    for (const selector of ["#climbControls", "#directionUp", "#directionDown"]) {
+      const bounds = await page.locator(selector).boundingBox();
+      assert(bounds && bounds.y >= 0 && bounds.y + bounds.height <= 390, selector + " fits short landscape viewport");
+    }
     await page.evaluate(() => {
       const s = __fx.state, h = Fangxia.HOLDS.find(h => h.k === "trophy");
       Object.assign(s, { holdIndex: h.i, origin: h.i, y: h.y, z: h.z, mode: "ledge", mask: 15, seenRelease: true });

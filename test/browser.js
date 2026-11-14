@@ -35,26 +35,33 @@ async function main() {
       return;
     }
     await page.goto(base + "/index.html");
-    if (fast) await page.evaluate(() => { quality = 0; FXRender.setQuality(0); resize(); });
+    if (fast) await page.evaluate(() => {
+      quality = 0; FXRender.setQuality(0); resize();
+      // SwiftShader is much slower than a device GPU. Keep the real input,
+      // DOM and 120 Hz physics loop; render one scene per second in this input
+      // journey. Separate visual/runtime checks render every frame.
+      const draw = FXRender.draw; let drawnAt = -Infinity;
+      FXRender.draw = function (o) { const now = performance.now(); if (now-drawnAt >= 1000) { drawnAt=now; draw(o); } };
+    });
     await page.addScriptTag({ path: path.join(__dirname, "pilot.js") });
     await page.waitForTimeout(1500);
     await capture("start");
     const position = mobile ? { x: 300, y: 700 } : fast ? { x: 530, y: 415 } : { x: 1100, y: 700 };
     await page.mouse.move(position.x, position.y);
     let holding = false;
-    async function press() { if (!holding) { await page.mouse.down(); holding = true; } }
+    async function press() { if (!holding) { await page.mouse.move(position.x, position.y); await page.mouse.down(); holding = true; } }
     async function release() { if (holding) { await page.mouse.up(); holding = false; } }
-    async function read() { return page.evaluate(() => { const s = __fx.state; return { mode: s.mode, i: s.holdIndex, y: s.y, mask: s.mask, crown: s.crown, attached: s.attached, lost: s.lost.length, falls: s.falls, time: s.time, launches: s.launches, holdT: s.holdT }; }); }
+    async function read() { return page.evaluate(() => { const s = __fx.state; return { mode: s.mode, i: s.holdIndex, y: s.y, mask: s.mask, crown: s.crown, attached: s.attached, lost: s.lost.length, falls: s.falls, time: s.time, launches: s.launches, holdT: s.holdT, flightT: s.flightT, descending: s.descending, grabT: s.grabT }; }); }
     let stage = "ascent", moves = 0, dropped = false, lastI = -1, setbacks = 0;
-    let fallOrigin = null, fallLaunch = 0;
+    let fallOrigin = null, pendingPlan = null, switched = false;
     const started = Date.now();
     while (Date.now() - started < 15 * 60 * 1000 && moves < 300) {
       const s = await read();
-      if (fallOrigin !== null && s.launches >= fallLaunch && s.attached) {
-        assert.ok(s.i < fallOrigin && s.i > 0, "mistimed launch must recover on a lower hold above the start");
-        await capture("recovered-fall");
+      if (fallOrigin !== null && s.mode === "impact") {
+        assert.ok(s.falls > 0, "omitting the reach gesture must cause a real ground fall");
+        await capture("hands-off-fall");
         assert.deepEqual(errors, []);
-        console.log("PASS real-input mistimed launch recovered", { from: fallOrigin, to: s.i, falls: s.falls });
+        console.log("PASS real-input hands-off flight falls without magnetic rescue", { from: fallOrigin, falls: s.falls });
         return;
       }
       if (s.i !== lastI) { console.log(JSON.stringify({ stage, moves, ...s })); lastI = s.i; }
@@ -65,10 +72,26 @@ async function main() {
         if (stage === "return-ascent") { assert.equal(s.mask, 15); console.log("PASS browser ascent / drop / ending / descent / pickup / re-ascent", { moves, setbacks, elapsedSeconds: (Date.now() - started) / 1000 }); break; }
         assert.equal(s.mask, 11, "trophy was left below");
         await page.locator("#retrieve").click();
+        await page.waitForFunction(() => __fx.state.mode === "play" && __fx.state.descending);
         stage = "descent";
         continue;
       }
-      if (stage === "descent" && s.mask === 15 && s.lost === 0) { stage = "return-ascent"; await capture("pickup"); }
+      if (stage === "descent" && s.mask === 15 && s.lost === 0) {
+        await release(); await page.locator("#directionUp").click();
+        await page.waitForFunction(() => !__fx.state.descending);
+        assert.equal((await read()).descending, false, "player can select ascent after pickup");
+        stage = "return-ascent"; await capture("pickup");
+      }
+      if (stage === "descent" && s.attached && s.mode === "play" && s.i < 46 && !switched) {
+        await release();
+        await page.locator("#directionUp").click();
+        await page.waitForFunction(() => !__fx.state.descending);
+        assert.equal((await read()).descending, false, "up control works during return trip");
+        await page.locator("#directionDown").click();
+        await page.waitForFunction(() => __fx.state.descending);
+        assert.equal((await read()).descending, true, "down control remains available after switching up");
+        switched = true;
+      }
       if (s.mode === "ledge") {
         await release();
         await page.waitForTimeout(150);
@@ -77,19 +100,22 @@ async function main() {
           await page.locator("#packItems button").filter({ hasText: "奖杯" }).click();
           dropped = true;
         } else await page.locator("#packKeep").click();
+        await page.waitForFunction(() => __fx.state.mode !== "ledge");
         continue;
       }
       if (s.mode !== "play") { await release(); await page.waitForTimeout(150); continue; }
       if (!s.attached) {
-        await page.waitForFunction(() => __fx.state.attached || __fx.state.vy < 0 || __fx.state.mode !== "play", null, { timeout: 20000 });
-        const f = await read();
-        if (!f.attached && f.mode === "play") await press();
+        if (fallOrigin === null && pendingPlan) {
+          await page.waitForFunction(t => __fx.state.attached || __fx.state.flightT >= t || __fx.state.mode !== "play", pendingPlan.grabAt, { timeout: 20000 });
+          const flight = await read();
+          if (!flight.attached && flight.mode === "play") await press();
+        }
         await page.waitForFunction(() => __fx.state.attached || __fx.state.mode !== "play", null, { timeout: 20000 });
         await release();
         continue;
       }
       await release();
-      await page.waitForFunction(() => { const s = __fx.state; return s.mode !== "play" || (!s.lock && !s.needUp && s.settle > .9 && s.holdT === 0); }, null, { timeout: 10000 });
+      await page.waitForFunction(() => { const s = __fx.state; return s.mode !== "play" || (s.attached && !s.lock && !s.needUp && s.settle > .9 && s.holdT === 0); }, null, { timeout: 10000 });
       const ready = await read();
       if (ready.mode !== "play") continue;
       if (ready.crown && stage !== "descent") {
@@ -98,23 +124,31 @@ async function main() {
         continue;
       }
       const direction = stage === "descent" ? -1 : 1;
-      const plan = await page.evaluate(dir => DropPilot.plan(__fx.state, dir), direction);
+      let plan = await page.evaluate(dir => DropPilot.plan(__fx.state, dir), direction);
+      for (let wait=0; !plan && wait<8; wait++) {
+        const at = (await read()).time;
+        await page.waitForFunction(t => __fx.state.time >= t+1.5, at);
+        plan = await page.evaluate(dir => DropPilot.plan(__fx.state, dir), direction);
+      }
       assert.ok(plan, "no input plan at hold " + ready.i + " direction " + direction);
       await press();
       const miss = fallTest && moves === 8;
-      await page.waitForFunction(t => !__fx.state.attached || __fx.state.holdT >= t, miss ? plan.a - .24 : plan.release, { timeout: 10000 });
+      pendingPlan = plan;
+      await page.waitForFunction(t => !__fx.state.attached || __fx.state.holdT >= t, plan.release, { timeout: 10000 });
       await release();
-      if (miss) { fallOrigin = ready.i; fallLaunch = ready.launches + 1; }
+      await page.waitForFunction(n => __fx.state.launches > n, ready.launches);
+      if (miss) fallOrigin = ready.i;
       moves++;
-      await page.waitForTimeout(50);
+      await page.waitForTimeout(10);
       const next = await read();
       if (next.attached && next.i === ready.i) setbacks++;
-      if (moves % 12 === 0) await capture(stage + "-" + moves);
+      if (moves % 12 === 0 && next.attached) await capture(stage + "-" + moves);
     }
     const final = await read();
     assert.equal(final.mode, "ending", "journey must reach an ending");
     assert.equal(final.mask, 15, "final ending must retain reclaimed items");
     assert.equal(stage, "return-ascent", "must exercise complete return journey");
+    assert.equal(switched, true, "return trip must exercise both direction controls");
     assert.deepEqual(errors, [], "browser console errors");
   } catch (error) {
     console.error("JOURNEY FAILURE", await page.evaluate(() => ({ state: __fx.state, paused: __fx.paused, holding, keyHeld, activePointer, packClass: document.querySelector("#pack").className })).catch(() => null));

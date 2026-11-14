@@ -73,10 +73,16 @@
       const frame=FX.chargeFrame(state.mask,charging?(state.holdT||0):0,state.time,h.y,!!state.descending);
       let {sy,sz}=frame;
       phase=frame.phase;theta=frame.theta;hipFlex=frame.hipFlex;kneeFlex=frame.kneeFlex;
-      if(!charging){
-        const absorb=1-smooth(clamp(((state.settle==null?1:state.settle)-.15)/.85,0,1));
-        const catchY=release&&release.caught?release.caught.sy:-.43;
-        sy=mix(sy,catchY,absorb);sz=mix(sz,.33,absorb);theta=mix(theta,.20,absorb);kneeFlex=mix(kneeFlex,.65,absorb);
+      const caught=state.catchPose||(release&&release.caught);
+      if(caught||!charging){
+        const absorb=1-smooth(((state.settle==null?1:state.settle)-.025)/(.72+w*.20));
+        const landing=caught||{sy:-.43,sz:.33,theta:.20,hipFlex:0,kneeFlex:.65};
+        // Arrest the actual incoming posture, then lengthen into a suspended
+        // recovery. The catch no longer invents a pre-aligned pelvis in air.
+        const radius=mix(Math.hypot(sy,sz),Math.hypot(landing.sy,landing.sz),absorb);
+        const angle=mix(Math.atan2(sz,-sy),Math.atan2(landing.sz,-landing.sy),absorb);
+        sy=-Math.cos(angle)*radius;sz=Math.sin(angle)*radius;
+        theta=mix(theta,landing.theta,absorb);hipFlex=mix(hipFlex,landing.hipFlex,absorb);kneeFlex=mix(kneeFlex,landing.kneeFlex,absorb);
       }
       // The hands stay on the rock. Bound the shoulder root, never scale an arm.
       const d=Math.hypot(sy,sz),max=.697;
@@ -96,7 +102,10 @@
     }
     // Climb around the summit lip before planting the soles. A straight hip
     // interpolation drives the bent thigh through the outer edge halfway up.
-    const mantleClearance=stand?.20*Math.sin(Math.PI*mantleT)**2:0;
+    // A real arrival can have the helmet just below the overhang. Move the
+    // shoulders out early, before lifting, then return over the platform.
+    const middleArc=Math.sin(Math.PI*mantleT)**2,earlyArc=Math.sin(Math.PI*Math.pow(mantleT,.65))**2;
+    const mantleClearance=stand?(rising?.30*(1-(1-middleArc)*(1-earlyArc)):.20*middleArc):0;
     if(mantleClearance){hip.z+=mantleClearance;shoulder=null;}
     const returning=state.attached&&!stand&&release&&release.returning;
     const returnDuration=.58+w*.20;
@@ -117,14 +126,12 @@
       poles["elbow"+side]=add(a,P(sign*.55,0,.42));
     }
     if(stand){
-      const free=smooth((mantleT-.78)/.22);
+      // During the mantle the wrists stay on the lip until the chest has
+      // passed it. Releasing from a hip-relative hand offset made the wrists
+      // travel directly through the shoulders halfway through the rise.
+      const free=rising?smooth((mantleT-.42)/.36):smooth((mantleT-.78)/.22);
       handL=blendPoint(P(-.17,grip.y,grip.z),localPoint(shL,up,back,-.56,-.08,-.025),free);
       handR=blendPoint(P(.17,grip.y,grip.z),localPoint(shR,up,back,-.56,-.08,.025),free);
-      if(rising){
-        const p=smooth(mantleT);
-        handL=blendPoint(add(hip,sub(rising.handL,rising.hip)),localPoint(shL,up,back,-.56,-.08,-.025),p);
-        handR=blendPoint(add(hip,sub(rising.handR,rising.hip)),localPoint(shR,up,back,-.56,-.08,.025),p);
-      }
       for(const side of ["L","R"]){const a=side==="L"?shL:shR,b=side==="L"?handL:handR,d=sub(b,a),len=length(d);if(len>.697){const target=add(a,mul(d,.697/len));if(side==="L")handL=target;else handR=target;}}
     }else if(!state.attached){
       // The collision solver and renderer use the same immutable release pose
@@ -204,11 +211,17 @@
   function pose(state) {
     if(poseHistory&&state.time<poseHistory.time-.0001)resetPoseHistory();
     const standing=isStanding(state);
-    if(standing&&poseHistory&&!poseHistory.standing)mantleHistory={time:state.time,pose:poseHistory.attached?lastPose:null,sy:lastPose&&lastPose.contact?lastPose.contact.sy:null};
+    if(standing&&poseHistory&&!poseHistory.standing){
+      const landed=state.catchPose?computePose({...state,mode:"play",crown:false}):null;
+      mantleHistory={time:state.time,pose:poseHistory.attached?lastPose:landed,sy:state.catchPose?state.catchPose.sy:null};
+    }
     if(!standing&&state.attached&&poseHistory&&poseHistory.standing&&poseHistory.holdIndex===state.holdIndex) returnHistory={time:state.time,pose:lastPose};
     if(!state.attached||standing||(returnHistory&&state.time-returnHistory.time>.80))returnHistory=null;
     if(!standing)mantleHistory=null;
-    if(state.attached&&poseHistory&&!poseHistory.attached)catchHistory=lastPose&&lastPose.contact?{sy:lastPose.contact.sy}:null;
+    if(state.attached&&poseHistory&&!poseHistory.attached){
+      const h=FX.HOLDS[state.holdIndex];
+      catchHistory=lastPose?{sy:lastPose.shoulder.y-h.y-.035,sz:lastPose.shoulder.z-h.z-.035,theta:lastPose.theta,hipFlex:lastPose.hipFlex,kneeFlex:lastPose.kneeFlex}:null;
+    }
     if(!state.attached)catchHistory=null;
     const context=state.attached?{mantle:mantleHistory,returning:returnHistory,caught:catchHistory}:null;
     const r=computePose(state,context);
@@ -340,17 +353,21 @@
     const state=o.state,dt=clamp(Number.isFinite(o.dt)?o.dt:1/60,0,.05),now=performance.now();
     if(lastFrameTime){elapsed+=(now-lastFrameTime)/1000;frames++;if(elapsed>.6){fps=frames/elapsed;frames=0;elapsed=0;}}lastFrameTime=now;
     const camY=o.camY,focusZ=o.focusZ,alt=o.alt||0,storm=o.storm||0,gale=o.gale||0,flash=o.flash||0;
-    const forecast=FX.gustForecast(state.time,state.y,state.mask,!!(state.returning||state.descending)),rig=drawClimber(state,dt,forecast);
+    const forecast=FX.gustForecast(state.time,state.y,state.mask,!!state.returning),rig=drawClimber(state,dt,forecast);
     world.update({...o,state,dt,camY,focusZ,alt,storm,gale,flash,forecast,rig});
     const arr=weather.geometry.attributes.position.array,count=quality===0?65:quality===1?160:320;
     const snow=alt>.6;
     for(let i=0;i<weatherData.length;i++){
-      const p=weatherData[i],use=i<count;
+      const p=weatherData[i],use=i<count*clamp((storm-.10)*1.4,0,1);
+      if(use&&(!p.active||Math.abs(p.y-camY)>32)){
+        p.y=camY+mix(-10,12,hash(i+51));p.x=mix(-6,10,hash(i+9));p.z=focusZ+mix(-8,10,hash(i+21));
+      }
+      p.active=use;
       if(use){p.y-=dt*(snow?1.3+p.v:5+p.v*4);p.z+=forecast.soon*dt*(2+p.v*3);
         if(p.y<camY-12||p.y>camY+18||Math.abs(p.z-focusZ)>18){p.y=camY+10+hash(i+state.time)*8;p.x=mix(-6,12,hash(i+9));p.z=focusZ+mix(-8,12,hash(i+state.time*.2));}}
       const k=i*6,len=use?(snow?.055:.18):0;arr[k]=p.x;arr[k+1]=p.y;arr[k+2]=p.z;arr[k+3]=p.x;arr[k+4]=p.y-len;arr[k+5]=p.z+forecast.soon*(snow?.10:.06);
     }
-    weather.geometry.setDrawRange(0,count*2);weather.geometry.attributes.position.needsUpdate=true;weather.material.opacity=.10+gale*.25;
+    weather.geometry.setDrawRange(0,count*2);weather.geometry.attributes.position.needsUpdate=true;weather.material.opacity=clamp((storm-.18)*.85,0,.64);
     if(state.time<dustTime||state.catches<lastCatches)dustData.forEach(p=>p.life=0);
     if(state.catches>lastCatches&&dt>0){
       const h=FX.HOLDS[state.holdIndex],count=quality===0?6:12;
@@ -380,7 +397,7 @@
       const last=dots[dots.length-1];aimArray[n*3]=-.08;aimArray[n*3+1]=last.y;aimArray[n*3+2]=last.z;n++;
     }
     aim.geometry.setDrawRange(0,n);aim.geometry.attributes.position.needsUpdate=true;aim.visible=n>1;
-    aim.material.color.set(state.armed?0xf1d5a2:0x9baeb5);aim.material.opacity=state.armed?.76:.37;
+    aim.material.color.set(state.armed?0xf1d5a2:0x9baeb5);aim.material.opacity=state.armed?.48:.24;
     lostObjects.forEach((g,i)=>{
       const item=(state.lost||[])[i];
       g.visible=!!item&&state.mode!=="ending"&&!(state.mode==="drop"&&state.dropKind===item.kind);
@@ -394,7 +411,7 @@
     camera.updateProjectionMatrix();
     if(close){camera.position.set(-5.3,rig.hip.y+.4,rig.hip.z+1.2);camera.lookAt(0,rig.hip.y+.1,rig.hip.z);}
     else{
-      const dist=portrait?15.2:16.2,centerZ=focusZ+(portrait?.35:1.45);
+      const dist=portrait?12.8:12.2,centerZ=focusZ+(portrait?.35:1.45);
       camera.position.set(-dist,camY+.6,centerZ+dist*.20);camera.lookAt(0,camY,centerZ);
     }
     camera.up.set(0,1,0);

@@ -129,8 +129,12 @@ function displacementChanges(previous, next, reference, history, limit, label) {
       // Fast authored movement is valid. An abrupt *change* in movement that
       // cannot be explained by the physics marker is a visible pop. Keeping a
       // limb-speed ceiling instead would reject smooth release/landing poses.
-      const extra = Math.hypot(...["x", "y", "z"].map(axis =>
+      let extra = Math.hypot(...["x", "y", "z"].map(axis =>
         motion[joint][axis] - history.motion[joint][axis] - reference[axis] + history.reference[axis]));
+      // Reaching wrists can remain at a fixed world-space grip while the
+      // pelvis is projected out of the wall. Either smooth world motion or
+      // smooth motion relative to that physical root is valid for an arm.
+      if(/^(hand|elbow)/.test(joint))extra=Math.min(extra,Math.hypot(...["x","y","z"].map(axis=>motion[joint][axis]-history.motion[joint][axis])));
       assert.ok(extra <= limit, `${label}: ${joint} unexplained displacement change ${extra.toFixed(4)}m exceeds ${limit.toFixed(4)}m`);
     }
   }
@@ -149,7 +153,7 @@ function actualTransitions(renderer, from, mask, stride, options = {}) {
     let physicalTravel = 0;
     for (let i = 0; i < stride; i++) {
       const y = s.y, z = s.z;
-      Pilot.tick(s, input);
+      Pilot.tick(s, typeof input === "function" ? input() : input);
       physicalTravel += Math.hypot(s.y - y, s.z - z);
     }
     const next = withoutMutation(renderer.updatePose, s), label = `live ${120 / stride}Hz mask${mask}/from${from}/${options.direction < 0 ? "down" : options.release || "up"} frame${count} ${previousMode}→${s.mode}${!wasAttached && s.attached ? " catch" : ""}`;
@@ -181,15 +185,25 @@ function actualTransitions(renderer, from, mask, stride, options = {}) {
     previous = next;
     count++;
   }
-  const timing = options.release ? { release: options.release } : Pilot.plan(s, options.direction || 1);
+  const planned=Pilot.plan(s, options.direction || 1);
+  // A wrong release keeps the planned reach time; an oracle must not repair
+  // every error with an independently perfect rescue gesture.
+  const timing=options.release?{release:options.release,grabAt:planned?planned.grabAt:.45}:planned;
   assert.ok(timing, "live pose path needs a reachable launch");
-  while (s.holdT + 1e-7 < timing.release) frame({ holding: true });
-  frame({ holding: false });
+  const launches=s.launches;
+  const gesture=()=>({holding:s.launches===launches?s.holdT+1e-7<timing.release:!s.attached&&s.flightT+1e-7>=timing.grabAt});
+  // Render at four rates, but feed the same 120 Hz input trace to gameplay.
+  // Otherwise a slower display also changes the user's release by 50 ms.
+  while(s.launches===launches)frame(gesture);
   assert.equal(s.attached, false, "live pose sequence did not launch");
-  for (let i = 0; i < 3600 / stride && !s.attached && s.mode === "play"; i++) frame({ holding: s.vy < 0 });
-  assert.equal(caught, true, "live pose sequence never caught the next ledge");
-  if (!options.release) assert.ok(options.direction < 0 ? s.holdIndex < from : s.holdIndex > from,
-    "live pose sequence did not advance in its intended direction");
+  for (let i = 0; i < 3600 / stride && !s.attached && s.mode === "play"; i++) frame(gesture);
+  if (!options.release) {
+    assert.equal(caught,true,"planned two-gesture sequence never caught the next ledge");
+    assert.ok(options.direction<0?s.holdIndex<from:s.holdIndex>from,"live pose sequence did not advance in its intended direction");
+  }else assert.ok(caught||s.mode==="impact","a mistimed release must resolve as a catch or a real fall");
+  // Impact is followed by an intentional checkpoint reset under the fade.
+  // The world-space teleport is not a climbing animation or a catch.
+  if(s.mode==="impact")return count;
   for (let i = 0; i < 90 / stride; i++) frame({ holding: false });
   if (s.mode === "ledge") {
     frame({ keep: true });
