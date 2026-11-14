@@ -27,79 +27,44 @@
   // Easy ladders share a column, so the hold below is catchable.
   // Hard moves leave that column, and the air under them is empty.
   const RAW = [
-    [8, 0, "start"],
-    [10.2, 0.05, "hold"],
-    [12.4, -0.04, "hold"],
-    [14.6, 0.06, "hold"],
-    [16.8, -0.02, "hold"],
-    [19, 0.02, "trophy"],
-    [21.2, -0.92, "hold"],
-    [23.4, -0.46, "hold"],
-    [25.4, -0.1, "hold"],
-    [27.6, 0.28, "hold"],
-    [29.9, 0.7, "hold"],
-    [32.2, 0.15, "letter"],
-    [35.62, 0.33, "hold"],
-    [37.6, 0.43, "hold"],
-    [39.7, 0, "hold"],
-    [41.9, 0.02, "ring"],
-    [44.1, -1.08, "hold"],
-    [46.07, -0.71, "hold"],
-    [48.27, -0.62, "hold"],
-    [51.76, -0.67, "hold"],
-    [53.6, -1.78, "hold"],
-    [55.3, -1.83, "hold"],
-    [56.5, -2.4, "hold"],
-    [58.18, -3.12, "hold"],
-    [60.5, -2.76, "hold"],
-    [63.1, -2.8, "photo"],
-    [65.3, -3.9, "ice"],
-    [67.5, -3.5, "ice"],
-    [70.44, -3.52, "hold"],
-    [72.4, -4.61, "ice"],
-    [74.6, -5.17, "ice"],
-    [76.75, -5.44, "ice"],
-    [78.2, -6.32, "ice"],
-    [82.44, -6.3, "hold"],
-    [84.1, -6.82, "ice"],
-    [85.8, -6.87, "ice"],
-    [87, -7.44, "ice"],
-    [88.68, -8.16, "ice"],
-    [91, -7.8, "ice"],
-    [93.6, -7.84, "ice"],
-    [95.8, -8.94, "ice"],
-    [98, -8.38, "ice"],
-    [100.2, -8.27, "hold"],
-    [102.72, -9.05, "hold"],
-    [104.92, -9.67, "hold"],
-    [107.07, -10.12, "hold"],
-    [108.7, -10.8, "hold"],
-    [112.94, -10.95, "hold"],
-    [114.6, -11.86, "ice"],
-    [116.3, -11.91, "ice"],
-    [117.5, -12.48, "ice"],
-    [119, -12.88, "hold"],
-    [121.5, -12.84, "ice"],
-    [124.1, -12.88, "ice"],
-    [126.3, -13.98, "ice"],
-    [128.5, -13.42, "ice"],
-    [131.8, -14.14, "ice"],
-    [133.4, -15.1, "ice"],
-    [135.6, -15.67, "ice"],
-    [137.75, -15.52, "ice"],
-    [139.2, -16.4, "ice"],
-    [143.44, -16.38, "hold"],
-    [145.1, -16.9, "ice"],
-    [146.8, -16.95, "ice"],
-    [148, -17.52, "ice"],
-    [149.5, -17.92, "hold"],
-    [152, -17.88, "ice"],
-    [154.6, -17.93, "ice"],
-    [156.8, -19.02, "ice"],
-    [159, -18.62, "ice"],
-    [162.3, -19.18, "ice"],
-    [163.9, -20.14, "ice"],
-    [166, -19.59, "summit"],
+    [8, 1.76, "start"],
+    [12.3, 1.84, "hold"],
+    [16.6, 1.91, "hold"],
+    [20.9, 1.79, "hold"],
+    [25.2, 1.69, "hold"],
+    [29.5, 1.11, "trophy"],
+    [33.8, 1.41, "hold"],
+    [38.1, 1.34, "hold"],
+    [42.4, 1.78, "hold"],
+    [46.7, 1.7, "hold"],
+    [51, 2.02, "hold"],
+    [55.3, 1.95, "hold"],
+    [59.6, 2.62, "letter"],
+    [63.9, 1.86, "hold"],
+    [68.2, 1.57, "hold"],
+    [72.5, 1.05, "hold"],
+    [76.8, 0.54, "hold"],
+    [81.1, 0.1, "ice"],
+    [85.4, -0.24, "ice"],
+    [89.7, -0.75, "ice"],
+    [94, -1.5, "ring"],
+    [98.3, -1.31, "ice"],
+    [102.6, -1.08, "ice"],
+    [106.9, -0.78, "ice"],
+    [111.2, -0.7, "ice"],
+    [115.5, -0.47, "ice"],
+    [119.8, -0.33, "ice"],
+    [124.1, -0.61, "ice"],
+    [128.4, -0.96, "photo"],
+    [132.7, -0.75, "ice"],
+    [137, -0.68, "ice"],
+    [141.3, -0.92, "ice"],
+    [145.6, -0.54, "ice"],
+    [149.9, -0.4, "ice"],
+    [154.2, 0.17, "ice"],
+    [158.5, 0.79, "ice"],
+    [162.8, 1.41, "ice"],
+    [167.1, 0.92, "summit"],
   ];
   const SUMMIT_Y = RAW[RAW.length - 1][0];
   const GATE = { y: SUMMIT_Y + 1.55, z: RAW[RAW.length - 1][1] + 0.48 };
@@ -298,23 +263,14 @@
     }
     return cap;
   }
-  // Right-hand edge of the solid rock. Smooth, stable, and kept clear of every hold.
+  // Right-hand edge of the solid rock. A fixed shape of y only.
+  // Moving a hold does not move the cliff.
   function faceZ(y) {
+    const sway = Math.sin(y * 0.041) * 1.55 + Math.sin(y * 0.113 + 0.8) * 0.62;
     const n =
-      (vnoise(y * 0.31 + 1.7) - 0.58) * 0.34 +
-      (vnoise(y * 0.73 + 5.2) - 0.64) * 0.14 +
-      (vnoise(y * 1.55 + 9.4) - 0.72) * 0.045;
-    let lip = 0;
-    for (let i = 0; i < HOLDS.length; i++) {
-      const h = HOLDS[i];
-      if (!isRest(h.k) && h.k !== "summit") continue;
-      const u = (h.y - y + 0.05) / 0.28;
-      if (u <= 0 || u >= 1) continue;
-      const a = Math.sin(u * Math.PI);
-      if (a > lip) lip = a;
-    }
-    const z = routeZ(y) - 0.72 + n + lip * 0.18;
-    return Math.min(z, faceCap(y));
+      (vnoise(y * 0.27 + 1.7) - 0.5) * 0.42 +
+      (vnoise(y * 0.71 + 4.4) - 0.5) * 0.14;
+    return sway + n;
   }
   const BODY_R = 0.22;
   function resolveBody(s) {

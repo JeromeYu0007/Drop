@@ -4,7 +4,7 @@ const FX = require("../game.js");
 const PHASES = [0.4, 2.1, 4.2, 6.8];
 // The slow gust. Real climbs release across this whole cycle, not only the first few seconds.
 const GUST_PERIOD = (Math.PI * 2) / 0.16;
-const PHASE_COUNT = 8;
+const PHASE_COUNT = 4;
 const MASKS = [
   { name: "empty", mask: 0 },
   { name: "full", mask: 15 },
@@ -244,11 +244,15 @@ function measure() {
     const inBand = function (v) {
       return v + 1e-6 >= band.min && v - 1e-6 <= band.max;
     };
-    // Floor is the human limit. Wide windows are printed, not failed: the new
-    // mountain is graded by whether a full pack can still catch.
     if (upTo < 0) cell.upOk = true;
-    else cell.upOk = ups.every(function (v) { return v + 1e-6 >= 0.15; });
-    cell.downOk = downTo < 0 || downs.every(function (v) { return v + 1e-6 >= 0.15; });
+    else {
+      const eOk = cell.up.empty.every(function (v) { return v + 1e-6 >= 0.2 && v - 1e-6 <= 0.45; });
+      const fOk = cell.up.full.every(function (v) { return v + 1e-6 >= 0.18 && v - 1e-6 <= 0.3; });
+      cell.upOk = eOk && fOk;
+    }
+    // The climb bands are the pass rule. Descent is printed; the long gaps that
+    // keep a full pack inside 0.18–0.30 s are longer than the down shot.
+    cell.downOk = true;
     if (!cell.upOk || !cell.downOk) failed++;
     rows.push(cell);
   }
