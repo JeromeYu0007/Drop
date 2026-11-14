@@ -681,47 +681,50 @@ function pose() {
   const charge = charging ? st.charge : 0;
   const hip = P(-0.8, state.y, state.z);
   const flying = !state.attached && state.mode === "play";
+  // Chest and hands face the rock (smaller z). Back and pack face the open air.
+  const wall = -1;
   let shoulder, head, handL, handR, kneeL, kneeR, footL, footR, elbowL, elbowR;
   if (state.attached && (state.mode === "play" || state.mode === "ledge" || state.mode === "drop" || state.mode === "ending")) {
-    const standing = state.crown || state.mode === "ledge" || state.mode === "drop" || state.mode === "ending";
-    if (standing && !charging) {
+    const standing = (state.crown || state.mode === "ledge" || state.mode === "drop" || state.mode === "ending") && !charging;
+    if (standing) {
       const footY = hold.y + 0.2;
       hip.y = footY + 0.92;
-      hip.z = hold.z + 0.06;
-      shoulder = P(-0.8, hip.y + 0.48, hip.z);
-      head = P(-0.8, shoulder.y + 0.26, hip.z + 0.02);
-      handL = P(-0.8, hold.y + 1.15, hold.z - 0.04);
-      handR = P(-0.8, hold.y + 1.05, hold.z + 0.08);
-      footL = P(-0.8, footY, hold.z - 0.04);
-      footR = P(-0.8, footY, hold.z + 0.1);
+      hip.z = hold.z + 0.18;
+      shoulder = P(-0.8, hip.y + 0.46, hip.z + wall * 0.02);
+      head = P(-0.8, shoulder.y + 0.26, shoulder.z + wall * 0.08);
+      handL = P(-0.8, hold.y + 1.12, hold.z + wall * 0.04);
+      handR = P(-0.8, hold.y + 1.02, hold.z + wall * 0.02);
+      footL = P(-0.8, footY, hold.z + wall * 0.02);
+      footR = P(-0.8, footY, hold.z + 0.02);
     } else {
       const gripY = hold.y + 0.02;
-      const gripZ = hold.z;
+      const gripZ = hold.z + wall * 0.03;
       const pull = charge;
-      shoulder = P(-0.8, hip.y + 0.46 + pull * 0.22, hip.z - pull * 0.12);
-      head = P(-0.8, shoulder.y + 0.24, shoulder.z + 0.03);
-      handL = P(-0.8, gripY, gripZ - 0.03);
-      handR = P(-0.8, gripY - 0.02, gripZ + 0.05);
+      shoulder = P(-0.8, hip.y + 0.46 + pull * 0.22, hip.z + wall * (0.05 + pull * 0.1));
+      head = P(-0.8, shoulder.y + 0.24, shoulder.z + wall * 0.08);
+      handL = P(-0.8, gripY, gripZ);
+      handR = P(-0.8, gripY - 0.03, gripZ + 0.015);
       const tuck = pull;
-      footL = P(-0.8, hip.y - 0.12 - (1 - tuck) * 0.62, hip.z + 0.22 + tuck * 0.42);
-      footR = P(-0.8, hip.y - 0.22 - (1 - tuck) * 0.5, hip.z + 0.02 + tuck * 0.28);
+      footL = P(-0.8, hip.y - 0.12 - (1 - tuck) * 0.62, hip.z + wall * (0.16 + tuck * 0.22));
+      footR = P(-0.8, hip.y - 0.22 - (1 - tuck) * 0.5, hip.z + wall * (0.06 + tuck * 0.16));
     }
   } else {
     const sp = Math.hypot(state.vy, state.vz) || 1;
     const uy = state.vy / sp, uz = state.vz / sp;
     shoulder = P(-0.8, hip.y + uy * 0.42, hip.z + uz * 0.42);
-    head = P(-0.8, hip.y + uy * 0.66, hip.z + uz * 0.66);
-    handL = P(-0.8, hip.y + uy * 0.95, hip.z + uz * 0.95 - 0.06);
-    handR = P(-0.8, hip.y + uy * 0.9, hip.z + uz * 0.9 + 0.06);
-    footL = P(-0.8, hip.y - uy * 0.72, hip.z - uz * 0.72 - 0.05);
-    footR = P(-0.8, hip.y - uy * 0.64, hip.z - uz * 0.64 + 0.06);
+    head = P(-0.8, hip.y + uy * 0.66, hip.z + uz * 0.66 + wall * 0.08);
+    handL = P(-0.8, hip.y + uy * 0.95, hip.z + uz * 0.95 + wall * 0.12);
+    handR = P(-0.8, hip.y + uy * 0.88, hip.z + uz * 0.88 + wall * 0.1);
+    footL = P(-0.8, hip.y - uy * 0.72, hip.z - uz * 0.72 + wall * 0.04);
+    footR = P(-0.8, hip.y - uy * 0.64, hip.z - uz * 0.64 + wall * 0.02);
   }
   const burst = state.burst || 0;
   if (burst > 0.2 && flying) {
     shoulder.y += burst * 0.15;
   }
-  elbowL = ik2(shoulder.z, shoulder.y, handL.z, handL.y, 0.34, 0.32, charging ? -1 : 1);
-  elbowR = ik2(shoulder.z, shoulder.y, handR.z, handR.y, 0.34, 0.32, charging ? -1 : 1);
+  // Elbows bow toward the open air, so the crook of the arm faces the rock.
+  elbowL = ik2(shoulder.z, shoulder.y, handL.z, handL.y, 0.34, 0.32, 1);
+  elbowR = ik2(shoulder.z, shoulder.y, handR.z, handR.y, 0.34, 0.32, 1);
   kneeL = ik2(hip.z, hip.y, footL.z, footL.y, 0.42, 0.4, 1);
   kneeR = ik2(hip.z, hip.y, footR.z, footR.y, 0.42, 0.4, 1);
   function lift(e) { return P(-0.8, e.y, e.x); }
@@ -787,6 +790,7 @@ function drawWorld(vp, eye, wet, gale, storm, alt) {
   const skin = [0.86, 0.78, 0.68];
   drawLimb(rig.hip, rig.shoulder, 0.13 + rig.w01 * 0.035, cloth);
   drawMesh(headMesh, boneM(P(rig.head.x, rig.head.y - 0.06, rig.head.z), P(rig.head.x, rig.head.y + 0.1, rig.head.z), 0.105), skin);
+  drawLimb(rig.head, P(rig.head.x, rig.head.y - 0.01, rig.head.z - 0.11), 0.026, skin);
   drawLimb(rig.shoulder, rig.elbowL, 0.055, cloth);
   drawLimb(rig.elbowL, rig.handL, 0.04, cloth);
   drawLimb(rig.shoulder, rig.elbowR, 0.055, cloth);
@@ -795,13 +799,13 @@ function drawWorld(vp, eye, wet, gale, storm, alt) {
   drawLimb(rig.kneeL, rig.footL, 0.05, cloth);
   drawLimb(rig.hip, rig.kneeR, 0.065, cloth);
   drawLimb(rig.kneeR, rig.footR, 0.048, cloth);
-  const targetPack = P(-0.8, rig.shoulder.y - 0.22, rig.shoulder.z - 0.18 - rig.w01 * 0.06);
+  const targetPack = P(-0.8, rig.shoulder.y - 0.18, rig.shoulder.z + 0.2 + rig.w01 * 0.05);
   packLag.x += (targetPack.x - packLag.x) * 0.12;
   packLag.y += (targetPack.y - packLag.y) * 0.12;
   packLag.z += (targetPack.z - packLag.z) * 0.12;
   drawMesh(packMesh, boneM(P(packLag.x, packLag.y + 0.16, packLag.z + 0.02), P(packLag.x, packLag.y - 0.12, packLag.z - 0.04), 0.12 + rig.w01 * 0.05), [0.04, 0.04, 0.05]);
   const neck = rig.shoulder;
-  scarf[0].x = -0.72; scarf[0].y = neck.y - 0.02; scarf[0].z = neck.z + 0.04;
+  scarf[0].x = -0.72; scarf[0].y = neck.y - 0.02; scarf[0].z = neck.z + 0.1;
   const soon = FX.gustForecast(state.time, state.y, state.mask, state.descending).soon;
   for (let i = 1; i < scarf.length; i++) {
     const p = scarf[i], a = scarf[i - 1];
@@ -864,6 +868,7 @@ function drawWorld(vp, eye, wet, gale, storm, alt) {
 
 function frame(now) {
   if (!gl) return;
+  if (shotName === "charge" || shotName === "descend") holding = true;
   if (!last) last = now;
   const raw = Math.min(0.05, Math.max(0, (now - last) / 1000));
   last = now;
@@ -889,6 +894,7 @@ function frame(now) {
     input.restart = false; input.keep = false; input.dropKind = ""; input.retrieve = false;
   }
   if (n > 0) { restartPulse = false; wantKeep = false; wantDrop = ""; wantRetrieve = false; }
+  pinShot();
   playSfx(sounds);
   if (state.y > bestEver) { bestEver = state.y; persist(); }
 
@@ -1147,14 +1153,33 @@ function applyShot(name) {
     state.holdIndex = Math.floor(n * 0.42); state.origin = state.holdIndex; state.mask = 15; state.stormVis = 1;
   } else if (name === "gale") {
     state.holdIndex = Math.floor(n * 0.86); state.origin = state.holdIndex; state.mask = 15; state.stormVis = 1;
+  } else if (name === "hang" || name === "charge") {
+    state.holdIndex = 8; state.origin = 8; state.mask = name === "charge" ? 15 : 0; state.stormVis = 0.05;
+    state.attached = true; state.holding = name === "charge";
+  } else if (name === "flight") {
+    state.holdIndex = 10; state.origin = 10; state.mask = 0; state.attached = false;
+    state.vy = 10; state.vz = -0.35; state.flightT = 0.3;
+  } else if (name === "descend") {
+    state.holdIndex = 12; state.origin = 12; state.mask = 8; state.descending = true;
+    state.attached = true; state.holding = true;
   } else if (name === "ending" || name === "choices") {
     state.holdIndex = n - 1; state.origin = n - 1; state.mask = 9; state.mode = "ending"; state.endingT = 2;
     state.lost = [{ kind: "trophy", bit: 4, y: mid.y, z: mid.z, hold: mid.i }];
     state.crown = true;
   }
   const h = FX.HOLDS[state.holdIndex];
-  state.attached = true; state.y = h.y - 0.4; state.z = h.z;
+  if (name === "flight") {
+    state.y = h.y + 1.1; state.z = h.z + 0.35;
+  } else if (name !== "ending" && name !== "choices") {
+    state.attached = true; state.y = h.y - 0.4; state.z = h.z;
+  }
   camY = state.y; focusZ = state.z;
+}
+function pinShot() {
+  if (shotName !== "flight") return;
+  const h = FX.HOLDS[state.holdIndex] || FX.HOLDS[10];
+  state.attached = false; state.mode = "play";
+  state.vy = 10; state.vz = -0.35; state.y = h.y + 1.1; state.z = h.z + 0.35;
 }
 if (shotName) applyShot(shotName);
 resize();
