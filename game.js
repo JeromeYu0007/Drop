@@ -27,44 +27,126 @@
   // Easy ladders share a column, so the hold below is catchable.
   // Hard moves leave that column, and the air under them is empty.
   const RAW = [
-    [8, 1.76, "start"],
-    [12.3, 1.84, "hold"],
-    [16.6, 1.91, "hold"],
-    [20.9, 1.79, "hold"],
-    [25.2, 1.69, "hold"],
-    [29.5, 1.11, "trophy"],
-    [33.8, 1.41, "hold"],
-    [38.1, 1.34, "hold"],
-    [42.4, 1.78, "hold"],
-    [46.7, 1.7, "hold"],
-    [51, 2.02, "hold"],
-    [55.3, 1.95, "hold"],
-    [59.6, 2.62, "letter"],
-    [63.9, 1.86, "hold"],
-    [68.2, 1.57, "hold"],
-    [72.5, 1.05, "hold"],
-    [76.8, 0.54, "hold"],
-    [81.1, 0.1, "ice"],
-    [85.4, -0.24, "ice"],
-    [89.7, -0.75, "ice"],
-    [94, -1.5, "ring"],
-    [98.3, -1.31, "ice"],
-    [102.6, -1.08, "ice"],
-    [106.9, -0.78, "ice"],
-    [111.2, -0.7, "ice"],
-    [115.5, -0.47, "ice"],
-    [119.8, -0.33, "ice"],
-    [124.1, -0.61, "ice"],
-    [128.4, -0.96, "photo"],
-    [132.7, -0.75, "ice"],
-    [137, -0.68, "ice"],
-    [141.3, -0.92, "ice"],
-    [145.6, -0.54, "ice"],
-    [149.9, -0.4, "ice"],
-    [154.2, 0.17, "ice"],
-    [158.5, 0.79, "ice"],
-    [162.8, 1.41, "ice"],
-    [167.1, 0.92, "summit"],
+    [8, 1.71, "start"],
+    [11.95, 1.852, "hold"],
+    [15.9, 1.998, "hold"],
+    [19.9, 1.998, "hold"],
+    [24.05, 2.229, "hold"],
+    [28.25, 1.876, "hold"],
+    [32.2, 2.063, "hold"],
+    [36.4, 2.187, "hold"],
+    [40.35, 2.126, "hold"],
+    [44.55, 1.849, "hold"],
+    [48.5, 1.974, "hold"],
+    [52.7, 1.962, "hold"],
+    [56.65, 1.614, "hold"],
+    [60.85, 1.803, "hold"],
+    [64.4, 1.803, "hold"],
+    [67.87, 1.673, "hold"],
+    [71.9, 1.403, "hold"],
+    [76.07, 0.853, "hold"],
+    [80.24, 0.583, "hold"],
+    [84.83, 0.593, "trophy"],
+    [89.05, -0.189, "hold"],
+    [93.25, -0.101, "hold"],
+    [96.95, -0.12, "hold"],
+    [101.15, -0.481, "hold"],
+    [105.1, -0.992, "hold"],
+    [109.3, -0.939, "hold"],
+    [113.25, -1.003, "hold"],
+    [117.45, -1.203, "hold"],
+    [121.4, -0.956, "hold"],
+    [125.35, -0.785, "hold"],
+    [129.3, -0.715, "hold"],
+    [133.5, -0.213, "hold"],
+    [137.45, -0.029, "hold"],
+    [141.3, 0.271, "hold"],
+    [145.19, 0.701, "hold"],
+    [149.08, 0.851, "hold"],
+    [152.83, 1.141, "hold"],
+    [157, 1.151, "hold"],
+    [160.75, 1.441, "hold"],
+    [164.5, 1.591, "hold"],
+    [168.39, 1.741, "hold"],
+    [172.56, 1.191, "hold"],
+    [176.73, 1.761, "hold"],
+    [180.76, 1.911, "hold"],
+    [184.65, 2.061, "hold"],
+    [188.4, 2.211, "hold"],
+    [192.85, 2.221, "letter"],
+    [196.6, 2.371, "hold"],
+    [200.63, 2.241, "hold"],
+    [204.8, 1.691, "hold"],
+    [208.83, 2.261, "hold"],
+    [213, 1.711, "hold"],
+    [217.17, 1.861, "hold"],
+    [221.34, 1.311, "hold"],
+    [225.51, 1.461, "hold"],
+    [229.68, 0.911, "hold"],
+    [233.85, 0.361, "hold"],
+    [238.02, -0.049, "hold"],
+    [241.91, -0.599, "ice"],
+    [246.08, -0.169, "ice"],
+    [250.11, -0.719, "ice"],
+    [253.61, -0.619, "ice"],
+    [257.47, -0.979, "ice"],
+    [261.36, -0.829, "ice"],
+    [265.11, -0.819, "ice"],
+    [269, -0.809, "ice"],
+    [273.03, -0.799, "ice"],
+    [277.06, -0.509, "ice"],
+    [280.81, -0.219, "ice"],
+    [284.56, -0.069, "ice"],
+    [288.59, 0.501, "ring"],
+    [292.62, -0.049, "ice"],
+    [296.65, 0.381, "ice"],
+    [300.68, 0.391, "ice"],
+    [304.57, 0.681, "ice"],
+    [308.6, 0.831, "ice"],
+    [312.35, 1.121, "ice"],
+    [316.1, 1.271, "ice"],
+    [319.85, 1.421, "ice"],
+    [323.88, 1.291, "ice"],
+    [327.77, 1.721, "ice"],
+    [331.52, 2.011, "ice"],
+    [335.55, 2.021, "ice"],
+    [339.44, 2.311, "ice"],
+    [343.47, 2.321, "ice"],
+    [347.5, 2.471, "ice"],
+    [351.53, 2.481, "ice"],
+    [355.56, 1.931, "ice"],
+    [359.73, 2.361, "ice"],
+    [363.76, 2.231, "ice"],
+    [367.79, 1.961, "ice"],
+    [371.54, 1.831, "ice"],
+    [375.15, 1.561, "ice"],
+    [379.18, 1.011, "ice"],
+    [383.21, 0.461, "ice"],
+    [387.24, -0.089, "ice"],
+    [391.83, 0.061, "photo"],
+    [396, -0.349, "ice"],
+    [400.03, -0.339, "ice"],
+    [404.2, -0.889, "ice"],
+    [408.37, -0.599, "ice"],
+    [412.26, -0.589, "ice"],
+    [416.29, -0.579, "ice"],
+    [420.32, -0.569, "ice"],
+    [424.35, -0.559, "ice"],
+    [428.38, -0.549, "ice"],
+    [432.27, -0.259, "ice"],
+    [436.3, -0.809, "ice"],
+    [440.33, -0.239, "ice"],
+    [444.22, -0.089, "ice"],
+    [448.11, 0.061, "ice"],
+    [452.14, -0.069, "ice"],
+    [455.94, 0.431, "ice"],
+    [459.74, 0.531, "ice"],
+    [463.44, 0.831, "ice"],
+    [467.21, 1.001, "ice"],
+    [470.98, 1.291, "ice"],
+    [474.75, 1.581, "ice"],
+    [478.64, 1.751, "ice"],
+    [482.77, 2.521, "summit"],
   ];
   const SUMMIT_Y = RAW[RAW.length - 1][0];
   const GATE = { y: SUMMIT_Y + 1.55, z: RAW[RAW.length - 1][1] + 0.48 };
@@ -266,10 +348,11 @@
   // Right-hand edge of the solid rock. A fixed shape of y only.
   // Moving a hold does not move the cliff.
   function faceZ(y) {
-    const sway = Math.sin(y * 0.041) * 1.55 + Math.sin(y * 0.113 + 0.8) * 0.62;
-    const n =
-      (vnoise(y * 0.27 + 1.7) - 0.5) * 0.42 +
-      (vnoise(y * 0.71 + 4.4) - 0.5) * 0.14;
+    // Gentle on purpose. A step steeper than about 0.1 m over the
+    // shoulders cancels an upward launch, and then no hold placement
+    // can keep both packs inside the window.
+    const sway = Math.sin(y * 0.041) * 1.55 + Math.sin(y * 0.09 + 0.8) * 0.28;
+    const n = (vnoise(y * 0.22 + 1.7) - 0.5) * 0.16;
     return sway + n;
   }
   const BODY_R = 0.22;
@@ -1264,6 +1347,141 @@
     };
   }
 
+  // One cliff mesh. Every hold is a vertex grown out of this surface.
+  function buildCliffMesh(stepY, stepX) {
+    stepY = stepY || 0.32;
+    stepX = stepX || 0.36;
+    const holds = HOLDS;
+    const top = holds[holds.length - 1].y + 16;
+    const ys = [];
+    const seenY = {};
+    function addY(y) {
+      const k = (+y).toFixed(3);
+      if (seenY[k]) return;
+      seenY[k] = 1;
+      ys.push(+k);
+    }
+    for (let y = -3; y <= top; y += stepY) addY(y);
+    for (let i = 0; i < holds.length; i++) addY(holds[i].y);
+    ys.sort(function (a, b) { return a - b; });
+    const xs = [0];
+    for (let x = -2.5; x <= 2.25; x += stepX) {
+      if (Math.abs(x) < stepX * 0.45) continue;
+      xs.push(+x.toFixed(4));
+    }
+    xs.sort(function (a, b) { return a - b; });
+    const xCount = xs.length;
+    const yCount = ys.length;
+    function vid(ix, iy) { return iy * xCount + ix; }
+    function wallZ(x, y) {
+      const face = faceZ(y);
+      const n1 = (vnoise(y * 0.31 + x * 0.85 + 2.0) - 0.5) * 0.42;
+      const n2 = (vnoise(y * 0.97 + x * 1.6 + 4.2) - 0.5) * 0.16;
+      const ridge = (0.5 - Math.abs(vnoise(y * 0.58 + x * 0.25 + 1.1) - 0.5)) * 0.2;
+      const strata = Math.sin(y * 2.05 + x * 0.35) * 0.03;
+      const crack = Math.abs(vnoise(y * 3.4 + 1.7) - 0.5) < 0.032 ? -0.18 : 0;
+      const chimney = Math.exp(-Math.pow((x - 1.2) * 1.65, 2)) * -0.48 * (0.62 + 0.38 * Math.sin(y * 0.037));
+      const groove = Math.exp(-Math.pow((x + 0.85) * 2.1, 2)) * -0.2;
+      return face + n1 + n2 + ridge + strata + crack + chimney + groove - x * x * 0.03;
+    }
+    const pos = new Float32Array(xCount * yCount * 3);
+    const nrm = new Float32Array(xCount * yCount * 3);
+    const col = new Float32Array(xCount * yCount * 3);
+    for (let iy = 0; iy < yCount; iy++) {
+      for (let ix = 0; ix < xCount; ix++) {
+        const o = vid(ix, iy) * 3;
+        pos[o] = xs[ix];
+        pos[o + 1] = ys[iy];
+        pos[o + 2] = wallZ(xs[ix], ys[iy]);
+        col[o] = 1;
+        col[o + 1] = 1;
+        col[o + 2] = 1;
+      }
+    }
+    for (let h = 0; h < holds.length; h++) {
+      const hold = holds[h];
+      const reachX = 0.78 + nhash(h * 4.7) * 0.4;
+      const reachY = 0.52 + nhash(h * 8.3) * 0.26;
+      let ix0 = 0;
+      let iy0 = 0;
+      let bestX = 1e9;
+      let bestY = 1e9;
+      for (let iy = 0; iy < yCount; iy++) {
+        const dy = ys[iy] - hold.y;
+        const ady = Math.abs(dy);
+        if (ady < bestY) { bestY = ady; iy0 = iy; }
+        if (dy < -reachY - 0.2 || dy > reachY) continue;
+        for (let ix = 0; ix < xCount; ix++) {
+          const dx = Math.abs(xs[ix]);
+          if (iy === 0 && dx < bestX) { bestX = dx; ix0 = ix; }
+          if (dx > reachX * 1.2) continue;
+          const ax = dx / reachX;
+          const ay = dy >= -0.02 ? dy / (reachY * 0.72) : -dy / reachY;
+          if (ax > 1 || ay > 1) continue;
+          const k = (1 - ax * ax) * (1 - ay * ay);
+          const o = vid(ix, iy) * 3;
+          let z = pos[o + 2] * (1 - k) + (hold.z - ax * ax * 0.18) * k;
+          if (dy < -0.045) z -= 0.22 * k * Math.min(1, -dy / 0.2);
+          pos[o + 2] = z;
+          if (dy < -0.07 && dy > -0.36) pos[o + 1] = ys[iy] - 0.055 * k;
+        }
+      }
+      for (let ix = 0; ix < xCount; ix++) {
+        const dx = Math.abs(xs[ix]);
+        if (dx < bestX) { bestX = dx; ix0 = ix; }
+      }
+      const o = vid(ix0, iy0) * 3;
+      pos[o] = 0;
+      pos[o + 1] = hold.y;
+      pos[o + 2] = hold.z;
+      if (hold.k === "ice") {
+        col[o] = 0.78;
+        col[o + 1] = 0.88;
+        col[o + 2] = 1;
+      }
+    }
+    const idx = [];
+    for (let iy = 0; iy < yCount - 1; iy++) {
+      for (let ix = 0; ix < xCount - 1; ix++) {
+        const a = vid(ix, iy);
+        const b = vid(ix + 1, iy);
+        const c = vid(ix, iy + 1);
+        const d = vid(ix + 1, iy + 1);
+        idx.push(a, b, c, b, d, c);
+      }
+    }
+    for (let t = 0; t < idx.length; t += 3) {
+      const ia = idx[t] * 3;
+      const ib = idx[t + 1] * 3;
+      const ic = idx[t + 2] * 3;
+      const ax = pos[ib] - pos[ia];
+      const ay = pos[ib + 1] - pos[ia + 1];
+      const az = pos[ib + 2] - pos[ia + 2];
+      const bx = pos[ic] - pos[ia];
+      const by = pos[ic + 1] - pos[ia + 1];
+      const bz = pos[ic + 2] - pos[ia + 2];
+      const cx = ay * bz - az * by;
+      const cy = az * bx - ax * bz;
+      const cz = ax * by - ay * bx;
+      nrm[ia] += cx; nrm[ia + 1] += cy; nrm[ia + 2] += cz;
+      nrm[ib] += cx; nrm[ib + 1] += cy; nrm[ib + 2] += cz;
+      nrm[ic] += cx; nrm[ic + 1] += cy; nrm[ic + 2] += cz;
+    }
+    for (let i = 0; i < xCount * yCount; i++) {
+      const o = i * 3;
+      const len = Math.hypot(nrm[o], nrm[o + 1], nrm[o + 2]) || 1;
+      nrm[o] /= len;
+      nrm[o + 1] /= len;
+      nrm[o + 2] /= len;
+      const up = nrm[o + 1];
+      const snow = smooth(clamp((pos[o + 1] - (top - 36)) / 24, 0, 1)) * smooth(clamp((up - 0.35) / 0.4, 0, 1));
+      col[o] = col[o] * (1 - snow) + 1.25 * snow;
+      col[o + 1] = col[o + 1] * (1 - snow) + 1.28 * snow;
+      col[o + 2] = col[o + 2] * (1 - snow) + 1.32 * snow;
+    }
+    return { positions: pos, normals: nrm, colors: col, indices: idx };
+  }
+
   return {
     L: L,
     G: G,
@@ -1282,6 +1500,7 @@
     PROLOGUE: PROLOGUE,
     stormOf: stormOf,
     faceZ: faceZ,
+    buildCliffMesh: buildCliffMesh,
     routeZ: routeZ,
     BODY_R: BODY_R,
     ORDER: ["trophy", "letter", "ring", "photo"],

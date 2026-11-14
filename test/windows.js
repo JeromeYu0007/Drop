@@ -250,9 +250,13 @@ function measure() {
       const fOk = cell.up.full.every(function (v) { return v + 1e-6 >= 0.18 && v - 1e-6 <= 0.3; });
       cell.upOk = eOk && fOk;
     }
-    // The climb bands are the pass rule. Descent is printed; the long gaps that
-    // keep a full pack inside 0.18–0.30 s are longer than the down shot.
-    cell.downOk = true;
+    if (downTo < 0) cell.downOk = true;
+    else {
+      const dOk = downs.length > 0 && downs.every(function (v) {
+        return v + 1e-6 >= 0.25 && v - 1e-6 <= 0.4;
+      });
+      cell.downOk = dOk;
+    }
     if (!cell.upOk || !cell.downOk) failed++;
     rows.push(cell);
   }
@@ -297,4 +301,4 @@ function main() {
 }
 
 if (require.main === module) main();
-module.exports = { measure, grade, targetFor, limitsFor, caught, longest, lowerIndex, PHASES, DT };
+module.exports = { measure, grade, targetFor, limitsFor, caught, longest, lowerIndex, phasesFor, arrivalTimes, PHASES, DT, GUST_PERIOD };

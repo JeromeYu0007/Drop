@@ -142,13 +142,19 @@
     </div>
   </section>
 </div>
-<script src="game.js?v=ccce2ec"></script>
+<script src="vendor/three.min.js?v=dev"></script>
+<script src="game.js?v=dev"></script>
+<script src="render.js?v=dev"></script>
 <script>
 "use strict";
 const FX = window.Fangxia;
 const canvas = document.getElementById("c");
-const gl = canvas.getContext("webgl2", { antialias: false, alpha: false, depth: true, powerPreference: "high-performance" });
-if (!gl) document.body.insertAdjacentHTML("beforeend", "<p style='position:fixed;inset:0;display:flex;align-items:center;justify-content:center'>需要 WebGL2</p>");
+let live = true;
+try { FXRender.init(canvas); }
+catch (e) {
+  live = false;
+  document.body.insertAdjacentHTML("beforeend", "<p style='position:fixed;inset:0;display:flex;align-items:center;justify-content:center'>需要 WebGL</p>");
+}
 const ui = {
   prologue: document.getElementById("prologue"),
   hint: document.getElementById("hint"),
@@ -170,7 +176,6 @@ const ui = {
 };
 const shotName = new URLSearchParams(location.search).get("shot") || "";
 const shot = !!shotName;
-if (shot) document.body.classList.add("shot");
 const SAVE_KEY = "fangxia-v1";
 function loadSave() { try { return JSON.parse(localStorage.getItem(SAVE_KEY)) || {}; } catch (e) { return {}; } }
 function writeSave(data) { try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); } catch (e) {} }
@@ -180,6 +185,7 @@ let muted = !!saved.mute;
 let bestEver = saved.best || 8;
 function persist() { writeSave({ found: found, mute: muted, best: bestEver, lang: "zh" }); }
 ui.mute.classList.toggle("off", muted);
+ui.mute.textContent = muted ? "静" : "声";
 FX.PROLOGUE.forEach(function (line) {
   const p = document.createElement("p");
   p.textContent = line;
@@ -190,801 +196,36 @@ for (let i = 0; i < 16; i++) {
   if (found & (1 << i)) s.className = "on";
   ui.marks.appendChild(s);
 }
-
 const coarse = matchMedia("(pointer: coarse)").matches;
-let quality = coarse ? 1 : 2;
-let W = 1, H = 1, dpr = 1;
-let camY = 12, camZ = 0, focusZ = 0;
+let quality = coarse || innerWidth < innerHeight ? 1 : 2;
+if (live) FXRender.setQuality(quality);
+let camY = 12, focusZ = 0;
 const state = FX.createState();
 let holding = false;
 let wantKeep = false, wantDrop = "", wantRetrieve = false, restartPulse = false;
 let acc = 0, last = 0;
 let backT = -1, backWait = true;
 let prologueLeft = shot ? 0 : 7.2;
+let frames = 0, slowF = 0;
+let flash = 0;
 
 function resize() {
+  if (!live) return;
   const portrait = innerWidth < innerHeight;
-  dpr = quality === 0 ? 1 : Math.min(portrait ? 1.25 : 1.5, devicePixelRatio || 1);
-  W = Math.max(2, Math.floor(innerWidth * dpr));
-  H = Math.max(2, Math.floor(innerHeight * dpr));
-  canvas.width = W;
-  canvas.height = H;
-  if (gl) gl.viewport(0, 0, W, H);
+  const dpr = quality === 0 ? 1 : Math.min(portrait ? 1.15 : 1.35, devicePixelRatio || 1);
+  FXRender.resize(innerWidth, innerHeight, dpr);
 }
 addEventListener("resize", resize);
 
-function compile(type, src) {
-  const sh = gl.createShader(type);
-  gl.shaderSource(sh, src);
-  gl.compileShader(sh);
-  if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(sh));
-  return sh;
-}
-function program(vs, fs) {
-  const p = gl.createProgram();
-  gl.attachShader(p, compile(gl.VERTEX_SHADER, vs));
-  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
-  gl.linkProgram(p);
-  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) console.error(gl.getProgramInfoLog(p));
-  return p;
-}
-const NOISE = `
-float hash13(vec3 p){
-  p = fract(p * 0.1031);
-  p += dot(p, p.zyx + 31.32);
-  return fract((p.x + p.y) * p.z);
-}
-float vnoise(vec3 p){
-  vec3 i = floor(p); vec3 f = fract(p);
-  f = f * f * (3.0 - 2.0 * f);
-  return mix(mix(mix(hash13(i), hash13(i+vec3(1,0,0)), f.x),
-                 mix(hash13(i+vec3(0,1,0)), hash13(i+vec3(1,1,0)), f.x), f.y),
-             mix(mix(hash13(i+vec3(0,0,1)), hash13(i+vec3(1,0,1)), f.x),
-                 mix(hash13(i+vec3(0,1,1)), hash13(i+vec3(1,1,1)), f.x), f.y), f.z);
-}
-float fbm(vec3 p){
-  float a = 0.5, s = 0.0;
-  for (int i = 0; i < 5; i++) { s += a * vnoise(p); p = p * 2.03 + vec3(1.7, 9.2, 2.4); a *= 0.5; }
-  return s;
-}`;
-
-const rockProg = program(`#version 300 es
-layout(location=0) in vec3 aPos;
-layout(location=1) in vec3 aN;
-uniform mat4 uVP;
-uniform mat4 uM;
-uniform float uTime;
-out vec3 vW;
-out vec3 vN;
-void main(){
-  vec3 p = (uM * vec4(aPos, 1.0)).xyz;
-  vW = p; vN = mat3(uM) * aN;
-  gl_Position = uVP * vec4(p, 1.0);
-}`, `#version 300 es
-precision mediump float;
-in vec3 vW; in vec3 vN;
-uniform vec3 uLight, uCam, uFogCol, uTint;
-uniform float uWet, uFlash, uFog, uTime;
-out vec4 o;
-` + NOISE + `
-float fbm3(vec3 p){
-  return vnoise(p) * 0.55 + vnoise(p * 2.1 + 4.0) * 0.3 + vnoise(p * 4.2 + 1.7) * 0.15;
-}
-void main(){
-  vec3 q = vW * vec3(0.62, 0.9, 0.55);
-  float n = fbm(q);
-  float h = fbm(vW * 2.8 + vec3(2.0, 5.0, 1.0));
-  float e = 0.07;
-  float gx = fbm3(q + vec3(e, 0.0, 0.0)) - fbm3(q - vec3(e, 0.0, 0.0));
-  float gy = fbm3(q + vec3(0.0, e, 0.0)) - fbm3(q - vec3(0.0, e, 0.0));
-  float gz = fbm3(q + vec3(0.0, 0.0, e)) - fbm3(q - vec3(0.0, 0.0, e));
-  vec3 N = normalize(vN + vec3(gx, gy, gz) * 3.4);
-  float strata = sin(vW.y * 1.85 + n * 3.2);
-  float crack = smoothstep(0.48, 0.36, fbm(vW * vec3(3.4, 0.35, 2.6) + 8.0));
-  crack *= smoothstep(0.15, 0.55, h);
-  float crevice = smoothstep(0.42, 0.18, n);
-  vec3 L = normalize(uLight);
-  float up = clamp(N.y, 0.0, 1.0);
-  float down = clamp(-N.y, 0.0, 1.0);
-  float wrap = clamp(dot(N, L) * 0.5 + 0.5, 0.0, 1.0);
-  float ndl = clamp(dot(N, L), 0.0, 1.0);
-  vec3 V = normalize(uCam - vW);
-  float spec = pow(clamp(dot(N, normalize(L + V)), 0.0, 1.0), mix(12.0, 56.0, uWet));
-  float ao = clamp(0.28 + n * 0.9 - crevice * 0.55 - crack * 0.35, 0.12, 1.0);
-  vec3 rock = mix(vec3(0.09, 0.085, 0.09), vec3(0.48, 0.44, 0.40), smoothstep(0.22, 0.78, n));
-  rock = mix(rock, vec3(0.33, 0.30, 0.28), smoothstep(0.15, 0.85, strata * 0.5 + 0.5) * 0.35);
-  rock = mix(rock, vec3(0.04, 0.035, 0.035), crack);
-  rock = mix(rock, rock * 1.25, up * 0.45);
-  rock = mix(rock, rock * 0.35, down * 0.8);
-  rock *= uTint;
-  float wet = uWet * (0.35 + 0.65 * smoothstep(0.4, 0.9, h));
-  vec3 col = rock * (0.06 + wrap) * ao + rock * ndl * 0.32;
-  col += spec * mix(0.03, 0.55, wet) * vec3(0.78, 0.86, 0.98);
-  col += uFlash * vec3(0.5, 0.58, 0.75) * ao;
-  float dist = length(uCam - vW);
-  float fog = 1.0 - exp(-uFog * max(0.0, dist - 5.0));
-  float sheet = fbm(vec3(vW.z * 0.15, vW.y * 0.08 + uTime * 0.05, dist * 0.04));
-  vec3 fogCol = mix(uFogCol, vec3(0.62, 0.66, 0.72), sheet * uWet * 0.45);
-  col = mix(col, fogCol, clamp(fog + sheet * uWet * 0.12, 0.0, 0.84));
-  o = vec4(col, 1.0);
-}`);
-
-const skyProg = program(`#version 300 es
-layout(location=0) in vec2 a;
-out vec2 vUv;
-void main(){ vUv = a; gl_Position = vec4(a, 0.0, 1.0); }`, `#version 300 es
-precision mediump float;
-in vec2 vUv;
-uniform float uTime, uAlt, uStorm, uGale, uFlash;
-uniform vec2 uRes;
-out vec4 o;
-` + NOISE + `
-void main(){
-  vec2 uv = vUv * 0.5 + 0.5;
-  float up = uv.y;
-  vec3 zen = mix(vec3(0.05, 0.07, 0.14), vec3(0.16, 0.17, 0.20), uStorm);
-  zen = mix(zen, vec3(0.22, 0.24, 0.28), uGale);
-  vec3 hor = mix(vec3(0.55, 0.42, 0.32), vec3(0.35, 0.38, 0.42), uStorm + uGale);
-  hor = mix(hor, vec3(0.72, 0.62, 0.48), clamp(uAlt * 0.35, 0.0, 0.4));
-  vec3 col = mix(hor, zen, smoothstep(0.0, 0.72, up));
-  float star = step(0.997, hash13(floor(vec3(uv * uRes * 0.35, 2.0))));
-  col += star * (1.0 - uStorm) * (1.0 - uGale) * up;
-  vec2 m = uv - vec2(0.72, 0.62);
-  float moon = smoothstep(0.08, 0.0, length(m));
-  col += moon * vec3(0.95, 0.9, 0.78) * (1.0 - uStorm * 0.65);
-  float parallax = uAlt * 0.015;
-  for (int i = 0; i < 4; i++) {
-    float fi = float(i);
-    float py = uv.y * (1.4 + fi * 0.35) + parallax * (0.25 + fi * 0.35) + fi * 0.2;
-    float ridge = fbm(vec3(uv.x * (2.0 + fi) + fi, py * 3.0, 4.0 + fi));
-    float sil = smoothstep(0.18 + fi * 0.07, 0.05 + fi * 0.04, uv.y - ridge * 0.08);
-    vec3 mc = mix(vec3(0.08, 0.09, 0.12), vec3(0.25, 0.27, 0.30), fi / 4.0);
-    col = mix(col, mc, sil * (0.28 + fi * 0.08) * (0.55 + uGale * 0.3));
+function clamp01(v) { return Math.max(0, Math.min(1, v)); }
+function holdNear(y) {
+  let best = 0, bd = 1e9;
+  for (let i = 0; i < FX.HOLDS.length; i++) {
+    const d = Math.abs(FX.HOLDS[i].y - y);
+    if (d < bd) { bd = d; best = i; }
   }
-  float fogb = fbm(vec3(uv.x * 3.0 + uTime * 0.02, uv.y * 2.0, uTime * 0.05));
-  col = mix(col, vec3(0.62, 0.64, 0.68), fogb * uGale * 0.28 * (1.0 - up));
-  col += uFlash * vec3(0.7, 0.75, 0.9);
-  o = vec4(col, 1.0);
-}`);
-
-const flatProg = program(`#version 300 es
-layout(location=0) in vec3 aPos;
-uniform mat4 uVP;
-uniform vec3 uColor;
-uniform float uAlpha;
-out float vA;
-void main(){ vA = uAlpha; gl_Position = uVP * vec4(aPos, 1.0); }`, `#version 300 es
-precision mediump float;
-uniform vec3 uColor;
-in float vA;
-out vec4 o;
-void main(){ o = vec4(uColor, vA); }`);
-
-const postProg = program(`#version 300 es
-layout(location=0) in vec2 a;
-out vec2 vUv;
-void main(){ vUv = a * 0.5 + 0.5; gl_Position = vec4(a, 0.0, 1.0); }`, `#version 300 es
-precision mediump float;
-in vec2 vUv;
-uniform sampler2D uScene, uBloom;
-uniform float uTime, uGrain, uBloomAmt;
-out vec4 o;
-void main(){
-  vec3 col = texture(uScene, vUv).rgb;
-  vec3 bloom = texture(uBloom, vUv).rgb;
-  col += bloom * uBloomAmt;
-  col = pow(max(col, 0.0), vec3(0.92));
-  col = mix(col, col * vec3(1.04, 0.98, 0.92) + vec3(0.012, 0.008, 0.0), 0.45);
-  vec2 q = vUv * 2.0 - 1.0;
-  col *= smoothstep(1.55, 0.45, dot(q, q));
-  float g = fract(sin(dot(vUv * uTime, vec2(12.9898, 78.233))) * 43758.5453);
-  col += (g - 0.5) * uGrain;
-  o = vec4(col, 1.0);
-}`);
-
-const brightProg = program(`#version 300 es
-layout(location=0) in vec2 a;
-out vec2 vUv;
-void main(){ vUv = a * 0.5 + 0.5; gl_Position = vec4(a, 0.0, 1.0); }`, `#version 300 es
-precision mediump float;
-in vec2 vUv;
-uniform sampler2D uScene;
-out vec4 o;
-void main(){
-  vec3 c = texture(uScene, vUv).rgb;
-  float l = dot(c, vec3(0.25, 0.55, 0.2));
-  o = vec4(max(c * smoothstep(0.45, 0.85, l) - vec3(0.15), 0.0), 1.0);
-}`);
-const blurProg = program(`#version 300 es
-layout(location=0) in vec2 a;
-out vec2 vUv;
-void main(){ vUv = a * 0.5 + 0.5; gl_Position = vec4(a, 0.0, 1.0); }`, `#version 300 es
-precision mediump float;
-in vec2 vUv;
-uniform sampler2D uTex;
-uniform vec2 uDir;
-out vec4 o;
-void main(){
-  vec3 c = texture(uTex, vUv).rgb * 0.227;
-  c += texture(uTex, vUv + uDir * 1.4).rgb * 0.194;
-  c += texture(uTex, vUv - uDir * 1.4).rgb * 0.194;
-  c += texture(uTex, vUv + uDir * 3.2).rgb * 0.122;
-  c += texture(uTex, vUv - uDir * 3.2).rgb * 0.122;
-  c += texture(uTex, vUv + uDir * 5.4).rgb * 0.07;
-  c += texture(uTex, vUv - uDir * 5.4).rgb * 0.07;
-  o = vec4(c, 1.0);
-}`);
-
-const quad = gl.createBuffer();
-gl.bindBuffer(gl.ARRAY_BUFFER, quad);
-gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
-
-function boxMesh() {
-  const p = [], n = [];
-  const faces = [
-    [1,0,0], [-1,0,0], [0,1,0], [0,-1,0], [0,0,1], [0,0,-1]
-  ];
-  faces.forEach(function (f) {
-    const ax = Math.abs(f[0]) > 0 ? 1 : 0;
-    const ay = Math.abs(f[1]) > 0 ? 1 : 0;
-    const t1 = [ay, ax ^ ay ? 0 : 1, ax];
-    // simpler corners
-  });
-  const S = [
-    [-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1],
-    [-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1]
-  ];
-  const idx = [0,1,2,0,2,3, 5,4,7,5,7,6, 3,2,6,3,6,7, 4,5,1,4,1,0, 1,5,6,1,6,2, 4,0,3,4,3,7];
-  const norms = [];
-  for (let i = 0; i < idx.length; i += 3) {
-    const a = S[idx[i]], b = S[idx[i+1]], c = S[idx[i+2]];
-    const ux = b[0]-a[0], uy = b[1]-a[1], uz = b[2]-a[2];
-    const vx = c[0]-a[0], vy = c[1]-a[1], vz = c[2]-a[2];
-    let nx = uy*vz-uz*vy, ny = uz*vx-ux*vz, nz = ux*vy-uy*vx;
-    const nl = Math.hypot(nx,ny,nz) || 1;
-    nx/=nl; ny/=nl; nz/=nl;
-    [a,b,c].forEach(function (v) { p.push(v[0],v[1],v[2]); n.push(nx,ny,nz); });
-  }
-  return { p: new Float32Array(p), n: new Float32Array(n), count: idx.length };
+  return best;
 }
-const cube = boxMesh();
-const cubeBuf = gl.createBuffer();
-gl.bindBuffer(gl.ARRAY_BUFFER, cubeBuf);
-gl.bufferData(gl.ARRAY_BUFFER, cube.p, gl.STATIC_DRAW);
-const cubeN = gl.createBuffer();
-gl.bindBuffer(gl.ARRAY_BUFFER, cubeN);
-gl.bufferData(gl.ARRAY_BUFFER, cube.n, gl.STATIC_DRAW);
-
-function lathe(radii, sides) {
-  const p = [], n = [];
-  const rings = radii.length;
-  for (let i = 0; i < rings; i++) {
-    const y = -1 + (2 * i) / (rings - 1);
-    const r = radii[i];
-    const y0 = i === 0 ? y : -1 + (2 * (i - 1)) / (rings - 1);
-    const y1 = i === rings - 1 ? y : -1 + (2 * (i + 1)) / (rings - 1);
-    const r0 = i === 0 ? r : radii[i - 1];
-    const r1 = i === rings - 1 ? r : radii[i + 1];
-    const slope = (r1 - r0) / ((y1 - y0) || 1);
-    for (let s = 0; s < sides; s++) {
-      const a = (s / sides) * Math.PI * 2;
-      const ca = Math.cos(a), sa = Math.sin(a);
-      const nx = ca, ny = -slope, nz = sa;
-      const nl = Math.hypot(nx, ny, nz) || 1;
-      p.push(ca * r, y, sa * r);
-      n.push(nx / nl, ny / nl, nz / nl);
-    }
-  }
-  const idx = [];
-  for (let i = 0; i < rings - 1; i++) {
-    for (let s = 0; s < sides; s++) {
-      const a = i * sides + s;
-      const b = i * sides + (s + 1) % sides;
-      const c = a + sides;
-      const d = b + sides;
-      idx.push(a, c, b, b, c, d);
-    }
-  }
-  const P = [], N = [];
-  idx.forEach(function (id) {
-    P.push(p[id * 3], p[id * 3 + 1], p[id * 3 + 2]);
-    N.push(n[id * 3], n[id * 3 + 1], n[id * 3 + 2]);
-  });
-  return uploadMesh(P, N);
-}
-function uploadMesh(P, N) {
-  const pb = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, pb);
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(P), gl.STATIC_DRAW);
-  const nb = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, nb);
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(N), gl.STATIC_DRAW);
-  return { pb: pb, nb: nb, count: P.length / 3 };
-}
-const limbMesh = lathe([0.15, 1, 0.92, 0.72, 0.48, 0.22], 8);
-const headMesh = lathe([0.15, 0.7, 1, 0.96, 0.72, 0.28], 9);
-const packMesh = lathe([0.2, 0.85, 1, 0.95, 0.7, 0.35], 7);
-function ledgeMesh() {
-  const P = [], N = [];
-  function tri(a, b, c) {
-    const ux = b[0]-a[0], uy = b[1]-a[1], uz = b[2]-a[2];
-    const vx = c[0]-a[0], vy = c[1]-a[1], vz = c[2]-a[2];
-    let nx = uy*vz-uz*vy, ny = uz*vx-ux*vz, nz = ux*vy-uy*vx;
-    const nl = Math.hypot(nx,ny,nz)||1; nx/=nl; ny/=nl; nz/=nl;
-    [a,b,c].forEach(function (v) { P.push(v[0],v[1],v[2]); N.push(nx,ny,nz); });
-  }
-  const top = [[-0.22,0.08,-0.02],[0.22,0.08,-0.02],[0.18,0.08,0.55],[-0.18,0.08,0.55]];
-  const bot = [[-0.16,-0.16,0.08],[0.16,-0.16,0.08],[0.12,-0.05,0.42],[-0.12,-0.05,0.42]];
-  tri(top[0], top[1], top[2]); tri(top[0], top[2], top[3]);
-  tri(bot[0], bot[2], bot[1]); tri(bot[0], bot[3], bot[2]);
-  tri(top[0], top[3], bot[3]); tri(top[0], bot[3], bot[0]);
-  tri(top[1], bot[1], bot[2]); tri(top[1], bot[2], top[2]);
-  tri(top[3], top[2], bot[2]); tri(top[3], bot[2], bot[3]);
-  tri(top[0], bot[0], bot[1]); tri(top[0], bot[1], top[1]);
-  return uploadMesh(P, N);
-}
-const ledge = ledgeMesh();
-const scarfBuf = gl.createBuffer();
-
-function buildCliff() {
-  const top = FX.HOLDS[FX.HOLDS.length - 1].y + 8;
-  const sy = quality === 0 ? 1.15 : quality === 1 ? 0.72 : 0.42;
-  const cols = quality === 0 ? 8 : quality === 1 ? 14 : 20;
-  const rows = Math.ceil(top / sy);
-  const pos = [], nrm = [], ind = [];
-  function at(ix, iy) {
-    const y = iy * sy;
-    const t = ix / (cols - 1);
-    const lip = FX.faceZ(y);
-    const scallop = Math.sin(y * 0.9 + ix * 0.4) * 0.28 + Math.sin(y * 2.4) * 0.08;
-    const z = lip - t * t * 6.4 + scallop * (1.0 - t);
-    const x = -0.05 + Math.sin(y * 0.21 + ix * 0.7) * 0.08 + t * 0.15;
-    return [x, y, z];
-  }
-  for (let iy = 0; iy <= rows; iy++) {
-    for (let ix = 0; ix < cols; ix++) pos.push.apply(pos, at(ix, iy));
-  }
-  for (let iy = 0; iy < rows; iy++) {
-    for (let ix = 0; ix < cols - 1; ix++) {
-      const i = iy * cols + ix;
-      ind.push(i, i + 1, i + cols, i + 1, i + cols + 1, i + cols);
-    }
-  }
-  const P = pos;
-  const N = new Float32Array(P.length);
-  for (let k = 0; k < ind.length; k += 3) {
-    const i = ind[k] * 3, j = ind[k+1] * 3, m = ind[k+2] * 3;
-    const ux = P[j]-P[i], uy = P[j+1]-P[i+1], uz = P[j+2]-P[i+2];
-    const vx = P[m]-P[i], vy = P[m+1]-P[i+1], vz = P[m+2]-P[i+2];
-    let nx = uy*vz - uz*vy, ny = uz*vx - ux*vz, nz = ux*vy - uy*vx;
-    N[i]+=nx; N[i+1]+=ny; N[i+2]+=nz;
-    N[j]+=nx; N[j+1]+=ny; N[j+2]+=nz;
-    N[m]+=nx; N[m+1]+=ny; N[m+2]+=nz;
-  }
-  const pb = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, pb);
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(P), gl.STATIC_DRAW);
-  const nb = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, nb);
-  gl.bufferData(gl.ARRAY_BUFFER, N, gl.STATIC_DRAW);
-  const ib = gl.createBuffer();
-  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
-  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(ind), gl.STATIC_DRAW);
-  return { pb: pb, nb: nb, ib: ib, count: ind.length };
-}
-let cliff = null;
-
-const partN = quality === 0 ? 80 : quality === 1 ? 260 : 520;
-const parts = [];
-for (let i = 0; i < 520; i++) {
-  parts.push({ x: -1 + Math.random(), y: Math.random() * 170, z: -2 + Math.random() * 6, life: Math.random() });
-}
-const partBuf = gl.createBuffer();
-
-let sceneFbo, sceneTex, sceneDepth, bloomTex, bloomFbo, bloomTex2, bloomFbo2;
-function tex(w, h) {
-  const t = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D, t);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  return t;
-}
-function allocTargets() {
-  const bw = Math.max(2, W >> (quality === 2 ? 1 : 2));
-  const bh = Math.max(2, H >> (quality === 2 ? 1 : 2));
-  sceneTex = tex(W, H);
-  sceneDepth = gl.createRenderbuffer();
-  gl.bindRenderbuffer(gl.RENDERBUFFER, sceneDepth);
-  gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, W, H);
-  sceneFbo = gl.createFramebuffer();
-  gl.bindFramebuffer(gl.FRAMEBUFFER, sceneFbo);
-  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, sceneTex, 0);
-  gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, sceneDepth);
-  bloomTex = tex(bw, bh);
-  bloomFbo = gl.createFramebuffer();
-  gl.bindFramebuffer(gl.FRAMEBUFFER, bloomFbo);
-  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, bloomTex, 0);
-  bloomTex2 = tex(bw, bh);
-  bloomFbo2 = gl.createFramebuffer();
-  gl.bindFramebuffer(gl.FRAMEBUFFER, bloomFbo2);
-  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, bloomTex2, 0);
-  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-}
-let allocW = 0;
-
-function persp(fovy, aspect, near, far) {
-  const f = 1 / Math.tan(fovy / 2), nf = 1 / (near - far);
-  return new Float32Array([f/aspect,0,0,0, 0,f,0,0, 0,0,(far+near)*nf,-1, 0,0,2*far*near*nf,0]);
-}
-function lookAt(eye, c, up) {
-  let zx = eye[0]-c[0], zy = eye[1]-c[1], zz = eye[2]-c[2];
-  let L = Math.hypot(zx,zy,zz)||1; zx/=L; zy/=L; zz/=L;
-  let xx = up[1]*zz - up[2]*zy, xy = up[2]*zx - up[0]*zz, xz = up[0]*zy - up[1]*zx;
-  L = Math.hypot(xx,xy,xz)||1; xx/=L; xy/=L; xz/=L;
-  const yx = zy*xz - zz*xy, yy = zz*xx - zx*xz, yz = zx*xy - zy*xx;
-  return new Float32Array([
-    xx, yx, zx, 0, xy, yy, zy, 0, xz, yz, zz, 0,
-    -(xx*eye[0]+xy*eye[1]+xz*eye[2]), -(yx*eye[0]+yy*eye[1]+yz*eye[2]), -(zx*eye[0]+zy*eye[1]+zz*eye[2]), 1
-  ]);
-}
-function mulM(a, b) {
-  const o = new Float32Array(16);
-  for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) {
-    o[c*4+r] = a[r]*b[c*4] + a[4+r]*b[c*4+1] + a[8+r]*b[c*4+2] + a[12+r]*b[c*4+3];
-  }
-  return o;
-}
-const ID = new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);
-
-function boneM(p, q, rad) {
-  const dx = q.x-p.x, dy = q.y-p.y, dz = q.z-p.z;
-  const L = Math.hypot(dx,dy,dz) || 0.001;
-  const dxn = dx/L, dyn = dy/L, dzn = dz/L;
-  let ax = 1, ay = 0, az = 0;
-  if (Math.abs(dyn) > 0.85) { ax = 0; az = 1; }
-  let rx = ay*dzn - az*dyn, ry = az*dxn - ax*dzn, rz = ax*dyn - ay*dxn;
-  const rl = Math.hypot(rx,ry,rz)||1; rx/=rl; ry/=rl; rz/=rl;
-  const ux = dyn*rz - dzn*ry, uy = dzn*rx - dxn*rz, uz = dxn*ry - dyn*rx;
-  return new Float32Array([
-    rx*rad, ry*rad, rz*rad, 0,
-    dxn*L*0.5, dyn*L*0.5, dzn*L*0.5, 0,
-    ux*rad, uy*rad, uz*rad, 0,
-    (p.x+q.x)/2, (p.y+q.y)/2, (p.z+q.z)/2, 1
-  ]);
-}
-function P(x,y,z){ return {x:x,y:y,z:z}; }
-function ik2(ax, ay, tx, ty, l1, l2, bend) {
-  let dx = tx - ax, dy = ty - ay;
-  const dist = Math.hypot(dx, dy) || 0.0001;
-  const reach = Math.max(Math.abs(l1 - l2) + 0.02, Math.min(l1 + l2 - 0.02, dist));
-  const ux = dx / dist, uy = dy / dist;
-  const cos = (l1*l1 + reach*reach - l2*l2) / (2 * l1 * reach);
-  const sin = Math.sqrt(Math.max(0, 1 - Math.min(1, cos*cos))) * (bend >= 0 ? 1 : -1);
-  return { x: ax + (ux * cos - uy * sin) * l1, y: ay + (uy * cos + ux * sin) * l1 };
-}
-
-const scarf = [];
-for (let i = 0; i < 8; i++) scarf.push(P(-0.8, 10, 0));
-let packLag = P(-0.8, 10, 0);
-let flash = 0;
-let frames = 0, slowF = 0;
-let gustArmed = false;
-
-function pose() {
-  const hold = FX.HOLDS[state.holdIndex] || FX.HOLDS[0];
-  const w01 = FX.weight01(state.mask);
-  const st = FX.sampleRelease(state.mask, state.holdT || 0);
-  const charging = state.attached && state.holding && state.mode === "play" && !(state.crown && state.holdT === 0);
-  const charge = charging ? st.charge : 0;
-  const hip = P(-0.8, state.y, state.z);
-  const flying = !state.attached && state.mode === "play";
-  // Chest and hands face the rock (smaller z). Back and pack face the open air.
-  const wall = -1;
-  let shoulder, head, handL, handR, kneeL, kneeR, footL, footR, elbowL, elbowR;
-  if (state.attached && (state.mode === "play" || state.mode === "ledge" || state.mode === "drop" || state.mode === "ending")) {
-    const standing = (state.crown || state.mode === "ledge" || state.mode === "drop" || state.mode === "ending") && !charging;
-    if (standing) {
-      const footY = hold.y + 0.2;
-      hip.y = footY + 0.92;
-      hip.z = hold.z + 0.18;
-      shoulder = P(-0.8, hip.y + 0.46, hip.z + wall * 0.02);
-      head = P(-0.8, shoulder.y + 0.26, shoulder.z + wall * 0.08);
-      handL = P(-0.8, hold.y + 1.12, hold.z + wall * 0.04);
-      handR = P(-0.8, hold.y + 1.02, hold.z + wall * 0.02);
-      footL = P(-0.8, footY, hold.z + wall * 0.02);
-      footR = P(-0.8, footY, hold.z + 0.02);
-    } else {
-      const gripY = hold.y + 0.02;
-      const gripZ = hold.z + wall * 0.03;
-      const pull = charge;
-      shoulder = P(-0.8, hip.y + 0.46 + pull * 0.22, hip.z + wall * (0.05 + pull * 0.1));
-      head = P(-0.8, shoulder.y + 0.24, shoulder.z + wall * 0.08);
-      handL = P(-0.8, gripY, gripZ);
-      handR = P(-0.8, gripY - 0.03, gripZ + 0.015);
-      const tuck = pull;
-      footL = P(-0.8, hip.y - 0.12 - (1 - tuck) * 0.62, hip.z + wall * (0.16 + tuck * 0.22));
-      footR = P(-0.8, hip.y - 0.22 - (1 - tuck) * 0.5, hip.z + wall * (0.06 + tuck * 0.16));
-    }
-  } else {
-    const sp = Math.hypot(state.vy, state.vz) || 1;
-    const uy = state.vy / sp, uz = state.vz / sp;
-    shoulder = P(-0.8, hip.y + uy * 0.42, hip.z + uz * 0.42);
-    head = P(-0.8, hip.y + uy * 0.66, hip.z + uz * 0.66 + wall * 0.08);
-    handL = P(-0.8, hip.y + uy * 0.95, hip.z + uz * 0.95 + wall * 0.12);
-    handR = P(-0.8, hip.y + uy * 0.88, hip.z + uz * 0.88 + wall * 0.1);
-    footL = P(-0.8, hip.y - uy * 0.72, hip.z - uz * 0.72 + wall * 0.04);
-    footR = P(-0.8, hip.y - uy * 0.64, hip.z - uz * 0.64 + wall * 0.02);
-  }
-  const burst = state.burst || 0;
-  if (burst > 0.2 && flying) {
-    shoulder.y += burst * 0.15;
-  }
-  // Elbows bow toward the open air, so the crook of the arm faces the rock.
-  elbowL = ik2(shoulder.z, shoulder.y, handL.z, handL.y, 0.34, 0.32, 1);
-  elbowR = ik2(shoulder.z, shoulder.y, handR.z, handR.y, 0.34, 0.32, 1);
-  kneeL = ik2(hip.z, hip.y, footL.z, footL.y, 0.42, 0.4, 1);
-  kneeR = ik2(hip.z, hip.y, footR.z, footR.y, 0.42, 0.4, 1);
-  function lift(e) { return P(-0.8, e.y, e.x); }
-  return {
-    hip: hip, shoulder: shoulder, head: head,
-    handL: handL, handR: handR, footL: footL, footR: footR,
-    elbowL: lift(elbowL), elbowR: lift(elbowR),
-    kneeL: lift(kneeL), kneeR: lift(kneeR),
-    charge: charge, w01: w01
-  };
-}
-
-function drawMesh(mesh, M, tint) {
-  gl.bindBuffer(gl.ARRAY_BUFFER, mesh.pb);
-  gl.enableVertexAttribArray(0);
-  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
-  gl.bindBuffer(gl.ARRAY_BUFFER, mesh.nb);
-  gl.enableVertexAttribArray(1);
-  gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0);
-  gl.uniformMatrix4fv(rockLoc.M, false, M);
-  gl.uniform3f(rockLoc.tint, tint[0], tint[1], tint[2]);
-  gl.drawArrays(gl.TRIANGLES, 0, mesh.count);
-}
-function drawLimb(a, b, rad, tint) {
-  drawMesh(limbMesh, boneM(a, b, rad), tint);
-}
-
-let rockLoc = {};
-function drawWorld(vp, eye, wet, gale, storm, alt) {
-  gl.useProgram(rockProg);
-  rockLoc.M = gl.getUniformLocation(rockProg, "uM");
-  rockLoc.tint = gl.getUniformLocation(rockProg, "uTint");
-  gl.uniformMatrix4fv(gl.getUniformLocation(rockProg, "uVP"), false, vp);
-  gl.uniform3f(gl.getUniformLocation(rockProg, "uLight"), -2.2, 6.5 + Math.sin(state.time * 0.2), 3.2);
-  gl.uniform3f(gl.getUniformLocation(rockProg, "uCam"), eye[0], eye[1], eye[2]);
-  gl.uniform3f(gl.getUniformLocation(rockProg, "uFogCol"), 0.45 + storm * 0.1, 0.48, 0.55);
-  gl.uniform1f(gl.getUniformLocation(rockProg, "uWet"), wet);
-  gl.uniform1f(gl.getUniformLocation(rockProg, "uFlash"), flash);
-  gl.uniform1f(gl.getUniformLocation(rockProg, "uFog"), 0.012 + gale * 0.028);
-  gl.uniform1f(gl.getUniformLocation(rockProg, "uTime"), state.time);
-  gl.bindBuffer(gl.ARRAY_BUFFER, cliff.pb);
-  gl.enableVertexAttribArray(0);
-  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
-  gl.bindBuffer(gl.ARRAY_BUFFER, cliff.nb);
-  gl.enableVertexAttribArray(1);
-  gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0);
-  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, cliff.ib);
-  gl.uniformMatrix4fv(rockLoc.M, false, ID);
-  gl.uniform3f(rockLoc.tint, 1, 1, 1);
-  gl.drawElements(gl.TRIANGLES, cliff.count, gl.UNSIGNED_INT, 0);
-
-  FX.HOLDS.forEach(function (h) {
-    if (Math.abs(h.y - camY) > 24) return;
-    const lip = Math.max(h.z, FX.faceZ(h.y) + 0.02);
-    const s = h.k === "ice" ? 0.5 : 0.58;
-    const M = new Float32Array([s,0,0,0, 0,s*0.7,0,0, 0,0,s,0, -0.28, h.y, lip, 1]);
-    const ice = h.k === "ice";
-    drawMesh(ledge, M, ice ? [0.72, 0.78, 0.86] : [0.95, 0.9, 0.84]);
-  });
-
-  const rig = pose();
-  const cloth = [0.07, 0.07, 0.08];
-  const skin = [0.86, 0.78, 0.68];
-  drawLimb(rig.hip, rig.shoulder, 0.13 + rig.w01 * 0.035, cloth);
-  drawMesh(headMesh, boneM(P(rig.head.x, rig.head.y - 0.06, rig.head.z), P(rig.head.x, rig.head.y + 0.1, rig.head.z), 0.105), skin);
-  drawLimb(rig.head, P(rig.head.x, rig.head.y - 0.01, rig.head.z - 0.11), 0.026, skin);
-  drawLimb(rig.shoulder, rig.elbowL, 0.055, cloth);
-  drawLimb(rig.elbowL, rig.handL, 0.04, cloth);
-  drawLimb(rig.shoulder, rig.elbowR, 0.055, cloth);
-  drawLimb(rig.elbowR, rig.handR, 0.04, cloth);
-  drawLimb(rig.hip, rig.kneeL, 0.07, cloth);
-  drawLimb(rig.kneeL, rig.footL, 0.05, cloth);
-  drawLimb(rig.hip, rig.kneeR, 0.065, cloth);
-  drawLimb(rig.kneeR, rig.footR, 0.048, cloth);
-  const targetPack = P(-0.8, rig.shoulder.y - 0.18, rig.shoulder.z + 0.2 + rig.w01 * 0.05);
-  packLag.x += (targetPack.x - packLag.x) * 0.12;
-  packLag.y += (targetPack.y - packLag.y) * 0.12;
-  packLag.z += (targetPack.z - packLag.z) * 0.12;
-  drawMesh(packMesh, boneM(P(packLag.x, packLag.y + 0.16, packLag.z + 0.02), P(packLag.x, packLag.y - 0.12, packLag.z - 0.04), 0.12 + rig.w01 * 0.05), [0.04, 0.04, 0.05]);
-  const neck = rig.shoulder;
-  scarf[0].x = -0.72; scarf[0].y = neck.y - 0.02; scarf[0].z = neck.z + 0.1;
-  const soon = FX.gustForecast(state.time, state.y, state.mask, state.descending).soon;
-  for (let i = 1; i < scarf.length; i++) {
-    const p = scarf[i], a = scarf[i - 1];
-    const gust = Math.max(-0.2, Math.min(0.28, soon * 0.06));
-    p.x = -0.72 + Math.sin(state.time * 3 + i) * 0.015;
-    p.y += (a.y - 0.05 - p.y) * 0.55;
-    p.z += (a.z + 0.07 + gust - p.z) * 0.5;
-  }
-  const ribbon = [];
-  for (let i = 0; i < scarf.length; i++) {
-    const p = scarf[i];
-    const w = 0.05 * (1 - i / scarf.length * 0.65);
-    ribbon.push(-0.7, p.y, p.z - w, -0.66, p.y + 0.015, p.z + w);
-  }
-  gl.useProgram(flatProg);
-  gl.bindBuffer(gl.ARRAY_BUFFER, scarfBuf);
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(ribbon), gl.DYNAMIC_DRAW);
-  gl.enableVertexAttribArray(0);
-  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
-  gl.uniformMatrix4fv(gl.getUniformLocation(flatProg, "uVP"), false, vp);
-  gl.uniform3f(gl.getUniformLocation(flatProg, "uColor"), 0.72, 0.14, 0.12);
-  gl.uniform1f(gl.getUniformLocation(flatProg, "uAlpha"), 0.92);
-  gl.drawArrays(gl.TRIANGLE_STRIP, 0, ribbon.length / 3);
-  gl.useProgram(rockProg);
-  if (state.dots && state.dots.length) {
-    gl.useProgram(flatProg);
-    const buf = gl.createBuffer();
-    const arr = [];
-    state.dots.forEach(function (d) { arr.push(-0.7, d.y, d.z); });
-    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(arr), gl.DYNAMIC_DRAW);
-    gl.enableVertexAttribArray(0);
-    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
-    gl.uniformMatrix4fv(gl.getUniformLocation(flatProg, "uVP"), false, vp);
-    gl.uniform3f(gl.getUniformLocation(flatProg, "uColor"), 0.92, 0.9, 0.84);
-    gl.uniform1f(gl.getUniformLocation(flatProg, "uAlpha"), state.armed ? 0.85 : 0.35);
-    gl.drawArrays(gl.LINE_STRIP, 0, state.dots.length);
-    gl.deleteBuffer(buf);
-  }
-  const fc = FX.gustForecast(state.time, camY, state.mask, state.descending);
-  const arr = [];
-  for (let i = 0; i < (quality === 0 ? 80 : quality === 1 ? 260 : 520); i++) {
-    const p = parts[i];
-    p.z += fc.soon * 0.08;
-    p.y -= (0.15 + Math.abs(fc.soon) * 0.35);
-    if (p.y < camY - 16) p.y = camY + 14;
-    const len = 0.15 + Math.abs(fc.soon) * 0.45;
-    arr.push(p.x, p.y, p.z, p.x, p.y - len * 0.2, p.z + Math.sign(fc.soon || 1) * len);
-  }
-  gl.useProgram(flatProg);
-  gl.bindBuffer(gl.ARRAY_BUFFER, partBuf);
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(arr), gl.DYNAMIC_DRAW);
-  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
-  gl.uniformMatrix4fv(gl.getUniformLocation(flatProg, "uVP"), false, vp);
-  const snow = gale > 0.45;
-  gl.uniform3f(gl.getUniformLocation(flatProg, "uColor"), snow ? 0.85 : 0.62, snow ? 0.88 : 0.7, snow ? 0.95 : 0.78);
-  gl.uniform1f(gl.getUniformLocation(flatProg, "uAlpha"), 0.35 + gale * 0.35);
-  gl.drawArrays(gl.LINES, 0, arr.length / 3);
-}
-
-function frame(now) {
-  if (!gl) return;
-  if (shotName === "charge" || shotName === "descend") holding = true;
-  if (!last) last = now;
-  const raw = Math.min(0.05, Math.max(0, (now - last) / 1000));
-  last = now;
-  frames++;
-  if (!shot && frames > 45 && raw > 0.028) slowF++;
-  else slowF = Math.max(0, slowF - 1);
-  if (!shot && slowF > 28 && quality > 0) { quality--; slowF = 0; cliff = null; }
-  const portrait = innerWidth < innerHeight;
-  if (canvas.width !== Math.floor(innerWidth * (quality === 0 ? 1 : Math.min(portrait ? 1.25 : 1.5, devicePixelRatio || 1)))) resize();
-  if (!cliff) { resize(); cliff = buildCliff(); allocTargets(); allocW = W; }
-  if (allocW !== W) { allocTargets(); allocW = W; }
-
-  const focus = state.mode === "ledge" || state.mode === "drop";
-  if (shotName !== "flight") acc += raw * (focus ? 0.46 : 1);
-  const input = { holding: holding, restart: restartPulse, keep: wantKeep, dropKind: wantDrop, retrieve: wantRetrieve, freezeIntro: shot };
-  let n = 0;
-  const sounds = [];
-  while (acc >= 1 / 120 && n < 8) {
-    FX.step(state, 1 / 120, input);
-    if (state.sfx) sounds.push.apply(sounds, state.sfx);
-    acc -= 1 / 120;
-    n++;
-    input.restart = false; input.keep = false; input.dropKind = ""; input.retrieve = false;
-  }
-  if (n > 0) { restartPulse = false; wantKeep = false; wantDrop = ""; wantRetrieve = false; }
-  pinShot();
-  playSfx(sounds);
-  if (state.y > bestEver) { bestEver = state.y; persist(); }
-
-  const altN = clamp01((state.y - 8) / Math.max(20, FX.HOLDS[FX.HOLDS.length - 1].y - 8));
-  const forecast = FX.gustForecast(state.time, state.y, state.mask, state.descending);
-  const gale = Math.min(1, Math.max(0, (state.y - FX.HOLDS[FX.HOLDS.length - 1].y * 0.58) / 28));
-  const storm = state.stormVis || 0;
-  const wet = Math.min(1, storm * 0.8 + gale);
-  if (gale > 0.35 && forecast.soon > 1.1 && Math.random() < 0.01) flash = 1;
-  flash *= Math.exp(-raw * 6);
-  gustAudio(forecast);
-
-  let lookY = state.y + (state.attached ? 0.6 : 0.2);
-  let lookZ = state.z;
-  if (state.mode !== "ending" && state.descending && state.lost && state.lost.length) {
-    let item = state.lost[0];
-    for (let i = 1; i < state.lost.length; i++) if (state.lost[i].y > item.y) item = state.lost[i];
-    lookY += (item.y - lookY) * 0.35;
-  }
-  camY += (lookY - camY) * (shot ? 1 : 0.08);
-  focusZ += ((lookZ) - focusZ) * 0.1;
-  const eye = [-7.2, camY + 0.3, focusZ + 0.15];
-  const view = lookAt(eye, [0.2, camY, focusZ], [0, 1, 0]);
-  const proj = persp(portrait ? 0.92 : 0.66, W / H, 0.08, 220);
-  const vp = mulM(proj, view);
-
-  gl.bindFramebuffer(gl.FRAMEBUFFER, sceneFbo);
-  gl.viewport(0, 0, W, H);
-  gl.enable(gl.DEPTH_TEST);
-  gl.clearColor(0.05, 0.06, 0.09, 1);
-  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-  gl.disable(gl.DEPTH_TEST);
-  gl.useProgram(skyProg);
-  gl.bindBuffer(gl.ARRAY_BUFFER, quad);
-  gl.enableVertexAttribArray(0);
-  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
-  gl.uniform1f(gl.getUniformLocation(skyProg, "uTime"), state.time);
-  gl.uniform1f(gl.getUniformLocation(skyProg, "uAlt"), altN);
-  gl.uniform1f(gl.getUniformLocation(skyProg, "uStorm"), storm);
-  gl.uniform1f(gl.getUniformLocation(skyProg, "uGale"), gale);
-  gl.uniform1f(gl.getUniformLocation(skyProg, "uFlash"), flash);
-  gl.uniform2f(gl.getUniformLocation(skyProg, "uRes"), W, H);
-  gl.drawArrays(gl.TRIANGLES, 0, 3);
-  gl.enable(gl.DEPTH_TEST);
-  gl.enable(gl.BLEND);
-  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-  drawWorld(vp, eye, wet, gale, storm, altN);
-  gl.disable(gl.BLEND);
-
-  if (quality > 0) {
-    const bw = Math.max(2, W >> 1), bh = Math.max(2, H >> 1);
-    gl.disable(gl.DEPTH_TEST);
-    gl.bindBuffer(gl.ARRAY_BUFFER, quad);
-    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, bloomFbo);
-    gl.viewport(0, 0, bw, bh);
-    gl.useProgram(brightProg);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, sceneTex);
-    gl.uniform1i(gl.getUniformLocation(brightProg, "uScene"), 0);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
-    gl.useProgram(blurProg);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, bloomFbo2);
-    gl.bindTexture(gl.TEXTURE_2D, bloomTex);
-    gl.uniform1i(gl.getUniformLocation(blurProg, "uTex"), 0);
-    gl.uniform2f(gl.getUniformLocation(blurProg, "uDir"), 1 / bw, 0);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, bloomFbo);
-    gl.bindTexture(gl.TEXTURE_2D, bloomTex2);
-    gl.uniform2f(gl.getUniformLocation(blurProg, "uDir"), 0, 1 / bh);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
-  }
-  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-  gl.viewport(0, 0, W, H);
-  gl.useProgram(postProg);
-  gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, sceneTex);
-  gl.uniform1i(gl.getUniformLocation(postProg, "uScene"), 0);
-  gl.activeTexture(gl.TEXTURE1);
-  gl.bindTexture(gl.TEXTURE_2D, quality > 0 ? bloomTex : sceneTex);
-  gl.uniform1i(gl.getUniformLocation(postProg, "uBloom"), 1);
-  gl.uniform1f(gl.getUniformLocation(postProg, "uBloomAmt"), quality === 0 ? 0 : 0.12);
-  gl.uniform1f(gl.getUniformLocation(postProg, "uGrain"), quality === 0 ? 0.02 : 0.035);
-  gl.uniform1f(gl.getUniformLocation(postProg, "uTime"), state.time + 1);
-  gl.drawArrays(gl.TRIANGLES, 0, 3);
-
-  syncUI(forecast, raw);
-  requestAnimationFrame(frame);
-}
-function clamp01(v){ return Math.max(0, Math.min(1, v)); }
 
 let ac = null, gustOn = false;
 function ensureAudio() {
@@ -1051,7 +292,7 @@ function playSfx(list) {
   });
 }
 
-function syncUI(fc, dt) {
+function syncUI(dt) {
   const dropped = state.lost && state.lost.length;
   if (!state.crown) { backT = -1; backWait = true; }
   else if (backWait && dropped && state.attached) { backT = 0; backWait = false; }
@@ -1061,9 +302,8 @@ function syncUI(fc, dt) {
   }
   ui.back.style.opacity = state.mode !== "ending" && backT > 0.2 && backT < 3.2 ? "0.86" : "0";
   if (backT > 0) {
-    const hold = FX.HOLDS[state.holdIndex];
-    ui.back.style.left = "18%";
-    ui.back.style.top = (innerHeight * 0.42) + "px";
+    ui.back.style.left = "16%";
+    ui.back.style.top = (innerHeight * 0.4) + "px";
     ui.back.style.transform = "none";
   }
   if (!shot && prologueLeft > 0 && state.intro > 0.2) {
@@ -1109,7 +349,8 @@ function syncUI(fc, dt) {
     ui.passage.textContent = lines.join("");
     ui.retrieve.style.display = dropped ? "inline-block" : "none";
     const bit = 1 << (state.mask & 15);
-    if ((found & bit) === 0) { found |= bit; persist();
+    if ((found & bit) === 0) {
+      found |= bit; persist();
       ui.marks.children[state.mask & 15].className = "on";
     }
   }
@@ -1144,46 +385,125 @@ addEventListener("keyup", function (e) { if (e.code === "Space") holding = false
 
 function applyShot(name) {
   const n = FX.HOLDS.length;
-  const mid = FX.HOLDS[Math.floor(n * 0.42)];
-  const high = FX.HOLDS[Math.floor(n * 0.86)];
-  state.intro = 0; state.settle = 1; state.mode = "play";
-  if (name === "base") {
-    state.holdIndex = 2; state.origin = 2; state.mask = 0; state.stormVis = 0.02;
-  } else if (name === "storm") {
-    state.holdIndex = Math.floor(n * 0.42); state.origin = state.holdIndex; state.mask = 15; state.stormVis = 1;
-  } else if (name === "gale") {
-    state.holdIndex = Math.floor(n * 0.86); state.origin = state.holdIndex; state.mask = 15; state.stormVis = 1;
-  } else if (name === "hang" || name === "charge") {
-    state.holdIndex = 8; state.origin = 8; state.mask = name === "charge" ? 15 : 0; state.stormVis = 0.05;
-    state.attached = true; state.holding = name === "charge";
-  } else if (name === "flight") {
-    state.holdIndex = 10; state.origin = 10; state.mask = 0; state.attached = false;
-    state.vy = 10; state.vz = -0.35; state.flightT = 0.3;
-  } else if (name === "descend") {
-    state.holdIndex = 12; state.origin = 12; state.mask = 8; state.descending = true;
-    state.attached = true; state.holding = true;
-  } else if (name === "ending" || name === "choices") {
+  const mid = FX.HOLDS[holdNear(60)];
+  state.intro = 0; state.settle = 1; state.mode = "play"; state.catches = 4;
+  state.attached = true; state.descending = false; state.crown = false; state.lost = [];
+  const scenic = { base: 10, mid: 60, storm: 120, gale: FX.HOLDS[n - 1].y * 0.9, hang: 28, charge: 36, flight: 48, swing: 48, descend: 70 };
+  if (scenic[name] != null && name !== "ending" && name !== "choices" && name !== "summit") {
+    state.holdIndex = holdNear(scenic[name]);
+    state.origin = state.holdIndex;
+  }
+  if (name === "storm" || name === "gale") { state.mask = 15; state.stormVis = 1; }
+  else if (name === "charge") { state.mask = 15; state.stormVis = 0.08; state.holding = true; }
+  else if (name === "descend") { state.mask = 8; state.descending = true; state.holding = true; state.stormVis = 0.2; }
+  else if (name === "ending" || name === "choices") {
     state.holdIndex = n - 1; state.origin = n - 1; state.mask = 9; state.mode = "ending"; state.endingT = 2;
     state.lost = [{ kind: "trophy", bit: 4, y: mid.y, z: mid.z, hold: mid.i }];
     state.crown = true;
-  }
+  } else if (name === "summit") {
+    state.holdIndex = n - 1; state.origin = n - 1; state.mask = 11; state.crown = true;
+    state.attached = true; state.holding = false; state.holdT = 0;
+    state.lost = [{ kind: "trophy", bit: 4, y: mid.y, z: mid.z, hold: mid.i }];
+    state.stormVis = 0.35;
+  } else state.stormVis = 0.05;
   const h = FX.HOLDS[state.holdIndex];
-  if (name === "flight") {
-    state.y = h.y + 1.1; state.z = h.z + 0.35;
+  if (name === "flight" || name === "swing") {
+    state.attached = false; state.mode = "play";
+    state.vy = 9.5; state.vz = -0.4; state.flightT = 0.28;
+    state.y = h.y + 1.15; state.z = h.z + 0.42;
   } else if (name !== "ending" && name !== "choices") {
-    state.attached = true; state.y = h.y - 0.4; state.z = h.z;
+    state.attached = true; state.y = h.y - 0.55; state.z = h.z;
   }
   camY = state.y; focusZ = state.z;
 }
 function pinShot() {
-  if (shotName !== "flight") return;
-  const h = FX.HOLDS[state.holdIndex] || FX.HOLDS[10];
+  if (shotName !== "flight" && shotName !== "swing") return;
+  const h = FX.HOLDS[state.holdIndex];
   state.attached = false; state.mode = "play";
-  state.vy = 10; state.vz = -0.35; state.y = h.y + 1.1; state.z = h.z + 0.35;
+  state.vy = 9.5; state.vz = -0.4; state.y = h.y + 1.15; state.z = h.z + 0.42;
 }
+
+function frame(now) {
+  if (!live) return;
+  if (shotName === "charge" || shotName === "descend") holding = true;
+  if (!last) last = now;
+  const raw = Math.min(0.05, Math.max(0, (now - last) / 1000));
+  last = now;
+  frames++;
+  if (!shot && frames > 40 && raw > 0.03) slowF++;
+  else slowF = Math.max(0, slowF - 1);
+  if (!shot && slowF > 24 && quality > 0) {
+    quality--;
+    slowF = 0;
+    FXRender.setQuality(quality);
+    resize();
+  }
+  const portrait = innerWidth < innerHeight;
+  const want = quality === 0 ? 1 : Math.min(portrait ? 1.15 : 1.35, devicePixelRatio || 1);
+  if (canvas.width !== Math.floor(innerWidth * want)) resize();
+
+  const focus = state.mode === "ledge" || state.mode === "drop";
+  if (shotName !== "flight" && shotName !== "swing") acc += raw * (focus ? 0.46 : 1);
+  const input = { holding: holding, restart: restartPulse, keep: wantKeep, dropKind: wantDrop, retrieve: wantRetrieve, freezeIntro: shot };
+  let n = 0;
+  const sounds = [];
+  while (acc >= 1 / 120 && n < 8) {
+    FX.step(state, 1 / 120, input);
+    if (state.sfx) sounds.push.apply(sounds, state.sfx);
+    acc -= 1 / 120;
+    n++;
+    input.restart = false; input.keep = false; input.dropKind = ""; input.retrieve = false;
+  }
+  if (n > 0) { restartPulse = false; wantKeep = false; wantDrop = ""; wantRetrieve = false; }
+  pinShot();
+  playSfx(sounds);
+  if (state.y > bestEver) { bestEver = state.y; persist(); }
+
+  const top = FX.HOLDS[FX.HOLDS.length - 1].y;
+  const altN = clamp01((state.y - 8) / Math.max(20, top - 8));
+  const forecast = FX.gustForecast(state.time, state.y, state.mask, state.descending);
+  const gale = Math.min(1, Math.max(0, (state.y - top * 0.58) / 28));
+  const storm = state.stormVis || 0;
+  const wet = Math.min(1, storm * 0.8 + gale);
+  if (gale > 0.35 && forecast.soon > 0.85 && Math.random() < 0.012) flash = 1;
+  flash *= Math.exp(-raw * 6);
+  gustAudio(forecast);
+
+  let lookY = state.y + (state.attached ? 0.6 : 0.2);
+  let lookZ = state.z;
+  if (state.mode !== "ending" && state.descending && state.lost && state.lost.length) {
+    let item = state.lost[0];
+    for (let i = 1; i < state.lost.length; i++) if (state.lost[i].y > item.y) item = state.lost[i];
+    lookY += (item.y - lookY) * 0.35;
+  }
+  camY += (lookY - camY) * (shot ? 1 : 0.08);
+  focusZ += (lookZ - focusZ) * (shot ? 1 : 0.1);
+  FXRender.draw({
+    state: state,
+    dt: raw,
+    portrait: portrait,
+    flash: flash,
+    gale: gale,
+    storm: storm,
+    wet: wet,
+    alt: altN,
+    camY: camY,
+    focusZ: focusZ,
+    close: shotName === "swing",
+  });
+  syncUI(raw);
+  requestAnimationFrame(frame);
+}
+
 if (shotName) applyShot(shotName);
 resize();
 requestAnimationFrame(frame);
+window.__fx = {
+  get state() { return state; },
+  get fps() { return FXRender.fps; },
+  get quality() { return quality; },
+  holds: FX.HOLDS,
+};
 </script>
 </body>
 </html>
