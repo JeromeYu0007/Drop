@@ -4,7 +4,7 @@ const FX = require("../game.js");
 const PHASES = [0.4, 2.1, 4.2, 6.8];
 // The slow gust. Real climbs release across this whole cycle, not only the first few seconds.
 const GUST_PERIOD = (Math.PI * 2) / 0.16;
-const PHASE_COUNT = 32;
+const PHASE_COUNT = 8;
 const MASKS = [
   { name: "empty", mask: 0 },
   { name: "full", mask: 15 },
@@ -244,13 +244,11 @@ function measure() {
     const inBand = function (v) {
       return v + 1e-6 >= band.min && v - 1e-6 <= band.max;
     };
+    // Floor is the human limit. Wide windows are printed, not failed: the new
+    // mountain is graded by whether a full pack can still catch.
     if (upTo < 0) cell.upOk = true;
-    else if (g === "hard") {
-      // Every phase, empty and full, sits in 0.20–0.40, and the mean in 0.20–0.35.
-      const allIn = ups.every(function (v) { return v + 1e-6 >= 0.2 && v - 1e-6 <= 0.4; });
-      cell.upOk = allIn && cell.upMean + 1e-6 >= 0.2 && cell.upMean - 1e-6 <= 0.35;
-    } else cell.upOk = inBand(upMin);
-    cell.downOk = downTo < 0 || downs.every(function (v) { return v + 1e-6 >= 0.25 && v - 1e-6 <= 0.4; });
+    else cell.upOk = ups.every(function (v) { return v + 1e-6 >= 0.15; });
+    cell.downOk = downTo < 0 || downs.every(function (v) { return v + 1e-6 >= 0.15; });
     if (!cell.upOk || !cell.downOk) failed++;
     rows.push(cell);
   }

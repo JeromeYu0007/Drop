@@ -13,12 +13,12 @@
   const CATCH_HOLD = 0.96;
   // Light pack charges and swings faster. A heavy pack is slower, never unreachable.
   const TUNE = {
-    omega: [3.35, 3.05],
-    amp: [1.22, 1.05],
-    maxSpeed: [19.4, 16.6],
-    aimScale: [0.82, 0.74],
-    chargeRate: [2.4, 1.55],
-    windMul: [0.2, 1],
+    omega: [3.55, 2.72],
+    amp: [1.30, 0.98],
+    maxSpeed: [20.6, 15.2],
+    aimScale: [0.86, 0.70],
+    chargeRate: [2.65, 1.18],
+    windMul: [0.22, 1.15],
   };
 
   // Difficulty curve, bottom to top:
@@ -27,37 +27,79 @@
   // Easy ladders share a column, so the hold below is catchable.
   // Hard moves leave that column, and the air under them is empty.
   const RAW = [
-    [8.0, 0.0, "start"],
+    [8, 0, "start"],
     [10.2, 0.05, "hold"],
     [12.4, -0.04, "hold"],
     [14.6, 0.06, "hold"],
     [16.8, -0.02, "hold"],
-    [19.0, 0.02, "trophy"],
+    [19, 0.02, "trophy"],
     [21.2, -0.92, "hold"],
     [23.4, -0.46, "hold"],
     [25.4, -0.1, "hold"],
     [27.6, 0.28, "hold"],
     [29.9, 0.7, "hold"],
     [32.2, 0.15, "letter"],
-    [35.8, 0.48, "hold"],
+    [35.62, 0.33, "hold"],
     [37.6, 0.43, "hold"],
-    [39.7, 0.0, "hold"],
+    [39.7, 0, "hold"],
     [41.9, 0.02, "ring"],
     [44.1, -1.08, "hold"],
-    [46.25, -0.40, "hold"],
-    [47.7, -1.28, "hold"],
-    [52.30, -0.8, "hold"],
+    [46.07, -0.71, "hold"],
+    [48.27, -0.62, "hold"],
+    [51.76, -0.67, "hold"],
     [53.6, -1.78, "hold"],
     [55.3, -1.83, "hold"],
     [56.5, -2.4, "hold"],
-    [58.18, -3.4, "hold"],
+    [58.18, -3.12, "hold"],
     [60.5, -2.76, "hold"],
     [63.1, -2.8, "photo"],
     [65.3, -3.9, "ice"],
-    [67.5, -3.34, "ice"],
-    [70.8, -4.06, "ice"],
-    [72.40, -5.02, "ice"],
-    [74.2, -4.28, "summit"],
+    [67.5, -3.5, "ice"],
+    [70.44, -3.52, "hold"],
+    [72.4, -4.61, "ice"],
+    [74.6, -5.17, "ice"],
+    [76.75, -5.44, "ice"],
+    [78.2, -6.32, "ice"],
+    [82.44, -6.3, "hold"],
+    [84.1, -6.82, "ice"],
+    [85.8, -6.87, "ice"],
+    [87, -7.44, "ice"],
+    [88.68, -8.16, "ice"],
+    [91, -7.8, "ice"],
+    [93.6, -7.84, "ice"],
+    [95.8, -8.94, "ice"],
+    [98, -8.38, "ice"],
+    [100.2, -8.27, "hold"],
+    [102.72, -9.05, "hold"],
+    [104.92, -9.67, "hold"],
+    [107.07, -10.12, "hold"],
+    [108.7, -10.8, "hold"],
+    [112.94, -10.95, "hold"],
+    [114.6, -11.86, "ice"],
+    [116.3, -11.91, "ice"],
+    [117.5, -12.48, "ice"],
+    [119, -12.88, "hold"],
+    [121.5, -12.84, "ice"],
+    [124.1, -12.88, "ice"],
+    [126.3, -13.98, "ice"],
+    [128.5, -13.42, "ice"],
+    [131.8, -14.14, "ice"],
+    [133.4, -15.1, "ice"],
+    [135.6, -15.67, "ice"],
+    [137.75, -15.52, "ice"],
+    [139.2, -16.4, "ice"],
+    [143.44, -16.38, "hold"],
+    [145.1, -16.9, "ice"],
+    [146.8, -16.95, "ice"],
+    [148, -17.52, "ice"],
+    [149.5, -17.92, "hold"],
+    [152, -17.88, "ice"],
+    [154.6, -17.93, "ice"],
+    [156.8, -19.02, "ice"],
+    [159, -18.62, "ice"],
+    [162.3, -19.18, "ice"],
+    [163.9, -20.14, "ice"],
+    [166, -19.59, "summit"],
   ];
   const SUMMIT_Y = RAW[RAW.length - 1][0];
   const GATE = { y: SUMMIT_Y + 1.55, z: RAW[RAW.length - 1][1] + 0.48 };
@@ -72,7 +114,7 @@
       w: 0.48,
       zh: "奖杯",
       en: "Trophy",
-      lineZh: "名字是后来刻的。",
+      lineZh: "名字是后来刻的。你第一次没敢念出声。",
       lineEn: "The name was cut in later.",
       backZh: "名字上有雪。你擦掉了。",
       backEn: "Snow on the name. You wiped it off.",
@@ -82,7 +124,7 @@
       w: 0.3,
       zh: "未寄出的信",
       en: "Unsent letter",
-      lineZh: "第一行是你的名字。",
+      lineZh: "第一行是你的名字。地址那一栏，到现在还空着。",
       lineEn: "The first line is your name.",
       backZh: "纸还是干的。你没有拆开。",
       backEn: "The paper is still dry. You did not open it.",
@@ -92,7 +134,7 @@
       w: 0.22,
       zh: "戒指",
       en: "Ring",
-      lineZh: "还是那只手的尺寸。",
+      lineZh: "还是那只手的尺寸。你记得它被放进来的重量。",
       lineEn: "Still the size of that hand.",
       backZh: "比记忆里更凉。",
       backEn: "Colder than you remembered.",
@@ -102,7 +144,7 @@
       w: 0.2,
       zh: "旧照片",
       en: "Old photo",
-      lineZh: "被摸掉的，是笑。",
+      lineZh: "被摸掉的，是笑。你的拇指比时间先到。",
       lineEn: "What wore away was the smile.",
       backZh: "你把有字的那一面朝下。",
       backEn: "You turned the written side down.",
@@ -110,23 +152,29 @@
   };
 
   const ENDINGS = {
-    0: { zh: ["手里什么也没有。", "光很白。你没有影子。"], en: ["Nothing in your hands.", "The light is white. You cast no shadow."] },
-    1: { zh: ["你只把那张笑带上来了。", "下面还有没说完的。"], en: ["You brought up only the smile.", "Something unsaid is still below."] },
-    2: { zh: ["它还是那只手的尺寸。", "你没有戴上。"], en: ["Still the size of that hand.", "You did not put it on."] },
-    3: { zh: ["笑，和那只手。", "话没有上来。"], en: ["The smile, and the hand.", "The words did not come up."] },
-    4: { zh: ["名字对着太阳。", "你不记得是谁先走的。"], en: ["The name faces the sun.", "You don't remember who left first."] },
-    5: { zh: ["一张脸。一个名字。", "都是你没放下的。"], en: ["A face. A name.", "Both still in your keeping."] },
-    6: { zh: ["证明还在。约定也在。", "人呢。"], en: ["The proof is here. So is the promise.", "And the person."] },
-    7: { zh: ["信还在雪里。", "你看着光，没有要补的句子。"], en: ["The letter is still in the snow.", "You watch the light. Nothing you would add."] },
-    8: { zh: ["你把它读到最后一行。", "还是没有地址。"], en: ["You read it to the last line.", "Still no address."] },
-    9: { zh: ["你记得那张脸，也还想说。", "尺寸不在你手里。"], en: ["You remember the face, and you still want to speak.", "The size is not in your hand."] },
-    10: { zh: ["话，和那只手的尺寸。", "你还是没有寄出。"], en: ["The words, and the size of that hand.", "You still did not send them."] },
-    11: { zh: ["最沉的那件不在了。", "剩下的，你都叫得出来。"], en: ["The heaviest thing is gone.", "What is left, you can name."] },
-    12: { zh: ["杯子上是一个名字。纸上是另一个。", "你两个都带来了。"], en: ["One name on the cup. Another on the paper.", "You brought both."] },
-    13: { zh: ["约定留在下面。", "你带着记得的、想说的，和后来刻上的。"], en: ["The promise stayed below.", "You brought what you remember, what you meant to say, and what was carved afterward."] },
-    14: { zh: ["那张脸没有上来。", "你记得重量，不太记得眼睛。"], en: ["The face did not come up.", "You remember the weight better than the eyes."] },
-    15: { zh: ["都还在。", "肩没有松。可你上来了。"], en: ["All of it is still here.", "Your shoulders do not drop. But you arrived."] },
+    0: { zh: ["你把四件都留在山下。门里的光不认得名字，也不问你从哪一面上来。肩轻得发空，空了一会儿，你才想起手原来可以这样垂着，不必再握着什么证明。"], en: ["You left all four below."] },
+    1: { zh: ["你只带上了那张被摸淡的笑。光里看不清眼睛，可你记得自己曾把有字的一面扣下。下面还躺着没寄出的话、那只手的尺寸，和后来才刻上的名字，雪盖着它们。"], en: ["Only the smile."] },
+    2: { zh: ["戒指在掌心，仍是那只手的尺寸。你没有戴上。风从指缝穿过，像有人把你的手摊开，又像你终于允许它空着。奖杯、信和照片，都留在更低的雪里，安静着。"], en: ["The ring, unworn."] },
+    3: { zh: ["笑和那只手都上来了。你把照片转向光，戒指却不往手指上送。想说的话还在山下，没有地址。你站在门边，觉得自己只带回了还能被握住的那一部分。"], en: ["Smile and hand."] },
+    4: { zh: ["奖杯上的名字对着太阳。你不记得是谁先离开，只记得刻字的时候手很稳。信、戒指和照片都没跟着上来。证明在，人的温度不在。你把杯子抱得很紧，像怕它再凉下去。"], en: ["The name faces the sun."] },
+    5: { zh: ["一张脸，一个后来刻上的名字。你两样都没放下。没有戒指，也没有那封信。可你看着光，忽然觉得名字和笑原来可以单独在一起，不必再借别人的手才能成立。"], en: ["A face and a name."] },
+    6: { zh: ["证明还在，约定也在。奖杯冰着你的手腕，戒指仍是那只手的尺寸。照片和信留在下面。你问了一句很轻的「人呢」。风没有回答，门却为你留着一条缝，像还认得你。"], en: ["Proof and promise."] },
+    7: { zh: ["信还在雪里。你带着笑、那只手的尺寸，和后来刻上的名字走到这里。看着光，你发现自己没有要补的句子。没寄出的那些，也许本来就不是写给这一扇门的。"], en: ["The letter stayed in the snow."] },
+    8: { zh: ["你在门前把信读到最后一行，还是没有地址。奖杯、戒指和照片都留在山下，只剩这些没处投递的字。你把纸折好，折痕比来的时候更深，人却没有变得更重。"], en: ["Still no address."] },
+    9: { zh: ["你记得那张脸，也还想说。信和照片都在怀里，戒指不在。尺寸留在了更低的地方。你张了张嘴，发现要说的话并不需要那只手在场，才第一次把句子说完。"], en: ["The face, and the unsent words."] },
+    10: { zh: ["话，和那只手的尺寸，都跟着你上来了。你还是没有寄出。没有奖杯，也没有照片，名字和笑都不在身边。你握着戒指，觉得地址也许就是这只已经不在的手。"], en: ["Unsent, and still the right size."] },
+    11: { zh: ["最沉的那件没有上来。奖杯留在下面，名字也留在下面。你带着信、戒指和那张笑，肩却意外地还认得它们。你一一叫出它们的名字，声音不大，门里的光却侧过来听。"], en: ["The heaviest thing stayed below."] },
+    12: { zh: ["杯子上是一个名字，纸上是另一个。你两个都带来了。戒指和照片留在雪里，约定与那张脸都没有跟上来。你把两个名字并排对着光，忽然分不清自己在纪念谁。"], en: ["Two names, brought up together."] },
+    13: { zh: ["约定留在下面。你带着记得的笑、想说的话，和后来刻上的名字走到门口。没有戒指，那只手的尺寸不在了。你仍把三样东西抱稳，像把一个人的不同时辰抱在一起。"], en: ["The promise stayed below."] },
+    14: { zh: ["那张脸没有上来。你记得重量，不太记得眼睛。奖杯、信和戒指都在，照片留在了低处。风把你的衣角吹向门，你低下头，用剩下的三件把那双淡掉的眼睛慢慢想回来。"], en: ["The face did not come up."] },
+    15: { zh: ["都还在。奖杯、信、戒指、照片，一件也没有少。肩没有松，可你上来了。门里的光很白，白得能看见每一个你没放下的理由。你没有把它们交出去。这一次，你只是不再一个人扛。"], en: ["All of it is still here."] },
   };
+
+  const PROLOGUE = [
+    "夜里出发的人，通常不是为了看山顶。",
+    "背包里是四件还没放下的东西：后来才刻上名字的奖杯，一封没有地址的信，仍是那只手的尺寸的戒指，一张笑被摸淡了的照片。",
+    "山不催你。风会。",
+  ];
 
   const UI = {
     titleZh: "放下",
@@ -187,9 +235,9 @@
       aimScale: mix(TUNE.aimScale[0], TUNE.aimScale[1], k),
       chargeRate: mix(TUNE.chargeRate[0], TUNE.chargeRate[1], k),
       windMul: mix(TUNE.windMul[0], TUNE.windMul[1], k),
-      grav: mix(0.9, 1.22, k),
-      stamina: mix(8.2, 5.4, k),
-      sway: mix(0.035, 0.09, k),
+      grav: mix(0.86, 1.26, k),
+      stamina: mix(8.4, 4.8, k),
+      sway: mix(0.03, 0.2, k),
     };
   }
   function grav(mask) {
@@ -202,11 +250,20 @@
 
   function wind(t, y, mask, returning) {
     const storm = stormOf(mask);
-    // Same two gusts, much slower, so phases a few seconds apart barely disagree.
-    // A heavy pack still multiplies the push; the way down still gets the extra.
-    const gust = Math.sin(t * 0.16 + y * 0.015) * 0.30 + Math.sin(t * 0.31 + 1.3) * 0.12;
-    const high = clamp((y - 68) / 40, 0, 1);
-    return gust * (0.04 + storm * 1.05 + high * 0.12) * (returning ? 1.35 : 1);
+    const top = Math.max(156, HOLDS[HOLDS.length - 1].y);
+    const alt = clamp((y - 16) / Math.max(30, top - 16), 0, 1);
+    const gale = smooth(clamp((y - top * 0.58) / Math.max(10, top * 0.16), 0, 1));
+    // A slow swell, plus a gust the eye can see coming. Both grow hard with height.
+    const swell = Math.sin(t * 0.23 + y * 0.01) * (0.14 + alt * 0.24);
+    const gust = Math.sin(t * 0.7 + y * 0.015 + 1.1) * (0.08 + gale * 0.5);
+    const amp = (0.08 + storm * 0.82 + gale * 0.22) * (returning ? 1.22 : 1);
+    return (swell + gust) * amp;
+  }
+
+  function gustForecast(t, y, mask, returning) {
+    const now = wind(t, y, mask, returning);
+    const soon = wind(t + 0.75, y, mask, returning);
+    return { now: now, soon: soon, lead: 0.75 };
   }
 
   function nhash(n) {
@@ -746,6 +803,28 @@
     }
 
     if (s.mode === "ending") {
+      if (input.retrieve && s.lost && s.lost.length) {
+        const h = HOLDS[HOLDS.length - 1];
+        s.mode = "play";
+        s.endingT = 0;
+        s.crown = true;
+        s.descending = false;
+        s.attached = true;
+        s.holdIndex = h.i;
+        s.origin = h.i;
+        s.holdT = 0;
+        s.settle = 1;
+        s.vy = 0;
+        s.vz = 0;
+        s.angle = 0;
+        s.y = h.y + 0.22;
+        s.z = Math.max(h.z, faceZ(h.y) + BODY_R + 0.08);
+        s.lock = 0.3;
+        s.sfx.push("keep");
+        s.prevHolding = false;
+        s.holding = false;
+        return s;
+      }
       s.endingT += dt;
       s.angle = 0;
       s.attached = true;
@@ -1243,6 +1322,8 @@
     weight01: weight01,
     params: params,
     wind: wind,
+    gustForecast: gustForecast,
+    PROLOGUE: PROLOGUE,
     stormOf: stormOf,
     faceZ: faceZ,
     routeZ: routeZ,
