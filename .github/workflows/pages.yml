@@ -37,11 +37,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Assemble the static game
-        run: |
-          mkdir -p _site/vendor
-          cp index.html game.js render.js .nojekyll _site/
-          cp vendor/three.min.js _site/vendor/
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify the download budget and assemble the game
+        run: npm run build
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site

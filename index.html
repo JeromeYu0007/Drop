@@ -8,147 +8,139 @@
 <title>放下</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect fill='%2307080c' width='32' height='32'/%3E%3Cpath d='M7 27 L16 5 L25 27' fill='none' stroke='%23f3efe6' stroke-width='1.2'/%3E%3C/svg%3E">
 <style>
-  :root { --paper: #f3efe6; --dim: rgba(243,239,230,.72); --ink: #07080c; }
+  :root { --paper: #eee6d5; --dim: rgba(238,230,213,.62); --ink: #080f14; --gold: #d1b98b; }
   * { box-sizing: border-box; }
   html, body {
     margin: 0; height: 100%; background: var(--ink); color: var(--paper);
     overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none;
     font-family: "Songti SC", "STSong", "Noto Serif CJK SC", "Source Han Serif SC", "PMingLiU", "SimSun", Palatino, serif;
+    -webkit-font-smoothing: antialiased;
   }
   #c { outline: none; position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
   #ui { position: fixed; inset: 0; pointer-events: none; }
   button {
-    pointer-events: none; background: none; border: 0; color: var(--paper);
-    font: inherit; letter-spacing: 0.22em; font-size: 14px; opacity: 0.84;
+    pointer-events: none; appearance: none; background: none; border: 0; color: var(--paper);
+    font: inherit; letter-spacing: .16em; font-size: 14px; opacity: .82;
     padding: 12px 10px; cursor: pointer; touch-action: manipulation;
+    transition: opacity .2s, color .2s, background .2s; -webkit-tap-highlight-color: transparent;
   }
+  button:hover, button:focus-visible { opacity: 1; color: #fff4dc; }
+  button:focus-visible { outline: 1px solid var(--gold); outline-offset: 4px; }
   #bar button, #pack.show button, #ending.show button, #endChoices button, #resume.show button { pointer-events: auto; }
   #pack:not(.show), #ending:not(.show) { visibility: hidden; }
-  #pack:not(.show), #pack:not(.show) *,
-  #ending:not(.show), #ending:not(.show) * { pointer-events: none !important; }
+  #pack:not(.show), #pack:not(.show) *, #ending:not(.show), #ending:not(.show) * { pointer-events: none !important; }
   #bar {
-    position: absolute; top: 0; left: 0; right: 0;
-    display: flex; justify-content: space-between;
-    padding: calc(8px + env(safe-area-inset-top)) calc(10px + env(safe-area-inset-right)) 0 calc(10px + env(safe-area-inset-left));
+    position: absolute; inset: 0 0 auto; display: flex; justify-content: space-between;
+    padding: calc(12px + env(safe-area-inset-top)) calc(18px + env(safe-area-inset-right)) 0 calc(18px + env(safe-area-inset-left));
+    background: linear-gradient(rgba(4,9,13,.25), transparent);
   }
+  #bar button { min-width: 48px; min-height: 44px; font-size: 12px; letter-spacing: .22em; opacity: .58; text-shadow: 0 1px 12px #03080d; }
+  #bar button:hover, #bar button:focus-visible { opacity: 1; }
+  #mute.off { opacity: .38; }
   #prologue, #whisper, #ending, #hint, #resume {
     position: absolute; left: 50%; transform: translateX(-50%);
-    text-align: center; text-shadow: 0 2px 18px rgba(0,0,0,.72);
+    text-align: center; text-shadow: 0 2px 20px rgba(0,0,0,.7);
   }
   #prologue {
-    top: 13vh; width: min(84vw, 540px); opacity: 0; transition: opacity .8s ease;
+    top: 10vh; width: min(82vw, 510px); padding: 12px 18px 24px;
+    opacity: 0; transition: opacity .7s ease;
+    background: radial-gradient(ellipse at 50% 40%, rgba(5,12,17,.25), transparent 73%);
   }
-  #prologue p {
-    margin: 0.75em 0; font-size: clamp(16px, 2.15vh, 20px);
-    letter-spacing: 0.12em; line-height: 1.85; opacity: 0; transition: opacity 1.3s ease;
-  }
-  #prologue.show { opacity: 1; }
-  #prologue.show p { opacity: 1; }
-  #prologue p:nth-of-type(2) { transition-delay: .45s; }
-  #prologue p:nth-of-type(3) { transition-delay: .9s; }
-  #hint {
-    bottom: calc(8vh + env(safe-area-inset-bottom)); width: min(90vw, 420px);
-    font-size: 14px; letter-spacing: 0.14em; opacity: 0; transition: opacity .6s ease;
-  }
-  #whisper {
-    top: 15vh; width: min(82vw, 440px); margin: 0;
-    font-size: 17px; letter-spacing: 0.14em; line-height: 1.7; opacity: 0;
-  }
-  #meter {
-    position: absolute; right: calc(16px + env(safe-area-inset-right));
-    top: 16vh; bottom: 14vh; width: 64px;
-  }
-  #meter .track {
-    position: absolute; right: 8px; top: 0; bottom: 0; width: 1px;
-    background: linear-gradient(to top, rgba(243,239,230,.28), rgba(196,90,70,.95));
-  }
-  #bestMark { position: absolute; right: 4px; width: 9px; height: 1px; background: #e6c27a; transform: translateY(50%); }
-  #nowMark {
-    position: absolute; right: 3px; width: 10px; height: 10px; border-radius: 50%;
-    border: 1px solid var(--paper); background: #c45a46; transform: translateY(50%);
-  }
-  #alt {
-    position: absolute; right: 18px; top: 50%; transform: translateY(-50%);
-    font-size: 12px; letter-spacing: 0.08em; white-space: nowrap;
-    text-shadow: 0 1px 6px rgba(0,0,0,.7);
-  }
-  #pack {
-    position: absolute; left: 50%; bottom: calc(6vh + env(safe-area-inset-bottom));
-    transform: translateX(-50%); width: min(92vw, 420px);
-    padding: 22px 22px 16px; background: linear-gradient(145deg, rgba(15,21,25,.94), rgba(8,12,16,.94));
-    border: 1px solid rgba(243,239,230,.16); border-radius: 2px;
-    box-shadow: 0 20px 80px rgba(0,0,0,.4); backdrop-filter: blur(16px);
-    opacity: 0; pointer-events: none; text-align: center; transition: opacity .5s ease;
-  }
+  #prologue h1 { margin: 0 0 10px; font-size: clamp(38px, 6.8vh, 68px); font-weight: 400; line-height: 1.2; letter-spacing: .44em; text-indent: .44em; color: #f4e8ce; }
+  #prologue .subtitle { display: block; margin-bottom: 25px; font: 9px/1.4 system-ui, sans-serif; letter-spacing: .55em; text-indent: .55em; color: rgba(238,230,213,.52); }
+  #prologue p { margin: .9em 0 0; font-size: 15px; letter-spacing: .075em; line-height: 1.95; color: rgba(238,230,213,.76); opacity: 0; transition: opacity 1s ease; text-wrap: pretty; }
+  #prologue p:first-of-type { margin: 0 0 1.1em; font-size: clamp(17px, 2.35vh, 22px); letter-spacing: .1em; line-height: 1.7; color: #f4e8d1; }
+  #prologue p:last-of-type { margin-top: 1em; font-size: 13px; letter-spacing: .18em; color: rgba(238,230,213,.58); }
+  #prologue.show, #prologue.show p { opacity: 1; }
+  #prologue p:nth-of-type(2) { transition-delay: .3s; }
+  #prologue p:nth-of-type(3) { transition-delay: .65s; }
+  #hint { bottom: calc(6.5vh + env(safe-area-inset-bottom)); width: min(88vw, 440px); margin: 0; font-size: 12px; line-height: 1.9; letter-spacing: .14em; white-space: pre-line; color: rgba(238,230,213,.72); opacity: 0; transition: opacity .4s ease; }
+  #hint::before { content: ""; display: block; width: 22px; height: 1px; margin: 0 auto 12px; background: rgba(219,197,157,.55); }
+  #whisper { top: 17vh; width: min(82vw, 460px); margin: 0; font-size: clamp(15px, 2.1vh, 19px); letter-spacing: .12em; line-height: 1.9; opacity: 0; }
+  #meter { position: absolute; right: calc(19px + env(safe-area-inset-right)); top: 28vh; bottom: 24vh; width: 56px; opacity: .7; transition: opacity .7s; }
+  #meter .track { position: absolute; right: 6px; top: 0; bottom: 0; width: 1px; background: linear-gradient(transparent, rgba(230,222,202,.32) 8%, rgba(230,222,202,.18) 92%, transparent); }
+  #meter .track::before, #meter .track::after { content: ""; position: absolute; right: -2px; width: 5px; height: 1px; background: rgba(230,222,202,.38); }
+  #meter .track::before { top: 0; } #meter .track::after { bottom: 0; }
+  #bestMark { position: absolute; right: 3px; width: 7px; height: 1px; background: rgba(216,185,130,.8); transform: translateY(50%); }
+  #nowMark { position: absolute; right: 3px; width: 7px; height: 7px; border: 1px solid rgba(242,230,204,.9); border-radius: 50%; background: #b99a68; box-shadow: 0 0 10px rgba(226,190,126,.22); transform: translateY(50%); }
+  #alt { position: absolute; right: 15px; top: 50%; transform: translateY(-50%); font: 10px/1.2 system-ui, sans-serif; font-weight: 400; font-variant-numeric: tabular-nums; letter-spacing: .09em; white-space: nowrap; color: rgba(238,230,213,.84); text-shadow: 0 1px 6px #03080d; }
+  body[data-scene="intro"] #meter { opacity: .26; }
+  body[data-scene="choice"] #meter, body[data-scene="ending"] #meter { opacity: .2; }
+  #pack { position: absolute; left: 50%; bottom: calc(6vh + env(safe-area-inset-bottom)); transform: translateX(-50%); width: min(89vw, 400px); max-height: calc(100vh - 100px); max-height: calc(100svh - 100px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; scrollbar-width: thin; scrollbar-color: rgba(213,185,135,.28) transparent; padding: 24px 26px 18px; background: linear-gradient(150deg, rgba(16,23,27,.96), rgba(7,13,17,.93)); border: 1px solid rgba(224,207,173,.14); box-shadow: 0 24px 90px rgba(0,0,0,.3), inset 0 1px 0 rgba(241,224,191,.06); backdrop-filter: blur(14px); opacity: 0; pointer-events: none; text-align: center; transition: opacity .45s ease; }
+  #pack::before { content: ""; position: absolute; top: 0; left: 42%; width: 16%; height: 1px; background: rgba(213,185,135,.6); }
   #pack.show { opacity: 1; pointer-events: auto; }
-  #pack h2 { margin: 0 0 .6em; font-weight: 400; letter-spacing: .28em; font-size: 22px; }
-  .mem {
-    display: flex; gap: 10px; align-items: center; text-align: left; width: 100%;
-    margin: 0; padding: 12px 0; min-height: 60px;
-    border-bottom: 1px solid rgba(243,239,230,.12);
-  }
-  .mem b { display: block; font-weight: 400; letter-spacing: .16em; }
-  .mem span { display: block; margin-top: .15em; font-size: 12px; letter-spacing: .06em; color: var(--dim); }
-  .mem i { margin-left: auto; flex-shrink: 0; font-style: normal; letter-spacing: .18em; font-size: 13px; color: #e7c9a2; padding: 8px; }
-  #packKeep { margin-top: 4px; letter-spacing: .22em; border-bottom: 1px solid rgba(243,239,230,.45); min-height: 44px; }
-  #ending {
-    top: 17vh; width: min(84vw, 460px); opacity: 0; pointer-events: none; transition: opacity 1.2s ease;
-  }
+  #pack h2 { margin: 0 0 9px; font-size: 24px; line-height: 1.4; font-weight: 400; letter-spacing: .35em; text-indent: .35em; }
+  #packNote { margin: 0 0 16px; font-size: 11px; line-height: 1.65; letter-spacing: .1em; color: var(--dim); }
+  .mem { display: flex; gap: 14px; align-items: center; text-align: left; width: 100%; margin: 0; padding: 13px 0; min-height: 69px; border-bottom: 1px solid rgba(233,219,193,.1); opacity: 1; }
+  .mem:hover, .mem:focus-visible { background: rgba(222,194,151,.045); }
+  .mem .memory-glyph { flex: 0 0 26px; width: 26px; height: 30px; color: #c5af8d; opacity: .7; }
+  .mem b { display: block; font-size: 14px; font-weight: 400; line-height: 1.4; letter-spacing: .15em; }
+  .mem span { display: block; margin-top: 5px; font-size: 12px; letter-spacing: .035em; line-height: 1.65; color: rgba(238,230,213,.6); }
+  .mem i { margin-left: auto; padding: 8px 0 8px 8px; flex-shrink: 0; font-style: normal; font-size: 11px; letter-spacing: .12em; color: #d9bc8e; opacity: .85; }
+  #packKeep { min-height: 44px; margin-top: 11px; padding: 10px 18px 7px; letter-spacing: .22em; font-size: 12px; border-bottom: 1px solid rgba(238,230,213,.32); }
+  #ending { top: 15vh; width: min(84vw, 490px); padding: 32px 26px; background: radial-gradient(ellipse, rgba(5,10,14,.78), rgba(5,10,14,.43) 58%, transparent 75%); opacity: 0; pointer-events: none; transition: opacity 1.3s ease; }
+  #ending::before { content: ""; display: block; width: 28px; height: 1px; margin: 0 auto 26px; background: rgba(221,192,142,.7); }
   #ending.show { opacity: 1; pointer-events: auto; }
-  #passage {
-    margin: 0; font-size: clamp(16px, 2.15vh, 20px); letter-spacing: .14em;
-    line-height: 2; font-weight: 400;
-  }
-  #endChoices { margin-top: 1.6em; display: flex; justify-content: center; gap: 1.6em; }
-  #endChoices button { letter-spacing: .28em; border-bottom: 1px solid rgba(243,239,230,.5); padding: 8px 4px; font-size: 15px; }
-  #backHint {
-    position: absolute; margin: 0; letter-spacing: .16em; font-size: 14px;
-    color: rgba(246,241,232,.86); opacity: 0; pointer-events: none;
-    text-shadow: 0 0 10px rgba(8,6,5,.95), 0 1px 2px rgba(8,6,5,.9);
-    background: radial-gradient(ellipse at center, rgba(12,10,9,.55), rgba(12,10,9,0) 70%);
-    padding: 6px 10px;
-  }
-  #marks { position: absolute; left: 50%; bottom: calc(3.5vh + env(safe-area-inset-bottom)); transform: translateX(-50%); display: flex; gap: 5px; opacity: 0; }
-  #marks.show { opacity: .8; }
-  #marks span { width: 7px; height: 7px; display: block; box-shadow: inset 0 0 0 1px rgba(243,239,230,.55); transform: rotate(45deg); }
-  #marks span.on { background: #f3efe6; }
-  button { transition: opacity .2s ease, background .2s ease; -webkit-tap-highlight-color: transparent; }
-  button:hover, button:focus-visible { opacity: 1; }
-  button:focus-visible { outline: 1px solid #e7c9a2; outline-offset: 4px; }
-  #bar button { min-width: 48px; min-height: 48px; font-size: 12px; letter-spacing: .18em; }
-  #bar { background: linear-gradient(rgba(4,9,13,.35), transparent); }
-  #prologue h1 { margin: 0 0 6px; font-size: clamp(32px, 5vh, 48px); font-weight: 400; letter-spacing: .46em; text-indent: .46em; color: #f4e8d1; }
-  #prologue .subtitle { display: block; margin-bottom: 24px; font: 10px/1.4 system-ui, sans-serif; letter-spacing: .42em; color: rgba(243,239,230,.6); }
-  #prologue p:first-of-type { font-size: clamp(18px, 2.6vh, 23px); color: #f4e8d1; }
-  #prologue p:last-of-type { color: rgba(243,239,230,.72); font-size: 15px; }
-  #packNote { margin: 0 0 12px; font-size: 12px; letter-spacing: .12em; color: var(--dim); }
-  .mem span { line-height: 1.6; }
-  #ending { padding: 24px 18px; background: radial-gradient(ellipse, rgba(5,10,14,.86), rgba(5,10,14,.45) 65%, transparent); }
-  #resume { top: 43%; width: min(82vw, 360px); opacity: 0; visibility: hidden; transition: opacity .3s; }
+  #passage { margin: 0; font-size: clamp(16px, 2.05vh, 20px); letter-spacing: .13em; line-height: 2.1; font-weight: 400; text-wrap: pretty; }
+  #endChoices { margin-top: 2em; display: flex; justify-content: center; gap: 2em; }
+  #endChoices button { min-height: 44px; letter-spacing: .2em; border: 1px solid rgba(238,230,213,.24); padding: 8px 14px; font-size: 13px; opacity: 1; background: rgba(5,10,14,.76); }
+  #backHint { position: absolute; margin: 0; padding: 6px 10px; letter-spacing: .16em; font-size: 13px; color: rgba(246,235,211,.85); opacity: 0; pointer-events: none; text-shadow: 0 1px 12px #03080d; background: radial-gradient(ellipse, rgba(8,13,18,.45), transparent 73%); }
+  #marks { position: absolute; left: 50%; bottom: calc(3vh + env(safe-area-inset-bottom)); transform: translateX(-50%); display: flex; gap: 7px; opacity: 0; transition: opacity .6s; }
+  #marks.show { opacity: .55; }
+  #marks span { width: 4px; height: 4px; display: block; box-shadow: inset 0 0 0 1px rgba(238,230,213,.45); transform: rotate(45deg); }
+  #marks span.on { background: #e6c894; box-shadow: 0 0 5px rgba(230,200,148,.25); }
+  #resume { top: 42%; width: min(82vw, 360px); opacity: 0; visibility: hidden; transition: opacity .3s; }
   #resume.show { opacity: 1; visibility: visible; }
-  #resume button { background: rgba(9,17,23,.9); border: 1px solid rgba(243,239,230,.35); min-height: 52px; padding: 14px 28px; }
+  #resume button { min-height: 54px; padding: 16px 28px; background: rgba(9,17,23,.94); border: 1px solid rgba(229,207,168,.3); letter-spacing: .2em; }
+  #resume button:disabled { opacity: .5; cursor: default; }
   #resume p { color: var(--dim); font-size: 12px; letter-spacing: .12em; }
   body.paused #pack, body.paused #ending, body.paused #prologue { visibility: hidden; }
   body.paused #hint, body.paused #backHint, body.paused #whisper { opacity: 0 !important; }
+  @media (min-width: 1000px) { #pack { left: 60%; } }
   @media (max-height: 600px) and (min-aspect-ratio: 4/5) {
-    #pack { bottom: 4vh; width: min(82vw, 560px); padding: 14px 20px 10px; }
-    #packItems { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; }
-    #pack h2 { font-size: 19px; margin-bottom: 6px; }
+    #pack { bottom: 4vh; width: min(82vw, 600px); padding: 14px 22px 9px; }
+    #packItems { display: grid; grid-template-columns: 1fr 1fr; gap: 0 20px; }
+    #pack h2 { font-size: 19px; margin-bottom: 5px; }
     #packNote { margin-bottom: 4px; }
-    .mem { min-height: 58px; padding: 7px 0; }
-    .mem span { font-size: 11px; }
-    #prologue { top: 8vh; width: min(86vw, 680px); }
-    #prologue h1 { font-size: 30px; }
+    .mem { min-height: 60px; padding: 8px 0; gap: 10px; }
+    .mem .memory-glyph { flex-basis: 22px; width: 22px; }
+    .mem b { font-size: 13px; } .mem span { font-size: 11px; line-height: 1.55; }
+    #packKeep { margin-top: 5px; }
+    #prologue { top: 6vh; width: min(86vw, 690px); padding: 4px 20px 14px; }
+    #prologue h1 { font-size: 32px; margin-bottom: 6px; }
     #prologue .subtitle { margin-bottom: 12px; }
-    #prologue p { font-size: 15px; line-height: 1.65; margin: .5em 0; }
-    #ending { top: 9vh; width: min(78vw, 650px); }
-    #passage { font-size: 16px; line-height: 1.8; }
+    #prologue p { font-size: 13px; line-height: 1.65; margin-top: .55em; }
+    #prologue p:first-of-type { font-size: 17px; margin-bottom: .6em; }
+    #prologue p:last-of-type { font-size: 12px; margin-top: .6em; }
+    #ending { top: 7vh; width: min(78vw, 650px); padding: 20px 25px; }
+    #ending::before { margin-bottom: 16px; }
+    #passage { font-size: 15px; line-height: 1.85; }
+    #endChoices { margin-top: 1.2em; }
+    #hint { bottom: 5vh; font-size: 11px; }
+    #hint::before { display: none; }
+  }
+  @media (max-aspect-ratio: 4/5) {
+    #bar { padding-left: calc(12px + env(safe-area-inset-left)); padding-right: calc(12px + env(safe-area-inset-right)); }
+    #prologue { top: 9vh; padding: 10px 2px 22px; }
+    #prologue h1 { font-size: 43px; }
+    #prologue .subtitle { margin-bottom: 22px; }
+    #prologue p { font-size: 14px; line-height: 1.9; }
+    #prologue p:first-of-type { font-size: 18px; }
+    #prologue p:last-of-type { font-size: 12px; }
+    #passage { letter-spacing: .08em; }
+    #ending { padding-left: 15px; padding-right: 15px; }
+  }
+  @media (max-aspect-ratio: 4/5) and (max-height: 650px) {
+    #pack { width: 92vw; padding: 17px 18px 11px; }
+    #pack h2 { font-size: 21px; margin-bottom: 6px; }
+    #packNote { margin-bottom: 9px; font-size: 10px; }
+    .mem { gap: 10px; min-height: 65px; padding: 10px 0; }
+    .mem .memory-glyph { flex-basis: 22px; width: 22px; }
+    .mem b { font-size: 13px; }
+    .mem span { font-size: 11.5px; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    #packKeep { margin-top: 6px; }
   }
   @media (prefers-reduced-motion: reduce) { * { transition-duration: 0s !important; } }
-  @media (max-aspect-ratio: 4/5) {
-    #prologue { top: 10vh; }
-    #passage { letter-spacing: .1em; }
-  }
 </style>
 </head>
 <body>
@@ -181,7 +173,9 @@
 </div>
 <script src="vendor/three.min.js?v=c3b026a"></script>
 <script src="game.js?v=a8022f6ce372"></script>
-<script src="render.js?v=bc7a4e9e02b6"></script>
+<script src="world.js?v=71da76665f33"></script>
+<script src="character.js?v=cb884e4245a7"></script>
+<script src="render.js?v=a98f4c6168b8"></script>
 <script>
 "use strict";
 const FX = window.Fangxia;
@@ -305,7 +299,7 @@ function setPaused(value) {
   cancelCharge(); acc = 0; last = 0; slowSeconds = 0;
   document.body.classList.toggle("paused", value);
   ui.resume.classList.toggle("show", value);
-  if (value) { persist(); saveSession(); if (ac) ac.suspend().catch(function () {}); }
+  if (value) { persist(); saveSession(); stopSoundVoices(); if (ac) ac.suspend().catch(function () {}); }
   else { if (ac && !muted) ac.resume().catch(function () {}); }
 }
 const restoredSession = restoreSession();
@@ -332,68 +326,166 @@ function holdNear(y) {
 }
 
 let ac = null, gustOn = false;
+const soundTimes = Object.create(null);
+let audioTick = -1;
 function ensureAudio() {
   if (ac || muted) return;
   const AC = window.AudioContext || window.webkitAudioContext;
   if (!AC) return;
   ac = new AC();
-  const n = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate);
-  const d = n.getChannelData(0);
-  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-  const src = ac.createBufferSource();
-  src.buffer = n; src.loop = true;
-  const f = ac.createBiquadFilter();
-  f.type = "lowpass"; f.frequency.value = 400;
-  const g = ac.createGain(); g.gain.value = 0.0;
-  const master = ac.createGain(); master.gain.value = muted ? 0 : 1; master.connect(ac.destination);
-  src.connect(f); f.connect(g); g.connect(master);
-  ac._master = master;
-  src.start();
-  ac._wind = g; ac._filt = f;
+  const noise = ac.createBuffer(2, ac.sampleRate * 2, ac.sampleRate);
+  for (let channel = 0; channel < 2; channel++) {
+    const data = noise.getChannelData(channel);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+  }
+  const master = ac.createGain(); master.gain.value = muted ? 0 : 1;
+  const limiter = ac.createDynamicsCompressor();
+  limiter.threshold.value = -16; limiter.knee.value = 16;
+  limiter.ratio.value = 4; limiter.attack.value = .008; limiter.release.value = .22;
+  master.connect(limiter); limiter.connect(ac.destination);
+  ac._master = master; ac._noise = noise; ac._voices = new Set();
+  function windLayer(type, frequency, q) {
+    const source = ac.createBufferSource(), filter = ac.createBiquadFilter(), gain = ac.createGain();
+    source.buffer = noise; source.loop = true;
+    filter.type = type; filter.frequency.value = frequency; filter.Q.value = q;
+    gain.gain.value = 0;
+    source.connect(filter); filter.connect(gain); gain.connect(master); source.start();
+    return { source: source, filter: filter, gain: gain };
+  }
+  const body = windLayer("lowpass", 360, .55), air = windLayer("bandpass", 1250, .65);
+  ac._wind = body.gain; ac._filt = body.filter;
+  ac._air = air.gain; ac._airFilter = air.filter;
+}
+function stopSoundVoices() {
+  if (!ac || !ac._voices) return;
+  const now = ac.currentTime;
+  ac._voices.forEach(function (voice) {
+    voice.gain.gain.cancelScheduledValues(now);
+    voice.gain.gain.setValueAtTime(.00001, now);
+    try { voice.source.stop(now); } catch (e) {}
+  });
+  Object.keys(soundTimes).forEach(function (key) { delete soundTimes[key]; });
+  gustOn = false; audioTick = -1;
+}
+function connectVoice(source, gain, nodes) {
+  const voice = { source: source, gain: gain };
+  ac._voices.add(voice);
+  source.onended = function () {
+    nodes.forEach(function (node) { try { node.disconnect(); } catch (e) {} });
+    ac._voices.delete(voice);
+  };
+  gain.connect(ac._master);
+}
+function soundEnvelope(gain, when, duration, volume, attack) {
+  gain.gain.setValueAtTime(.00001, when);
+  gain.gain.linearRampToValueAtTime(volume, when + Math.min(attack || .006, duration * .45));
+  gain.gain.exponentialRampToValueAtTime(.00001, when + duration);
+}
+function noiseSound(duration, frequency, volume, options) {
+  if (!ac || muted || paused) return;
+  options = options || {};
+  const when = ac.currentTime + (options.delay || 0), source = ac.createBufferSource();
+  const filter = ac.createBiquadFilter(), gain = ac.createGain();
+  source.buffer = ac._noise;
+  filter.type = options.type || "bandpass";
+  filter.Q.value = options.q || .7;
+  filter.frequency.setValueAtTime(frequency, when);
+  if (options.end) filter.frequency.exponentialRampToValueAtTime(options.end, when + duration);
+  soundEnvelope(gain, when, duration, volume, options.attack || .006);
+  source.connect(filter); filter.connect(gain); connectVoice(source, gain, [source, filter, gain]);
+  source.start(when, Math.random() * Math.max(.01, 1.8 - duration)); source.stop(when + duration + .015);
+}
+function bodyTone(frequency, duration, volume, options) {
+  if (!ac || muted || paused) return;
+  options = options || {};
+  const when = ac.currentTime + (options.delay || 0), source = ac.createOscillator(), gain = ac.createGain();
+  source.type = options.type || "sine";
+  source.frequency.setValueAtTime(frequency, when);
+  if (options.end) source.frequency.exponentialRampToValueAtTime(options.end, when + duration);
+  soundEnvelope(gain, when, duration, volume, options.attack || .005);
+  source.connect(gain); connectVoice(source, gain, [source, gain]);
+  source.start(when); source.stop(when + duration + .02);
 }
 function gustAudio(fc) {
-  if (muted || paused || !ac) return;
-  const amp = Math.min(0.08, 0.004 + Math.abs(fc.now) * 0.02 + Math.abs(fc.soon) * 0.012);
-  ac._wind.gain.setTargetAtTime(amp, ac.currentTime, 0.2);
-  ac._filt.frequency.setTargetAtTime(280 + Math.abs(fc.soon) * 500, ac.currentTime, 0.3);
-  const coming = Math.abs(fc.soon) > Math.abs(fc.now) + 0.25 && Math.abs(fc.soon) > 0.45;
-  if (coming && !gustOn) {
-    gustOn = true;
-    const o = ac.createOscillator();
-    const g = ac.createGain();
-    o.type = "triangle";
-    o.frequency.setValueAtTime(90, ac.currentTime);
-    o.frequency.exponentialRampToValueAtTime(220, ac.currentTime + 0.7);
-    g.gain.setValueAtTime(0.0001, ac.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.04, ac.currentTime + 0.55);
-    g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + 0.95);
-    o.connect(g); g.connect(ac._master);
-    o.start(); o.stop(ac.currentTime + 1);
-  }
-  if (!coming) gustOn = false;
+  if (muted || paused || !ac || ac.currentTime - audioTick < .05) return;
+  const now = ac.currentTime; audioTick = now;
+  const height = clamp01((state.y - 8) / (FX.SUMMIT_Y - 8));
+  const ending = state.mode === "ending" ? .24 : 1;
+  const pressure = Math.abs(fc.now), preview = Math.abs(fc.soon);
+  // Two moving air bands give the forecast a physical lead rather than an alert tone.
+  ac._wind.gain.setTargetAtTime(Math.min(.16, .018 + height * .025 + pressure * .045 + preview * .018) * ending, now, .24);
+  ac._filt.frequency.setTargetAtTime(260 + height * 230 + preview * 420, now, .28);
+  ac._air.gain.setTargetAtTime(Math.min(.048, .003 + height * .008 + preview * .02) * ending, now, .22);
+  ac._airFilter.frequency.setTargetAtTime(950 + preview * 640 + Math.sin(state.time * .27) * 110, now, .3);
+  const coming = preview > pressure + .25 && preview > .45;
+  if (coming && !gustOn) noiseSound(.8, 650, .025 + height * .018, { end: 1600, attack: .32, q: .8 });
+  gustOn = coming;
 }
-function tone(freq, dur, type, gain) {
-  if (!ac || muted) return;
-  const o = ac.createOscillator();
-  const g = ac.createGain();
-  o.type = type || "sine";
-  o.frequency.value = freq;
-  g.gain.setValueAtTime(gain || 0.05, ac.currentTime);
-  g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + dur);
-  o.connect(g); g.connect(ac._master);
-  o.start(); o.stop(ac.currentTime + dur);
+function memorySound(kind, retrieving) {
+  if (kind === "ring" || kind === "trophy") {
+    const fundamental = kind === "ring" ? 1120 : 420;
+    [1, 1.47, 2.13].forEach(function (ratio, i) {
+      bodyTone(fundamental * ratio, .48 - i * .08, .012 / (i + 1), { delay: retrieving ? i * .025 : .025, attack: .004 });
+    });
+    noiseSound(.11, 1800, .012, { delay: .015 });
+  } else {
+    noiseSound(.17, 2300, .025, { end: 900, attack: .025 });
+    noiseSound(.14, 1600, .012, { delay: .10, end: 650, attack: .02 });
+  }
+  if (retrieving) bodyTone(196, .65, .016, { delay: .08, attack: .08 });
 }
 function playSfx(list) {
-  if (!list || !list.length || muted || paused) return;
-  if (!ac) return;
-  list.forEach(function (s) {
-    if (s === "catch" || s === "land") tone(s === "land" ? 90 : 180, 0.12, "sine", 0.06);
-    else if (s === "release") tone(240, 0.08, "triangle", 0.04);
-    else if (s === "arm") tone(520, 0.06, "sine", 0.03);
-    else if (s === "impact") tone(50, 0.3, "sawtooth", 0.07);
-    else if (s === "summit") tone(330, 0.5, "sine", 0.05);
-    else if (s === "slip") tone(140, 0.15, "triangle", 0.04);
+  if (!list || !list.length || muted || paused || !ac) return;
+  const intervals = { arm: .28, catch: .075, land: .075, near: .5, pickup: .16, keep: .15 };
+  list.forEach(function (event) {
+    if (event === "restart") { stopSoundVoices(); return; }
+    const now = ac.currentTime;
+    if (now - (soundTimes[event] == null ? -100 : soundTimes[event]) < (intervals[event] || .035)) return;
+    soundTimes[event] = now;
+    const h = FX.HOLDS[state.holdIndex], ice = h && h.k === "ice";
+    if (event === "catch" || event === "land" || event === "ledge") {
+      const heavy = event !== "catch";
+      noiseSound(.085, ice ? 2600 : 1350, heavy ? .075 : .052, { end: ice ? 1900 : 620, q: .65 });
+      bodyTone(heavy ? 92 : 138, .11, heavy ? .065 : .035, { end: heavy ? 55 : 80 });
+      noiseSound(.19, 560, .022, { delay: .035, end: 260, attack: .018 });
+      if (event === "ledge") noiseSound(.12, 920, .018, { delay: .16, end: 480 });
+    } else if (event === "release") {
+      noiseSound(.19, 620, .038, { end: 1300, attack: .035, q: .85 });
+      noiseSound(.12, 260, .022, { end: 155, attack: .018, q: 1.7 });
+    } else if (event === "arm") {
+      noiseSound(.032, 2100, .014, { type: "highpass", attack: .002 });
+    } else if (event === "impact") {
+      bodyTone(62, .3, .11, { end: 31, attack: .004 });
+      noiseSound(.32, 480, .11, { type: "lowpass", end: 110, attack: .006 });
+      noiseSound(.36, 1700, .04, { delay: .06, end: 550, attack: .018 });
+    } else if (event === "slip") {
+      noiseSound(.21, 1800, .05, { end: 420, attack: .012, q: 1.1 });
+      noiseSound(.14, 340, .023, { delay: .025, end: 180, attack: .018 });
+    } else if (event === "near") {
+      noiseSound(.16, 1200, .025, { end: 440, attack: .025 });
+    } else if (event === "drop") {
+      memorySound(state.dropKind, false);
+    } else if (event === "pickup") {
+      memorySound(state.reveal, true);
+    } else if (event === "keep") {
+      noiseSound(.1, 680, .013, { end: 320, attack: .015 });
+    } else if (event === "summit") {
+      [196, 246.94, 293.66].forEach(function (frequency, i) {
+        bodyTone(frequency, 2.8 + i * .25, .022, { delay: i * .18, attack: .28 });
+        bodyTone(frequency * 2, 2.2, .005, { delay: i * .18, attack: .32 });
+      });
+    }
   });
+}
+
+function memoryGlyph(kind) {
+  const shapes = {
+    trophy: '<path d="M10 5h12v6c0 6-3 8-6 8s-6-2-6-8V5Z M10 8H6v3c0 4 3 5 6 5 M22 8h4v3c0 4-3 5-6 5 M16 19v6 M11 27h10 M13 25h6"/>',
+    letter: '<rect x="5" y="8" width="22" height="17" rx="1"/><path d="m6 9 10 8L26 9 M6 24l7-7 M26 24l-7-7"/>',
+    ring: '<ellipse cx="16" cy="19" rx="8" ry="9"/><path d="m12 8 4-4 4 4-4 5-4-5Z M12 8h8"/>',
+    photo: '<path d="m6 4 22 2-2 24-22-2 2-24Z M8 8l16 1-1 14-16-1L8 8Z M8 21l6-6 4 4 3-3 2 3"/><circle cx="19" cy="12" r="1.5"/>'
+  };
+  return '<svg class="memory-glyph" aria-hidden="true" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round">' + shapes[kind] + '</svg>';
 }
 
 function syncUI(dt) {
@@ -416,7 +508,7 @@ function syncUI(dt) {
     if (holding) prologueLeft = Math.min(prologueLeft, 0.4);
   } else ui.prologue.classList.remove("show");
   ui.hint.style.opacity = state.catches < 2 && state.mode === "play" && !paused ? "0.8" : "0";
-  ui.hint.textContent = state.attached ? "按住蓄力，弧线碰到岩点再松开" : "下坠时按住，伸手抓住岩点";
+  ui.hint.textContent = state.attached ? (holding ? "感受摆动\n弧线接近岩点时松开" : "按住蓄力，松手跃起\n让弧线接近下一处岩点") : "下坠时按住，伸手抓住岩点";
   const showPack = state.mode === "ledge";
   ui.pack.classList.toggle("show", showPack);
   const signature = showPack ? String(state.mask) : "";
@@ -427,7 +519,7 @@ function syncUI(dt) {
       if (!(state.mask & spec.bit)) return;
       const b = document.createElement("button");
       b.className = "mem"; b.type = "button";
-      b.innerHTML = "<div><b></b><span></span></div><i>放下</i>";
+      b.innerHTML = memoryGlyph(k) + "<div><b></b><span></span></div><i>放下</i>";
       b.querySelector("b").textContent = spec.zh;
       b.querySelector("span").textContent = spec.lineZh;
       b.addEventListener("click", function (e) {
@@ -460,6 +552,8 @@ function syncUI(dt) {
     }
   }
   ui.marks.classList.toggle("show", showEnd || prologueLeft > 0);
+  const sceneState = paused ? "paused" : showEnd ? "ending" : showPack ? "choice" : prologueLeft > 0 ? "intro" : "climb";
+  if (document.body.dataset.scene !== sceneState) document.body.dataset.scene = sceneState;
   const top = FX.HOLDS[FX.HOLDS.length - 1].y;
   const t = 1 - clamp01((state.y - 8) / (top - 8));
   ui.now.style.top = (t * 100) + "%";
@@ -475,6 +569,7 @@ function wakeAudio() {
 }
 ui.mute.addEventListener("click", function (e) {
   e.stopPropagation(); muted = !muted;
+  if (muted) stopSoundVoices();
   ui.mute.classList.toggle("off", muted);
   ui.mute.textContent = muted ? "静" : "声";
   ui.mute.setAttribute("aria-label", muted ? "开启声音" : "静音");
@@ -538,6 +633,7 @@ canvas.addEventListener("webglcontextlost", function (e) {
   e.preventDefault(); pauseForContextLoss();
 });
 canvas.addEventListener("webglcontextrestored", function () {
+  if (live) FXRender.restoreContext();
   contextLost = false;
   ui.resumePlay.disabled = false;
   ui.resumePlay.textContent = "继续攀登";
@@ -573,8 +669,8 @@ function applyShot(name) {
     state.attached = false; state.mode = "play";
     state.vy = 9.5; state.vz = -0.4; state.flightT = 0.28;
     state.y = h.y + 1.15; state.z = h.z + 0.42;
-  } else if (name !== "ending" && name !== "choices") {
-    state.attached = true; state.y = h.y - 0.55; state.z = h.z;
+  } else {
+    state.attached = true; state.y = h.y + (state.crown ? 0.22 : -0.55); state.z = h.z;
   }
   camY = state.y; focusZ = state.z;
 }

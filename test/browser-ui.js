@@ -12,9 +12,9 @@ async function main() {
   const root = path.resolve(__dirname, "..");
   const out = process.env.DROP_CAPTURE_DIR || "/tmp/drop-validation";
   fs.mkdirSync(out, { recursive: true });
-  // Snapshot the three source files so a concurrent edit cannot invalidate
+  // Snapshot the runtime asset closure so a concurrent edit cannot invalidate
   // the route version between saving a session and reloading it in this test.
-  const sources = new Map(["index.html", "game.js", "render.js", "vendor/three.min.js"].map(name => [name, fs.readFileSync(path.join(root, name))]));
+  const sources = require("./budget.js").runtimeFiles(root);
   const server = http.createServer((req, res) => {
     const name = new URL(req.url, "http://localhost").pathname.replace(/^\//, "") || "index.html";
     if (!sources.has(name)) { res.writeHead(404); res.end(); return; }
@@ -163,6 +163,23 @@ async function main() {
       return !!window.__contextLossTest;
     });
     if (canLoseContext) {
+      // Freeze a real scene and compare the rendered pixels across context
+      // restoration. Resuming physics alone misses lost generated GPU content
+      // such as the environment reflection map.
+      await page.evaluate(() => { setPaused(true); quality = 2; FXRender.setQuality(2); resize(); });
+      await page.waitForTimeout(150);
+      await page.evaluate(() => {
+        const gl = document.querySelector("canvas").getContext("webgl2");
+        const options = { state: structuredClone(__fx.state), dt: 0, camY, focusZ, alt: .25 };
+        window.captureRestoredScene = () => {
+          FXRender.draw(options);
+          const pixels = new Uint8Array(gl.drawingBufferWidth * gl.drawingBufferHeight * 4);
+          gl.readPixels(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+          return pixels;
+        };
+        captureRestoredScene();
+        window.beforeContextLossPixels = captureRestoredScene();
+      });
       phase = "WebGL context loss";
       await page.evaluate(() => window.__contextLossTest.loseContext());
       await page.waitForFunction(() => __fx.paused && document.querySelector("#resumePlay").disabled);
@@ -174,6 +191,20 @@ async function main() {
       await page.evaluate(() => window.__contextLossTest.restoreContext());
       await page.waitForFunction(() => !document.querySelector("#resumePlay").disabled);
       assert.equal(await page.evaluate(() => __fx.paused), true, "restored graphics still await deliberate resume");
+      const restoredPixels = await page.evaluate(() => {
+        captureRestoredScene();
+        const after = captureRestoredScene(), before = beforeContextLossPixels;
+        let sum = 0, changed = 0, signal = 0;
+        for (let i = 0; i < before.length; i++) {
+          if (i % 4 === 3) continue;
+          const delta = Math.abs(before[i] - after[i]);
+          sum += delta; if (delta > 2) changed++; signal += before[i];
+        }
+        return { sameSize: before.length === after.length, meanDelta: sum / (before.length * .75), changedRatio: changed / (before.length * .75), signal };
+      });
+      assert(restoredPixels.sameSize && restoredPixels.signal > 0, "compare a nonempty restored framebuffer of equal size");
+      assert(restoredPixels.meanDelta < .1 && restoredPixels.changedRatio < .001, "restored lighting and generated GPU content match the frozen original scene: " + JSON.stringify(restoredPixels));
+      console.log("PASS restored lighting matches original pixels", restoredPixels);
       phase = "resume after WebGL restoration";
       await page.locator("#resumePlay").click();
       assert.equal(await page.evaluate(() => __fx.paused), false);

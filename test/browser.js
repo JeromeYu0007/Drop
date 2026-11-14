@@ -60,7 +60,7 @@ async function main() {
       if (s.i !== lastI) { console.log(JSON.stringify({ stage, moves, ...s })); lastI = s.i; }
       if (s.mode === "ending") {
         await release();
-        await page.waitForTimeout(900);
+        await page.waitForFunction(() => __fx.state.endingT > 2.1 && Number(getComputedStyle(document.querySelector("#ending")).opacity) > .99);
         await capture(stage === "return-ascent" ? "reclaimed-ending" : "first-ending");
         if (stage === "return-ascent") { assert.equal(s.mask, 15); console.log("PASS browser ascent / drop / ending / descent / pickup / re-ascent", { moves, setbacks, elapsedSeconds: (Date.now() - started) / 1000 }); break; }
         assert.equal(s.mask, 11, "trophy was left below");

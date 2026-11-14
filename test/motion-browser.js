@@ -44,10 +44,10 @@ async function main() {
           while(motionClock + 1/120 <= target + 1e-7) {
             const holding = motionClock < release - 1e-7 || (!s.attached && s.vy < 0);
             F.step(s,1/120,{holding,freezeIntro:true}); motionClock+=1/120;
-            // Draw at 60 Hz so stateful release/catch blending follows real time.
+            // Advance the production pose history at 60 Hz; render only sampled
+            // frames so screenshots do not queue hundreds of GPU frames on software WebGL.
             if(Math.round(motionClock*120)%2===0) {
-              FXRender.draw({state:s,dt:1/60,camY:F.HOLDS[s.holdIndex].y,focusZ:s.z,side:true,alt:.1});
-              const p=FXRender.pose, previous=motionLast;
+              const p=FXRender.updatePose(s), previous=motionLast;
               if(p&&previous&&s.attached!==previous.attached) {
                 const movements={};
                 for(const key of ['hip','head','handL','handR','footL','footR']) {
