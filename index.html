@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#07080c">
-<meta name="description" content="放下。按住蓄力，松手跃起，靠近岩点时再次按住抓握。背包里的四件旧物，你会带到哪里？">
+<meta name="description" content="放下。按住蓄力，松手跃起，手够到岩点便会抓住。背包里的四件旧物，你会带到哪里？">
 <title>放下</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect fill='%2307080c' width='32' height='32'/%3E%3Cpath d='M7 27 L16 5 L25 27' fill='none' stroke='%23f3efe6' stroke-width='1.2'/%3E%3C/svg%3E">
 <style>
@@ -155,7 +155,7 @@
 </style>
 </head>
 <body>
-<canvas id="c" tabindex="0" aria-label="放下。按住空格蓄力，松手向上。靠近岩点时再次按住抓握。抓稳后用 W、S 或上下方向键切换攀登方向。"></canvas>
+<canvas id="c" tabindex="0" aria-label="放下。按住空格蓄力，松手向上。手够到目标岩点便会抓住，无需再次按压；失手下坠时可按住伸手自救。抓稳后用 W、S 或上下方向键切换攀登方向。"></canvas>
 <div id="ui">
   <div id="bar">
     <button id="mute" type="button">声</button>
@@ -190,7 +190,7 @@
 </div>
 <script src="vendor/three.min.js?v=c3b026a"></script>
 <script src="surface.js?v=4ddfebd43c6c"></script>
-<script src="game.js?v=cfc568d51ea6"></script>
+<script src="game.js?v=34d4824f8281"></script>
 <script src="world.js?v=2c17b7f690ad"></script>
 <script src="character.js?v=34d4b14a3290"></script>
 <script src="render.js?v=43829711cdec"></script>
@@ -260,7 +260,7 @@ let quality = coarse || innerWidth < innerHeight ? 1 : 2;
 if (live) FXRender.setQuality(quality);
 let camY = 12, focusZ = 0;
 const state = FX.createState();
-let holding = false;
+let holding = false, pendingRelease = false;
 let wantKeep = false, wantDrop = "", wantRetrieve = false, wantDirection = "", restartPulse = false;
 let acc = 0, last = 0;
 let lastDescending = false, directionHintT = 0, lastDropped = 0, recoveredHintT = 0;
@@ -276,7 +276,7 @@ const routeVersion = FX.HOLDS.map(function (h) { return [h.y, h.z, h.k].join(":"
 function cancelCharge() {
   FX.cancelCharge(state);
   if (activePointer !== null && canvas.hasPointerCapture(activePointer)) canvas.releasePointerCapture(activePointer);
-  holding = false; keyHeld = false; activePointer = null;
+  holding = false; pendingRelease = false; keyHeld = false; activePointer = null;
   state.holding = false; state.prevHolding = false; state.holdT = 0;
   if ("grabT" in state) state.grabT = -1;
   state.armed = false; state.dots = [];
@@ -533,7 +533,7 @@ function syncUI(dt) {
   if (state.descending !== lastDescending) {
     directionHintT = 5.5;
     lastDescending = state.descending;
-    canvas.setAttribute("aria-label", "放下。" + (state.descending ? "按住空格稳住身体，松手向下。每次下放都需重新按住、松开。" : "按住空格蓄力，松手向上。") + "靠近岩点时再次按住抓握。抓稳后用 W、S 或上下方向键切换攀登方向。");
+    canvas.setAttribute("aria-label", "放下。" + (state.descending ? "按住空格稳住身体，松手向下。每次下放都需重新按住、松开。" : "按住空格蓄力，松手向上。") + "手够到目标岩点便会抓住，无需再次按压；失手下坠时可按住伸手自救。抓稳后用 W、S 或上下方向键切换攀登方向。");
   }
   directionHintT = Math.max(0, directionHintT - dt);
   if (lastDropped > 0 && !dropped && state.returning) recoveredHintT = 6;
@@ -548,14 +548,17 @@ function syncUI(dt) {
   const showHint = state.mode === "play" && !paused && (state.catches < 2 || directionHintT > 0 || recoveredHintT > 0 || resetGrip || !state.attached || state.crown);
   ui.hint.style.opacity = showHint ? "0.8" : "0";
   if (!state.attached) {
-    if (holding && FX.gripActive && FX.gripActive(state)) ui.hint.textContent = "正在伸手\n只有够到岩点才能抓住";
-    else if (holding) ui.hint.textContent = "松开，再次伸手\n靠近岩点时再按住抓握";
-    else ui.hint.textContent = "靠近岩点时再按住抓握\n错过岩点会继续坠落";
+    const reachingTarget = !!FX.launchTarget(state);
+    if (reachingTarget) ui.hint.textContent = "正在伸手接住目标岩点\n无需再次按压";
+    else if (holding && FX.gripActive(state)) ui.hint.textContent = "正在伸手自救\n只有够到岩点才能抓住";
+    else if (holding && state.grabT > FX.gripWindow(state)) ui.hint.textContent = "这次伸手已结束，松开后可再试\n碰不到岩点不会被拉回";
+    else if (holding) ui.hint.textContent = "正在伸手自救\n只有够到岩点才能抓住";
+    else ui.hint.textContent = "失手下坠，按住伸手自救\n碰不到岩点不会被拉回";
   } else if (resetGrip) ui.hint.textContent = "已经抓稳，先松手\n再次按住、松开才会继续" + (state.descending ? "下放" : "上攀");
   else if (recoveredHintT > 0) ui.hint.textContent = "已全部拾回，可切换上攀\n方向由你决定";
   else if (state.crown) ui.hint.textContent = "按住，再松手，走进门里的光\n也可以选择下放，回到岩壁";
-  else if (state.descending) ui.hint.textContent = "按住稳住身体，松手向下\n靠近岩点时再按住抓握";
-  else ui.hint.textContent = holding ? "感受摆动，选择松手时机\n跃起后，靠近岩点时再按住抓握" : "按住蓄力，松手跃起\n靠近岩点时再按住抓握";
+  else if (state.descending) ui.hint.textContent = "按住稳住身体，松手向下\n手够到下一岩点便会抓住";
+  else ui.hint.textContent = holding ? "感受摆动，选择松手时机\n手够到目标岩点便会抓住" : "按住蓄力，松手跃起\n手够到岩点便会抓住，无需再按";
   ui.controls.classList.toggle("show", state.mode === "play" && !paused && prologueLeft <= 0);
   const canTurn = !paused && state.mode === "play" && state.attached;
   ui.directionUp.disabled = !canTurn || state.crown || state.holdIndex >= FX.HOLDS.length - 1;
@@ -674,8 +677,10 @@ function down(e) {
 }
 function up(e) {
   if (e.pointerId !== activePointer) return;
+  const wasHolding = holding;
   activePointer = null;
   holding = keyHeld;
+  if (wasHolding && !holding) pendingRelease = true;
 }
 canvas.addEventListener("pointerdown", down);
 window.addEventListener("pointerup", up);
@@ -696,7 +701,14 @@ addEventListener("keydown", function (e) {
   e.preventDefault(); keyHeld = true; holding = true; wakeAudio();
   prologueLeft = Math.min(prologueLeft, 0.45);
 });
-addEventListener("keyup", function (e) { if (e.code === "Space" && keyHeld) { e.preventDefault(); keyHeld = false; holding = activePointer !== null; } });
+addEventListener("keyup", function (e) {
+  if (e.code === "Space" && keyHeld) {
+    e.preventDefault();
+    const wasHolding = holding;
+    keyHeld = false; holding = activePointer !== null;
+    if (wasHolding && !holding) pendingRelease = true;
+  }
+});
 addEventListener("blur", function () { if (!shot) setPaused(true); });
 document.addEventListener("visibilitychange", function () { if (document.hidden && !shot) setPaused(true); });
 addEventListener("pagehide", function () { persist(); saveSession(); });
@@ -797,11 +809,16 @@ function frame(now) {
 
   const focus = state.mode === "ledge" || state.mode === "drop";
   if (!paused && shotName !== "flight" && shotName !== "swing") acc += raw * (focus ? 0.46 : 1);
-  const input = { holding: holding, restart: restartPulse, keep: wantKeep, dropKind: wantDrop, retrieve: wantRetrieve, direction: wantDirection, freezeIntro: shot };
+  const input = { holding: pendingRelease ? false : holding, restart: restartPulse, keep: wantKeep, dropKind: wantDrop, retrieve: wantRetrieve, direction: wantDirection, freezeIntro: shot };
   let n = 0;
   const sounds = [];
   while (acc >= 1 / 120 && n < 8) {
     FX.step(state, 1 / 120, input);
+    // A release followed by another press between display frames is still a
+    // release. Consume it once, then expose the current held state to physics.
+    // Leave the edge pending when this display frame has no physics tick.
+    pendingRelease = false;
+    input.holding = holding;
     if (state.sfx) sounds.push.apply(sounds, state.sfx);
     acc -= 1 / 120;
     n++;

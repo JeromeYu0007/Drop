@@ -53,15 +53,15 @@ async function main() {
     async function release() { if (holding) { await page.mouse.up(); holding = false; } }
     async function read() { return page.evaluate(() => { const s = __fx.state; return { mode: s.mode, i: s.holdIndex, y: s.y, mask: s.mask, crown: s.crown, attached: s.attached, lost: s.lost.length, falls: s.falls, time: s.time, launches: s.launches, holdT: s.holdT, flightT: s.flightT, descending: s.descending, grabT: s.grabT }; }); }
     let stage = "ascent", moves = 0, dropped = false, lastI = -1, setbacks = 0;
-    let fallOrigin = null, pendingPlan = null, switched = false;
+    let fallOrigin = null, switched = false;
     const started = Date.now();
     while (Date.now() - started < 15 * 60 * 1000 && moves < 300) {
       const s = await read();
       if (fallOrigin !== null && s.mode === "impact") {
-        assert.ok(s.falls > 0, "omitting the reach gesture must cause a real ground fall");
-        await capture("hands-off-fall");
+        assert.ok(s.falls > 0, "a badly timed launch must cause a real ground fall");
+        await capture("missed-launch-fall");
         assert.deepEqual(errors, []);
-        console.log("PASS real-input hands-off flight falls without magnetic rescue", { from: fallOrigin, falls: s.falls });
+        console.log("PASS real-input missed launch falls without magnetic rescue", { from: fallOrigin, falls: s.falls });
         return;
       }
       if (s.i !== lastI) { console.log(JSON.stringify({ stage, moves, ...s })); lastI = s.i; }
@@ -105,11 +105,6 @@ async function main() {
       }
       if (s.mode !== "play") { await release(); await page.waitForTimeout(150); continue; }
       if (!s.attached) {
-        if (fallOrigin === null && pendingPlan) {
-          await page.waitForFunction(t => __fx.state.attached || __fx.state.flightT >= t || __fx.state.mode !== "play", pendingPlan.grabAt, { timeout: 20000 });
-          const flight = await read();
-          if (!flight.attached && flight.mode === "play") await press();
-        }
         await page.waitForFunction(() => __fx.state.attached || __fx.state.mode !== "play", null, { timeout: 20000 });
         await release();
         continue;
@@ -133,8 +128,9 @@ async function main() {
       assert.ok(plan, "no input plan at hold " + ready.i + " direction " + direction);
       await press();
       const miss = fallTest && moves === 8;
-      pendingPlan = plan;
-      await page.waitForFunction(t => !__fx.state.attached || __fx.state.holdT >= t, plan.release, { timeout: 10000 });
+      // Normal travel has exactly one press/release. The optional fall case
+      // deliberately releases before enough force exists, then supplies no rescue.
+      await page.waitForFunction(t => !__fx.state.attached || __fx.state.holdT >= t, miss ? .23 : plan.release, { timeout: 10000 });
       await release();
       await page.waitForFunction(n => __fx.state.launches > n, ready.launches);
       if (miss) fallOrigin = ready.i;

@@ -154,7 +154,8 @@ function summitAndReturn() {
     // A real arriving pose is different from an already standing fixture.
     // Follow the capture through the whole mantle, including wrist release.
     const arrival=Pilot.fresh(mask,h.i-1),schedule=Pilot.plan(arrival,1);
-    assert.ok(schedule,"summit must have a real manual reach schedule");
+    assert.ok(schedule,"summit must have a real hold/release schedule");
+    assert.equal(schedule.grabAt,Infinity,"summit arrival must not need a hidden second press");
     Render.resetPoseHistory();
     const result=Pilot.execute(arrival,schedule,()=>livePose(arrival,`summit approach/${mask}`));
     assert.ok(result.landed&&arrival.holdIndex===h.i,"summit approach did not catch the lip");

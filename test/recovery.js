@@ -1,6 +1,6 @@
-/* Manual grip contracts. A missed launch is allowed to fail: this suite never
- * requires a rescue percentage. Geometry, fresh input and a finite reach window
- * must all agree before a catch can stop a fall. */
+/* Controlled movements keep the original single hold-release gesture.
+ * Contact still needs real reach and speed. An uncontrolled fall is never
+ * caught passively; optional fresh presses provide finite manual rescue. */
 "use strict";
 const assert = require("node:assert/strict");
 const FX = require("../game.js"), P = require("./pilot.js");
@@ -37,26 +37,50 @@ function finiteReach() {
     assert(FX.gripActive(s), "release then a fresh press opens another deliberate reach");
   }
 }
+function naturalReleaseRegression() {
+  const rows = [];
+  // These are fixed ordinary timings, deliberately independent of the oracle.
+  for (const i of [0, 1, 2]) for (const release of [1.6, 1.7, 1.8]) {
+    const s = P.fresh(15, i);
+    let airborneHeld = false;
+    const result = P.execute(s, release, state => {
+      if (!state.attached && state.holding) airborneHeld = true;
+    });
+    assert(result.launched && result.landed && result.delta === 1,
+      `ordinary full-pack release must catch the next grip: hold${i}, release${release}`);
+    assert.equal(airborneHeld, false, "normal play must not secretly insert a second press");
+    assert.equal(s.grabT, -1, "the launch catches without opening a manual rescue window");
+    rows.push({ i, release, landed: s.holdIndex });
+  }
+  return rows;
+}
 function compareGestures() {
   const rows = [];
   for (const mask of [0, 15]) for (const i of HOLDS) {
     const original = P.fresh(mask, i), plan = P.plan(original, 1);
     assert(plan, `reachable fixture ${i}/${mask}`);
-    const active = P.copy(original), passive = P.copy(original), late = P.copy(original);
-    const catchResult = P.execute(active, plan);
-    assert(catchResult.landed && catchResult.delta === 1, "a correctly timed second press catches a reachable hold");
-    let belowTargetAt = null;
-    P.execute(passive, plan, flight => {
-      if (!flight.attached && flight.vy < 0 && belowTargetAt === null &&
-          FX.bodyFrame(flight).hip.y + 1.23 < FX.HOLDS[i + 1].y) belowTargetAt = flight.flightT;
-    }, { reach: false });
-    assert.equal(passive.catches, original.catches, "hands-off flight never attaches to a passing hold");
-    assert.equal(passive.mode, "impact", "without another press the same flight ends in a real fall");
-    assert(belowTargetAt !== null, "the passive trajectory genuinely passes below the target");
-    P.execute(late, plan, null, { grabAt: belowTargetAt });
-    assert(late.holdIndex <= i || late.mode === "impact", "pressing after passing the target cannot retroactively catch it");
-    rows.push({ i, mask, release: +plan.release.toFixed(3), grabAt: +plan.grabAt.toFixed(3),
-      active: active.holdIndex, passiveFalls: passive.falls, lateHold: late.holdIndex, lateFalls: late.falls });
+    assert.equal(plan.grabAt, Infinity, "route planning must use the ordinary single gesture");
+    const controlled = P.copy(original), result = P.execute(controlled, plan);
+    assert(result.landed && result.delta === 1, "the release catches its real adjacent target without a second press");
+    // An early, weak release cannot reach the intended higher grip. It must
+    // fall, rather than grab the departure rock or another lower rock for free.
+    const missed = P.copy(original);
+    P.execute(missed, .3);
+    assert.equal(missed.catches, original.catches, "a missed launch has no passive lower-hold fallback");
+    assert.equal(missed.mode, "impact", "insufficient launch effort still causes a real fall");
+    rows.push({ i, mask, release: +plan.release.toFixed(3), caught: controlled.holdIndex, failedFalls: missed.falls });
+  }
+  // Start a genuinely reachable, slow falling body beside a grip. No directed
+  // launch exists, so even this near miss needs an explicit rescue press.
+  for (const mask of [0, 15]) {
+    const i = 13, h = FX.HOLDS[i], s = P.fresh(mask, i + 1);
+    Object.assign(s, { attached:false,flightT:.8,y:h.y+.45,z:h.z,vy:-2,vz:0,launchBody:null,holding:false,prevHolding:false });
+    const candidate = FX.catchCandidate(s);
+    assert(candidate && candidate.index === i && candidate.reachable && candidate.canCatchSpeed,
+      "uncontrolled-fall fixture must really be within arm reach");
+    P.finishFlight(s,i+1,12);
+    assert.equal(s.catches,0,"nearby slow falling bodies are not automatically rescued");
+    assert.equal(s.mode,"impact");
   }
   return rows;
 }
@@ -92,8 +116,8 @@ function measure() {
     assert(plan, `release-error fixture ${i}/${mask}/${phase}`);
     for (const offset of OFFSETS) {
       const s = P.copy(base);
-      // Preserve the planned reach time. An erroneous release does not receive
-      // another oracle search or repeated automatic catch attempts.
+      // Only release timing changes. No oracle-timed airborne press or
+      // automatic lower-hold fallback rescues the mistake.
       const result = P.execute(s, { ...plan, release: plan.release + offset });
       rows.push({ i, mask, phase, offset, advanced: result.landed && result.delta > 0,
         lower: result.landed && result.delta < 0, same: result.landed && result.delta === 0, ground: s.mode === "impact" });
@@ -104,16 +128,18 @@ function measure() {
 function main() {
   const started = performance.now();
   noHomingOrDistantCatch(); finiteReach(); deliberateRetry();
-  const contracts = compareGestures(), rows = measure();
+  const natural = naturalReleaseRegression(), contracts = compareGestures(), rows = measure();
   const counts = rows.reduce((out, row) => {
     for (const key of ["advanced", "lower", "same", "ground"]) if (row[key]) out[key]++;
     return out;
   }, { advanced: 0, lower: 0, same: 0, ground: 0 });
   assert(counts.ground > 0, "meaningful release mistakes must sometimes produce a real fall");
+  assert.equal(counts.lower+counts.same,0,"ordinary misses cannot passively grab a fallback hold");
+  console.log("NATURAL_RELEASES", JSON.stringify(natural));
   console.log("GRIP_CONTRACTS", JSON.stringify(contracts));
   console.log("RELEASE_ERRORS", JSON.stringify({ note: "Six holds × empty/full × two wind phases × ±180ms. Diagnostic sample, no required rescue rate.", ...counts }));
-  console.log(`PASS active, finite, geometric grip contracts (${((performance.now() - started) / 1000).toFixed(1)}s)`);
+  console.log(`PASS single-gesture contact and finite manual rescue contracts (${((performance.now() - started) / 1000).toFixed(1)}s)`);
   return rows;
 }
 if (require.main === module) main();
-module.exports = { main, measure, noHomingOrDistantCatch, finiteReach, compareGestures, deliberateRetry, PHASES, OFFSETS };
+module.exports = { main, measure, noHomingOrDistantCatch, finiteReach, naturalReleaseRegression, compareGestures, deliberateRetry, PHASES, OFFSETS };

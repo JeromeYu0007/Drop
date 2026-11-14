@@ -1,9 +1,8 @@
 /* Informational sensitivity experiment, not a human playtest or duration claim.
- * An oracle selects the best release window. Seeded timing noise is then added:
- * Release Gaussian sd80ms, reach Gaussian sd65ms, plus a 10% chance of
- * an additional signed 200–400ms release mistake. There is one timed reach
- * per launch: mistakes do not silently receive an oracle-corrected catch.
- * No invented thinking delays or artificial waiting inflate the run time. */
+ * An oracle selects a release window, then seeded release noise is added:
+ * Gaussian sd80ms plus a 10% chance of a signed 200–400ms mistake.
+ * Each movement is one hold-release gesture, without an airborne second press
+ * or oracle-corrected rescue. No invented delays inflate the run time. */
 const P = require("./pilot.js");
 function main() {
   const seeds = [7, 19, 41, 73, 101, 173];

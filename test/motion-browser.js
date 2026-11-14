@@ -50,10 +50,10 @@ async function main() {
       const shots = cycle ? Array.from({length:19},(_,i)=>({time:i*.2,stage:'charge'})) : [0,.23,.47,.68,.84,1,1.04,1.13,1.28,1.65,2.15,2.8].map((x,i) => ({time:i<6 ? plan.release*x : plan.release+(x-1), stage:i<6?'charge':'flight'}));
       if(down&&!cycle)for(const delay of [2,2.2,2.5])shots.push({time:plan.release+delay,stage:'slip'});
       for(let i=0;i<shots.length;i++) {
-        const meta = await page.evaluate(({target,release,grabAt}) => {
+        const meta = await page.evaluate(({target,release}) => {
           const s=motionState,F=Fangxia;
           while(motionClock + 1/120 <= target + 1e-7) {
-            const holding = s.launches===0?s.holdT+1e-7<release:!s.attached&&s.flightT+1e-7>=grabAt;
+            const holding = motionClock + 1e-7 < release;
             F.step(s,1/120,{holding,freezeIntro:true}); motionClock+=1/120;
             // Advance the production pose history at 60 Hz; render only sampled
             // frames so screenshots do not queue hundreds of GPU frames on software WebGL.
@@ -71,7 +71,7 @@ async function main() {
           }
           FXRender.draw({state:s,dt:0,camY:F.HOLDS[s.holdIndex].y,focusZ:s.z,side:true,alt:.1});
           return {time:motionClock,holdT:s.holdT,attached:s.attached,hold:s.holdIndex,launches:s.launches,pose:FXRender.pose||null};
-        },{target:shots[i].time,release:cycle?1000:plan.release,grabAt:plan.grabAt});
+        },{target:shots[i].time,release:cycle?1000:plan.release});
         const file=`${mask===0?'empty':'full'}-${String(i).padStart(2,'0')}.png`;
         await page.screenshot({path:path.join(out,file)});
         results.push({mask,file,...meta});

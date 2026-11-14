@@ -1,6 +1,6 @@
-/* Deterministic two-gesture input pilot. Planning inspects copies; execution
- * replays a fixed charge/release/reach schedule through production step().
- * This oracle proves reachability, not human skill or completion time. */
+/* Deterministic single-gesture input pilot. Planning inspects copies; execution
+ * holds then releases once. Normal movement never gets an oracle-timed second
+ * press. This proves route reachability, not human skill or completion time. */
 (function (root, factory) {
   const api = factory(typeof module !== "undefined" && module.exports ? require("../game.js") : root.Fangxia);
   if (typeof module !== "undefined" && module.exports) module.exports = api;
@@ -49,28 +49,13 @@
       const upperReach = hip.y + .53 + .70 + .05 + Math.max(0, flight.vy) ** 2 / (2 * FX.G * FX.params(flight.mask).grav);
       if (next && upperReach < next.y) return null;
     }
-    const initial = copy(flight), contactTimes = [];
-    // The first pass never reaches. Geometry is only inspected on this copy;
-    // the live player must later perform the planned press at a fixed time.
-    for (let frame = 0; frame < 3.5 / DT && !flight.attached && flight.mode === "play"; frame++) {
-      tick(flight, { holding: false });
-      const candidate = FX.catchCandidate(flight);
-      if (candidate && candidate.index === origin + direction && candidate.reachable && candidate.canCatchSpeed) {
-        contactTimes.push(flight.flightT);
-        // The first reachable interval is enough; no invisible target steering.
-        if (contactTimes.length >= 4) break;
-      } else if (contactTimes.length) break;
-      if (direction > 0 && flight.y < FX.HOLDS[origin].y - 3 && flight.vy < 0) break;
-    }
-    if (!contactTimes.length) return null;
-    for (const lead of [.14, .12, .18]) {
-      const grabAt = Math.max(DT, contactTimes[0] - lead), replay = copy(initial);
-      finishFlight(replay, origin, 3.5, null, grabAt);
-      if (desired(replay, origin, direction)) return { grabAt, contactAt: replay.time - initial.time,
-        geometryAt: contactTimes[0], delta: direction };
-    }
-    return null;
+    const initialTime = flight.time;
+    finishFlight(flight, origin, 3.5);
+    if (!desired(flight, origin, direction)) return null;
+    return { grabAt: Infinity, contactAt: flight.time-initialTime,
+      geometryAt: flight.time-initialTime, delta: direction };
   }
+
   function trialAt(state, release, direction) {
     const held = copy(state);
     let guard = 0;
@@ -123,9 +108,9 @@
   }
   function execute(s, schedule, onTick, options) {
     options = options || {};
-    // Numeric schedules remain supported for external diagnostics; new tests
-    // pass the complete plan so timing errors never get a corrected reach.
-    if (typeof schedule === "number") schedule = Object.assign({ release: schedule }, trialAt(s, schedule) || { grabAt: Infinity });
+    // A numeric fixed release is useful for non-oracle usability regressions.
+    // Only explicit recovery tests may supply a finite airborne press time.
+    if (typeof schedule === "number") schedule = { release: schedule, grabAt: Infinity };
     const origin = s.holdIndex, launches = s.launches;
     let guard = 0;
     while (s.attached && s.mode === "play" && s.holdT + 1e-7 < schedule.release && guard++ < 720) {
@@ -174,17 +159,17 @@
       const p = planWithWait(s, 1);
       if (!p) { noPlan++; break; }
       gustWaitSeconds += p.waitSeconds;
-      let timing = 0, reachTiming = 0;
+      let timing = 0;
       if (options.error) {
-        timing = normal(random) * .08; reachTiming = normal(random) * .065;
+        timing = normal(random) * .08;
         if (random() < .1) timing += (random() < .5 ? -1 : 1) * (.2 + random() * .2);
       }
       const old = s.holdIndex;
-      const result = execute(s, Object.assign({}, p, { release: Math.max(.18, p.release + timing), grabAt: Math.max(0, p.grabAt + reachTiming) }));
+      const result = execute(s, Object.assign({}, p, { release: Math.max(.18, p.release + timing), grabAt: Infinity }));
       moves++;
       if (!result.launched || result.delta <= 0 || s.mode === "impact") setbacks++;
       worstLoss = Math.max(worstLoss, old - s.holdIndex);
-      if (options.onMove) options.onMove(s, { moves, result, plan: p, timing, reachTiming });
+      if (options.onMove) options.onMove(s, { moves, result, plan: p, timing });
     }
     return { ok: s.mode === "ending", mask: s.mask, seconds: s.time - start, moves, falls: s.falls, setbacks, worstLoss, noPlan, gustWaitSeconds, state: s };
   }

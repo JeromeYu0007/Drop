@@ -186,10 +186,11 @@ function actualTransitions(renderer, from, mask, stride, options = {}) {
     count++;
   }
   const planned=Pilot.plan(s, options.direction || 1);
-  // A wrong release keeps the planned reach time; an oracle must not repair
-  // every error with an independently perfect rescue gesture.
+  // Ordinary climbing is a single hold/release gesture. A mistimed release
+  // must not be repaired by an independently perfect second press.
   const timing=options.release?{release:options.release,grabAt:planned?planned.grabAt:.45}:planned;
   assert.ok(timing, "live pose path needs a reachable launch");
+  if (!options.release) assert.equal(timing.grabAt, Infinity, "normal climbing must not need a hidden second press");
   const launches=s.launches;
   const gesture=()=>({holding:s.launches===launches?s.holdT+1e-7<timing.release:!s.attached&&s.flightT+1e-7>=timing.grabAt});
   // Render at four rates, but feed the same 120 Hz input trace to gameplay.
@@ -198,7 +199,7 @@ function actualTransitions(renderer, from, mask, stride, options = {}) {
   assert.equal(s.attached, false, "live pose sequence did not launch");
   for (let i = 0; i < 3600 / stride && !s.attached && s.mode === "play"; i++) frame(gesture);
   if (!options.release) {
-    assert.equal(caught,true,"planned two-gesture sequence never caught the next ledge");
+    assert.equal(caught,true,"single hold/release never caught the next ledge");
     assert.ok(options.direction<0?s.holdIndex<from:s.holdIndex>from,"live pose sequence did not advance in its intended direction");
   }else assert.ok(caught||s.mode==="impact","a mistimed release must resolve as a catch or a real fall");
   // Impact is followed by an intentional checkpoint reset under the fade.

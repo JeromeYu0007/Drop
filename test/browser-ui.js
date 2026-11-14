@@ -81,6 +81,48 @@ async function main() {
     assert(audio.gain !== null && audio.gain < .001);
     console.log("PASS mute silences wind and effects", audio);
 
+    phase = "release edge survives a same-frame re-press";
+    await page.evaluate(() => {
+      cancelCharge();
+      Object.assign(__fx.state, Fangxia.createState(), { intro: 0 });
+      prologueLeft = 0;
+    });
+    await page.keyboard.down("Space");
+    await page.waitForFunction(() => __fx.state.holdT >= 1.7);
+    const queued = await page.evaluate(() => {
+      const launches = __fx.state.launches;
+      // Synchronous DOM events guarantee no animation/physics tick can run
+      // between release and re-press, as happens on a stalled display frame.
+      dispatchEvent(new KeyboardEvent("keyup", { code: "Space", bubbles: true }));
+      dispatchEvent(new KeyboardEvent("keydown", { code: "Space", bubbles: true }));
+      return { launches, holding, pendingRelease };
+    });
+    assert(queued.holding && queued.pendingRelease, "re-press retains the preceding release edge");
+    await page.waitForFunction(n => __fx.state.launches === n + 1, queued.launches, { timeout: 10000 });
+    assert.equal(await page.evaluate(() => pendingRelease), false, "physics consumes the queued release exactly once");
+    await page.keyboard.up("Space");
+    const launchedAt = await page.evaluate(() => __fx.state.time);
+    await page.waitForFunction(t => __fx.state.time > t + .2, launchedAt);
+    assert.equal(await page.evaluate(() => __fx.state.launches), queued.launches + 1, "releasing the airborne re-press cannot launch twice");
+
+    const cancelled = await page.evaluate(() => {
+      cancelCharge();
+      const h = Fangxia.HOLDS[4];
+      Object.assign(__fx.state, Fangxia.createState(), { intro: 0, holdIndex: 4, origin: 4,
+        y: h.y - Fangxia.L, z: h.z, holdT: 1.7, holding: true, prevHolding: true });
+      holding = true; keyHeld = true;
+      dispatchEvent(new KeyboardEvent("keyup", { code: "Space", bubbles: true }));
+      dispatchEvent(new KeyboardEvent("keydown", { code: "Space", bubbles: true }));
+      const hadRelease = pendingRelease;
+      selectDirection("down");
+      return { hadRelease, pendingRelease, holdT: __fx.state.holdT, time: __fx.state.time };
+    });
+    assert(cancelled.hadRelease && !cancelled.pendingRelease, "changing direction cancels a queued release");
+    assert.equal(cancelled.holdT, 0);
+    await page.waitForFunction(t => __fx.state.time > t + .25 && __fx.state.descending, cancelled.time);
+    assert.equal(await page.evaluate(() => __fx.state.launches), 0, "cancelled release cannot launch on the next physics tick");
+    console.log("PASS queued release survives a same-frame re-press and is cancelled by direction changes");
+
     phase = "direction controls cancel held input and remain reversible";
     await page.evaluate(() => {
       cancelCharge();
@@ -116,12 +158,12 @@ async function main() {
     // for a later catch. Holding direction is not a movement gesture.
     await page.evaluate(() => {
       const s = __fx.state;
-      Object.assign(s, { attached: false, flightT: .4, y: s.y + 12, z: s.z + 3, vy: 1, vz: 0 });
+      Object.assign(s, { attached: false, flightT: .4, y: s.y + 12, z: s.z + 3, vy: -5, vz: 0 });
     });
     await page.waitForFunction(() => document.querySelector("#directionDown").disabled && document.querySelector("#directionUp").disabled);
     await page.keyboard.press("ArrowDown");
     assert.equal(await page.evaluate(() => __fx.state.descending), false, "airborne input cannot change the flight direction");
-    assert.match(await page.locator("#hint").textContent(), /靠近岩点时再按住抓握/);
+    assert.match(await page.locator("#hint").textContent(), /失手下坠，按住伸手自救/);
     await page.evaluate(() => {
       cancelCharge();
       Object.assign(__fx.state, Fangxia.createState(), { intro: 0 });
@@ -166,7 +208,7 @@ async function main() {
     }, null, { timeout: 15000 });
     await page.addScriptTag({ content: fs.readFileSync(path.join(__dirname, "pilot.js"), "utf8") });
     const descentPlan = await page.evaluate(() => DropPilot.plan(__fx.state, -1));
-    assert(descentPlan, "the top descent has a two-gesture route");
+    assert(descentPlan, "the top descent has a single-release route");
     await page.keyboard.down("Space");
     await page.waitForFunction(release => {
       const s = __fx.state, h = Fangxia.HOLDS[s.holdIndex];
@@ -174,47 +216,43 @@ async function main() {
     }, descentPlan.release, { timeout: 15000 });
     assert.equal(await page.evaluate(() => __fx.state.launches), 0, "holding the descent curve cannot release automatically");
     await page.keyboard.up("Space");
-    await page.waitForFunction(() => __fx.state.launches === 1 && !__fx.state.attached, null, { timeout: 10000 });
-    // Reach near the lower hold, then keep the same physical key down. A catch
-    // must consume that gesture rather than starting another automatic drop.
-    await page.waitForFunction(grabAt => !__fx.state.attached && __fx.state.flightT >= grabAt, descentPlan.grabAt, { timeout: 10000 });
-    await page.keyboard.down("Space");
+    await page.waitForFunction(() => __fx.state.launches === 1, null, { timeout: 10000 });
+    // One press and one release must finish the lower catch, with no airborne
+    // key press. Reading too late may already observe the valid catch.
     await page.waitForFunction(origin => __fx.state.attached && __fx.state.holdIndex < origin, selected.index, { timeout: 15000 });
+    assert.equal(await page.evaluate(() => holding), false, "normal descent needs no second press");
     const caught = await page.evaluate(() => ({ index: __fx.state.holdIndex, time: __fx.state.time, launches: __fx.state.launches, falls: __fx.state.falls }));
     assert.equal(caught.index, selected.index - 1, "the downward curve catches the next lower hold");
     assert.equal(caught.launches, 1);
-    assert.match(await page.locator("#hint").textContent(), /再次按住、松开才会继续下放/);
-    await page.waitForFunction(time => __fx.state.time > time + 3, caught.time, { timeout: 20000 });
+    await page.waitForFunction(() => !__fx.state.needUp && !__fx.state.lock && __fx.state.settle > .9);
+    await page.keyboard.down("Space");
+    const heldAt = await page.evaluate(() => __fx.state.time);
+    await page.waitForFunction(time => __fx.state.time > time + 3, heldAt, { timeout: 20000 });
     const resting = await page.evaluate(() => ({ index: __fx.state.holdIndex, attached: __fx.state.attached, launches: __fx.state.launches, falls: __fx.state.falls, descending: __fx.state.descending }));
     assert.deepEqual(resting, { index: caught.index, attached: true, launches: 1, falls: caught.falls, descending: true }, "holding after a catch remains stable beyond the old 2.4-second slip timeout");
     await page.keyboard.up("Space");
-    await page.waitForTimeout(150);
-    assert.equal(await page.evaluate(() => __fx.state.launches), 1, "releasing the consumed catch gesture cannot launch again");
-    console.log("PASS ending selects descent; real keyboard draws a downward arc; one release makes one stable lower catch", resting);
+    await page.waitForFunction(() => __fx.state.launches === 2, null, { timeout: 10000 });
+    console.log("PASS single-release descent catches without another press; holding stays stable; a fresh release permits the next descent", resting);
 
-    // Catch the second pack node with a held reach gesture, as happens in the
-    // full journey after discarding the trophy. Releasing and briefly tapping
-    // the climbing key must leave the choice visible until its button is used.
+    // Start the next backpack fixture immediately after a real single-gesture
+    // launch. The page must complete the catch without another key press,
+    // then retain the choice until its explicit button is used.
     phase = "caught rest point keeps its explicit backpack choice";
-    await page.keyboard.down("Space");
     const packIndex = await page.evaluate(() => {
+      cancelCharge();
       const s = __fx.state, h = Fangxia.HOLDS.find(h => h.k === "letter");
       const left = Fangxia.HOLDS.find(h => h.k === "trophy");
-      // Build the airborne fixture by replaying a real launch and timed reach.
-      // A hand-marked torso position may be outside the actual shoulder reach,
-      // especially during the preparation frames before the hand can close.
+      // Keep the production release body and velocity; do not inject a catch.
       const flight = DropPilot.fresh(11, h.i - 1);
       Object.assign(flight, {
         catches: 19, launches: 19,
         lost: [{ kind: "trophy", bit: 4, y: left.y - 1.8, z: left.z, hold: left.i }],
       });
       const plan = DropPilot.plan(flight, 1);
-      if (!plan) throw new Error("second rest point has no deliberate release/reach plan");
+      if (!plan) throw new Error("second rest point has no single-release plan");
       for (let n = 0; flight.holdT + 1e-7 < plan.release && n < 720; n++) DropPilot.tick(flight, { holding: true });
       DropPilot.tick(flight, { holding: false });
-      for (let n = 0; flight.flightT + 1e-7 < plan.grabAt && !flight.attached && n < 720; n++) DropPilot.tick(flight, { holding: false });
-      DropPilot.tick(flight, { holding: true });
-      if (flight.attached || !flight.holding || flight.grabT < 0 || flight.launches !== 20) throw new Error("rest fixture must still be airborne at the start of its real reach gesture");
+      if (flight.attached || flight.holding || flight.launches !== 20) throw new Error("rest fixture must still be airborne after its one release");
       Object.assign(s, flight);
       return h.i;
     });

@@ -5,7 +5,7 @@
 "use strict";
 const assert = require("node:assert/strict");
 const FX = require("../game.js");
-const P = require("./pilot.js"), W = require("./windows.js");
+const P = require("./pilot.js");
 const DT = 1 / 120;
 const REPRESENTATIVES = [3, 13, 24, 35, 43];
 const WIND_TIMES = [0, 7, 19];
@@ -110,9 +110,7 @@ function measure() {
     const packs = MASKS.map(mask => {
       const windows = samples.filter(x => x.index === index && x.mask === mask);
       const wind = Array.from({ length: 601 }, (_, i) => FX.wind(i * .1, y, mask, false));
-      const central = windows.find(x => x.phase === WIND_TIMES[0]);
-      const reach = central && central.centerPlan ? W.reachWindow(fresh(mask, index, central.phase), central.centerPlan) : { span: 0 };
-      return { mask, reachWindow: reach.span, meanWindow: mean(windows.map(x => x.widestNext.span)), minWindow: Math.min(...windows.map(x => x.widestNext.span)),
+      return { mask, meanWindow: mean(windows.map(x => x.widestNext.span)), minWindow: Math.min(...windows.map(x => x.widestNext.span)),
         firstRelease: mean(windows.map(x => x.firstNext ? x.firstNext.a : NaN)),
         windRms: Math.sqrt(mean(wind.map(x => x * x))), maxWind: Math.max(...wind.map(Math.abs)) };
     });
@@ -148,7 +146,6 @@ function validate(report) {
   for (const stage of stages) {
     const empty = stage.packs.find(p => p.mask === 0), full = stage.packs.find(p => p.mask === 15);
     assert(full.windRms > empty.windRms * 1.5, "heavy load must increase actual lateral wind disturbance");
-    for (const pack of stage.packs) assert(pack.reachWindow + DT >= .05, "a deliberate reach needs a usable real timing window");
   }
   const empty = burden.find(x => x.mask === 0), full = burden.find(x => x.mask === 15);
   assert(full.charge10 > empty.charge10 + .1 && full.charge90 > empty.charge90 + .35, "heavy pack must build force perceptibly later");

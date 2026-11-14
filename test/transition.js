@@ -52,6 +52,7 @@ function charged(mask, down, time) {
 for (const h of FX.HOLDS.filter(h => FX.isRest(h.k))) {
   const s = Pilot.fresh(15, h.i - 1, 0), plan = Pilot.plan(s);
   assert.ok(plan, `rest ${h.i}: reachable fixture`);
+  assert.equal(plan.grabAt, Infinity, "a normal rest arrival uses only hold/release");
   Pilot.execute(s, plan);
   assert.equal(s.mode, "ledge", `rest ${h.i}: actual approach did not open menu`);
   const before = pose(s, `rest ${h.i} incoming`);

@@ -22,11 +22,12 @@ function noForcedDrop() {
 function catchContract() {
   for (const index of [4, 22, 43]) for (const mask of [0, 15]) {
     const s = P.fresh(mask, index), plan = P.plan(s, 1);
-    assert(plan, `reachable two-gesture plan at ${index}, mask ${mask}`);
+    assert(plan, `reachable single-gesture plan at ${index}, mask ${mask}`);
     const catches = s.catches;
     P.execute(s, plan, null, { reach: false });
-    assert.equal(s.catches, catches, "without a second press no passing hold may catch");
-    assert.equal(s.mode, "impact", "releasing and never reaching produces a real fall");
+    assert.equal(plan.grabAt, Infinity, "normal routes never require a second press");
+    assert.equal(s.catches, catches+1, "a correct release catches the genuinely reachable next hold");
+    assert.equal(s.holdIndex, index+1, "the release only targets the next route hold");
   }
   // A large outward miss low on the route still has real consequences.
   const low = FX.HOLDS.findIndex(h => h.y > 20);
